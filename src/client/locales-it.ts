@@ -10,7 +10,7 @@ export const it: Record<string, string> = {
   files: 'File',
   guideDescFiles: 'Sfoglia l\'albero del workspace; un clic apre anteprima o editor',
   guideDescGit: 'Modifiche Git e modifiche ai file di questa sessione in un solo tab',
-  guideDescSubagent: 'Topologia dei subagent e attività in background, in tempo reale',
+  guideDescSubagent: 'Grafo del workflow, bacheca delle attività del team e attività in background, in tempo reale',
   guideDescSidechat: 'Un thread di approfondimento indipendente che eredita il contesto della sessione',
   guideDescTerminal: 'Una vera shell (xterm + pty) con riconnessione',
   guideDescBrowser: 'Browser integrato, può aprire i link della chat',

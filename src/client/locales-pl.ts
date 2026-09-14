@@ -21,7 +21,7 @@ export const pl: Record<string, string> = {
   files: 'Pliki',
   guideDescFiles: 'Przeglądaj drzewo plików obszaru roboczego; klik otwiera podgląd lub edycję',
   guideDescGit: 'Zmiany Git i zmiany plików z tej sesji w jednej karcie',
-  guideDescSubagent: 'Topologia subagentów i zadania w tle na żywo',
+  guideDescSubagent: 'Graf przepływu pracy, tablica zadań zespołu i zadania w tle, na żywo',
   guideDescSidechat: 'Niezależny wątek uzupełniający dziedziczący kontekst tej sesji',
   guideDescTerminal: 'Prawdziwy shell (xterm + pty) z ponownym łączeniem',
   guideDescBrowser: 'Wbudowana przeglądarka, może przejmować linki z czatu',

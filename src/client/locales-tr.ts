@@ -19,7 +19,7 @@ export const tr: Record<string, string> = {
   files: 'Dosyalar',
   guideDescFiles: 'Çalışma alanı dosya ağacına göz atın; tıklayınca önizleme veya düzenleme açılır',
   guideDescGit: 'Git değişiklikleri ve bu oturumun dosya değişiklikleri tek sekmede',
-  guideDescSubagent: 'Alt ajan topolojisi ve arka plan görevleri, canlı',
+  guideDescSubagent: 'İş akışı grafiği, takım görev panosu ve arka plan görevleri, canlı',
   guideDescSidechat: 'Bu oturumun bağlamını devralan bağımsız bir yan konu',
   guideDescTerminal: 'Gerçek bir shell (xterm + pty), yeniden bağlanma destekli',
   guideDescBrowser: 'Sohbet bağlantılarını devralabilen gömülü tarayıcı',

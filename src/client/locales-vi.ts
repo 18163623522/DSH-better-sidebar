@@ -19,7 +19,7 @@ export const vi: Record<string, string> = {
   files: 'Tệp',
   guideDescFiles: 'Duyệt cây tệp của workspace; bấm để xem trước hoặc chỉnh sửa',
   guideDescGit: 'Thay đổi Git và thay đổi tệp của phiên này trong một tab',
-  guideDescSubagent: 'Sơ đồ subagent và tác vụ nền, theo thời gian thực',
+  guideDescSubagent: 'Đồ thị quy trình, bảng tác vụ nhóm và tác vụ nền, theo thời gian thực',
   guideDescSidechat: 'Luồng hỏi tiếp độc lập kế thừa ngữ cảnh của phiên này',
   guideDescTerminal: 'Shell thật (xterm + pty), tự kết nối lại',
   guideDescBrowser: 'Trình duyệt nhúng, có thể mở link trong chat',

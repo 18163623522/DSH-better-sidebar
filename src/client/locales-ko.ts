@@ -11,7 +11,7 @@ export const ko: Record<string, string> = {
   files: '파일',
   guideDescFiles: '워크스페이스 파일 트리를 보고 클릭하면 미리보기/편집',
   guideDescGit: 'Git 변경 사항과 이번 세션의 파일 변경을 한 탭에서',
-  guideDescSubagent: '하위 에이전트 구조와 백그라운드 작업을 실시간으로',
+  guideDescSubagent: '워크플로 그래프 · 팀 작업 보드 · 백그라운드 작업, 실시간',
   guideDescSidechat: '현재 세션의 컨텍스트를 이어받는 독립 후속 스레드',
   guideDescTerminal: '실제 셸(xterm + pty), 재연결 지원',
   guideDescBrowser: '내장 브라우저, 채팅 링크도 대신 열 수 있음',

@@ -2,7 +2,7 @@ export const sv: Record<string, string> = {
   files: 'Filer',
   guideDescFiles: 'Bläddra i arbetsytans filträd; klick öppnar förhandsvisning eller redigering',
   guideDescGit: 'Git-ändringar och sessionens filändringar i en flik',
-  guideDescSubagent: 'Subagenttopologi och bakgrundsjobb, live',
+  guideDescSubagent: 'Arbetsflödesgraf, teamuppgiftstavla och bakgrundsjobb, live',
   guideDescSidechat: 'En oberoende uppföljningstråd som ärver sessionens kontext',
   guideDescTerminal: 'Ett riktigt skal (xterm + pty) med återanslutning',
   guideDescBrowser: 'Inbäddad webbläsare som kan ta över chattlänkar',

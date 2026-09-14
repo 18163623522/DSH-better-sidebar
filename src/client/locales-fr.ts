@@ -12,7 +12,7 @@ export const fr: Record<string, string> = {
   files: 'Fichiers',
   guideDescFiles: 'Parcourir l\'arborescence du workspace ; un clic ouvre l\'aperçu ou l\'édition',
   guideDescGit: 'Modifications Git et éditions de cette session dans un seul onglet',
-  guideDescSubagent: 'Topologie des sous-agents et tâches d\'arrière-plan, en direct',
+  guideDescSubagent: 'Diagramme de workflow, tableau de tâches d\'équipe et travaux d\'arrière-plan, en direct',
   guideDescSidechat: 'Un fil de suivi indépendant héritant du contexte de cette session',
   guideDescTerminal: 'Un vrai shell (xterm + pty) avec reconnexion',
   guideDescBrowser: 'Navigateur intégré, qui peut reprendre les liens du chat',

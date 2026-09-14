@@ -5,7 +5,7 @@ export const de: Record<string, string> = {
   files: 'Dateien',
   guideDescFiles: 'Dateibaum des Arbeitsbereichs durchsuchen; Klick öffnet Vorschau oder Editor',
   guideDescGit: 'Git-Änderungen und Dateiänderungen dieser Sitzung in einem Tab',
-  guideDescSubagent: 'Subagent-Topologie und Hintergrundaufgaben, live',
+  guideDescSubagent: 'Workflow-Diagramm, Team-Aufgabenboard und Hintergrundaufgaben, live',
   guideDescSidechat: 'Ein unabhängiger Folge-Thread mit dem Kontext dieser Sitzung',
   guideDescTerminal: 'Eine echte Shell (xterm + pty) mit Wiederverbindung',
   guideDescBrowser: 'Eingebetteter Browser, der Chat-Links übernehmen kann',

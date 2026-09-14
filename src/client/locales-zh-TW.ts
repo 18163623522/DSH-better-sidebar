@@ -34,7 +34,7 @@ export const zhTW: Record<string, string> = {
   files: '檔案',
   guideDescFiles: '瀏覽工作區檔案樹，點開即可預覽或編輯',
   guideDescGit: 'Git 變更與本輪檔案改動，雙視角合一',
-  guideDescSubagent: '子代理拓撲與背景任務，即時狀態',
+  guideDescSubagent: '工作流圖 · 團隊任務板 · 背景任務，即時狀態',
   guideDescSidechat: '繼承目前工作階段上下文的獨立追問執行緒',
   guideDescTerminal: '真實 shell 終端（xterm + pty），斷線重連',
   guideDescBrowser: '內嵌網頁瀏覽器，可接管聊天中的外鏈',

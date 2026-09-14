@@ -19,7 +19,7 @@ export const hi: Record<string, string> = {
   files: 'फ़ाइलें',
   guideDescFiles: 'वर्कस्पेस फ़ाइल ट्री देखें; क्लिक करने पर प्रीव्यू या संपादन खुलता है',
   guideDescGit: 'Git बदलाव और इस सत्र के फ़ाइल बदलाव एक ही टैब में',
-  guideDescSubagent: 'सबएजेंट टोपोलॉजी और बैकग्राउंड कार्य, लाइव',
+  guideDescSubagent: 'वर्कफ़्लो ग्राफ़, टीम कार्य बोर्ड और बैकग्राउंड कार्य, लाइव',
   guideDescSidechat: 'इस सत्र का संदर्भ विरासत में लेने वाला स्वतंत्र फ़ॉलो-अप थ्रेड',
   guideDescTerminal: 'असली शेल (xterm + pty), रीकनेक्ट सहित',
   guideDescBrowser: 'अंतर्निहित ब्राउज़र, चैट के लिंक भी खोल सकता है',
