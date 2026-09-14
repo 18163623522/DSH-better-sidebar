@@ -53,12 +53,15 @@ function jsonResponse(value: unknown): Response {
   return { ok: true, status: 200, json: async () => value } as unknown as Response
 }
 
+let teamPayload: unknown = { available: false }
+
 beforeEach(() => {
+  teamPayload = { available: false }
   vi.stubGlobal('fetch', async (url: string | URL | Request) => {
     const method = String(url).split('/').pop()
     if (method === 'subagents.live') return jsonResponse({ ok: true, value: { live: {} } })
     if (method === 'workflows.list') return jsonResponse({ ok: true, value: { runs: [] } })
-    if (method === 'teams.view') return jsonResponse({ ok: true, value: { available: false } })
+    if (method === 'teams.view') return jsonResponse({ ok: true, value: teamPayload })
     if (method === 'jobs.output') return jsonResponse({ ok: true, value: { text: 'out', truncated: false, read: true } })
     throw new Error(`unexpected fetch ${String(url)}`)
   })
@@ -180,6 +183,77 @@ describe('Tasks page interactions', () => {
     await act(async () => { info.click() })
     expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1)
     expect(document.body.textContent).toContain('查看转录')
+    unmount()
+  })
+})
+
+describe('Tasks page graph interactions and team board', () => {
+  it('activates a graph node after a background pointerdown (no click theft)', async () => {
+    const opened: unknown[] = []
+    const store = makeStore(snapshotWithChildren(1))
+    const ctx = makeCtx(store, { openSubagent: (address) => { opened.push(address) } })
+    const { container, unmount } = renderRoot(
+      createElement(SubagentView, { sessionId: 'root', active: true, ctx }),
+    )
+    // Unfold so the settled child is visible, then simulate the real gesture
+    // order on the canvas background before clicking the node.
+    const foldToggle = container.querySelector('[data-graph-controls] button:nth-child(2)') as HTMLButtonElement
+    await act(async () => { foldToggle.click() })
+    const canvas = container.querySelector('[role="group"]') as HTMLElement
+    await act(async () => {
+      canvas.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 5, clientY: 5 }))
+      window.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }))
+    })
+    const node = container.querySelector('[data-graph-node="child-0"]') as HTMLElement
+    expect(node).not.toBeNull()
+    await act(async () => { node.click() })
+    expect(opened).toEqual([{ parentSessionId: 'root', childSessionId: 'child-0', mode: 'one-shot' }])
+    unmount()
+  })
+
+  it('never starts a pan from a node (the gesture belongs to the node)', async () => {
+    const store = makeStore(snapshotWithChildren(1))
+    const { container, unmount } = renderRoot(
+      createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
+    )
+    const foldToggle = container.querySelector('[data-graph-controls] button:nth-child(2)') as HTMLButtonElement
+    await act(async () => { foldToggle.click() })
+    const node = container.querySelector('[data-graph-node="child-0"]') as HTMLElement
+    const inner = node.parentElement as HTMLElement
+    const before = inner.style.transform
+    await act(async () => {
+      node.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 10, clientY: 10 }))
+      window.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 80, clientY: 90 }))
+      window.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }))
+    })
+    expect(inner.style.transform).toBe(before)
+    unmount()
+  })
+
+  it('shows the team board without any click when the root leads a team', async () => {
+    teamPayload = {
+      available: true,
+      team: {
+        members: [
+          { id: 'root', name: 'lead', role: 'lead', status: 'running', diagnostics: [] },
+          { id: 'child-0', name: 'writer', role: 'teammate', status: 'idle', model: 'glm-5.3', diagnostics: [] },
+        ],
+        tasks: [{
+          id: 't1', revision: 1, subject: '收窄卡片', description: '', status: 'in_progress',
+          blockedBy: [], writeScopes: [], ready: true, writeScopeWarnings: [],
+        }],
+      },
+    }
+    const store = makeStore(snapshotWithChildren(1))
+    const { container, unmount } = renderRoot(
+      createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
+    )
+    await act(async () => { await Promise.resolve() })
+    // Visible by default: header, members and the task row (no chip to click).
+    expect(container.textContent).toContain('团队任务板')
+    expect(container.textContent).toContain('lead')
+    expect(container.textContent).toContain('writer')
+    expect(container.textContent).toContain('收窄卡片')
     unmount()
   })
 })

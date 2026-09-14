@@ -406,6 +406,8 @@ export const id: Record<string, string> = {
   tasksZoomOut: 'Perkecil',
   tasksZoomFit: 'Sesuaikan ke kanvas',
   tasksNodeJump: 'Buka transkrip',
+  tasksNodeDetail: 'Detail node',
+  workflowRun: 'Alur kerja',
   tasksNodeState: 'Status',
   tasksNodeMode: 'Mode',
   tasksNodeModel: 'Model',

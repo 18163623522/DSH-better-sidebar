@@ -103,12 +103,17 @@ export function JobsDrawer(props: JobsDrawerProps): ReactNode {
         onClick={() => { setManualOpen(!open) }}
       >
         <span>{t('jobs')}</span>
+        <span className={css.jobsBigNum}>{liveCount > 0 ? liveCount : rows.length}</span>
         <span className={css.jobsDrawerCount}>{countLabel}</span>
-        {!open && !autoOpen && <span className={css.jobsDrawerAuto}>{t('jobsAutoCollapsed')}</span>}
-        <span className={clsx(css.jobsDrawerChevron, open && css.jobsDrawerChevronOpen)} aria-hidden="true">
+        <span className={clsx(css.jobsDrawerChev, open && css.jobsDrawerChevOpen)} aria-hidden="true">
           <IconChevronUpOutline14 size={12} />
         </span>
       </button>
+      {!autoOpen && (
+        <div className={css.jobsAutoNote}>
+          {t('jobsAutoCollapsed')}
+        </div>
+      )}
       {open && (
         <div className={css.jobsDrawerBody}>
           {rows.map((row) => {
@@ -135,14 +140,10 @@ export function JobsDrawer(props: JobsDrawerProps): ReactNode {
                   title={t('jobViewOutput')}
                   onClick={(event) => { onOpenOutput(row, event.currentTarget) }}
                 >
-                  <StateDot state={jobDotState(job.status)} size={8} />
-                  <span className={css.jobsContent}>
-                    <span className={css.jobsLabelLine}>
-                      <span className={css.jobsKind}>{job.kind}</span>
-                      <span className={css.jobsLabel} title={job.label}>{job.label}</span>
-                    </span>
-                    <span className={css.jobsSecondary}>{secondary}</span>
-                  </span>
+                  <StateDot state={jobDotState(job.status)} size={6} />
+                  <span className={css.jobsKind}>{job.kind}</span>
+                  <span className={css.jobsLabel} title={job.label}>{job.label}</span>
+                  <span className={css.jobsMeta}>{secondary}</span>
                 </button>
                 {job.status === 'running' && (
                   <button
@@ -157,7 +158,7 @@ export function JobsDrawer(props: JobsDrawerProps): ReactNode {
                       else setArmedId(job.id)
                     }}
                   >
-                    {armed ? t('jobKillConfirm') : <IconStopOutline16 size={12} />}
+                    {armed ? '!' : <IconStopOutline16 size={12} />}
                   </button>
                 )}
                 {killFailed && <span className={css.jobsKillError}>{t('jobKillError')}</span>}

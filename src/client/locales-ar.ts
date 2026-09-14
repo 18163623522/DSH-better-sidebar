@@ -409,6 +409,8 @@ export const ar: Record<string, string> = {
   tasksZoomOut: 'تصغير',
   tasksZoomFit: 'ملاءمة اللوحة',
   tasksNodeJump: 'فتح النسخة',
+  tasksNodeDetail: 'تفاصيل العقدة',
+  workflowRun: 'سير العمل',
   tasksNodeState: 'الحالة',
   tasksNodeMode: 'الوضع',
   tasksNodeModel: 'الطراز',

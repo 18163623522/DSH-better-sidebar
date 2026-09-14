@@ -406,6 +406,8 @@ export const nl: Record<string, string> = {
   tasksZoomOut: 'Uitzoomen',
   tasksZoomFit: 'Passend maken',
   tasksNodeJump: 'Transcript openen',
+  tasksNodeDetail: 'Knooppuntdetails',
+  workflowRun: 'Workflow',
   tasksNodeState: 'Status',
   tasksNodeMode: 'Modus',
   tasksNodeModel: 'Model',

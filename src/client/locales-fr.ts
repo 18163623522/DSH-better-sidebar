@@ -401,6 +401,8 @@ export const fr: Record<string, string> = {
   tasksZoomOut: 'Zoom arrière',
   tasksZoomFit: 'Ajuster au canevas',
   tasksNodeJump: 'Ouvrir la transcription',
+  tasksNodeDetail: 'Détails du nœud',
+  workflowRun: 'Workflow',
   tasksNodeState: 'État',
   tasksNodeMode: 'Mode',
   tasksNodeModel: 'Modèle',

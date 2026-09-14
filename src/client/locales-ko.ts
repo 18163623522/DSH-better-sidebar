@@ -400,6 +400,8 @@ export const ko: Record<string, string> = {
   tasksZoomOut: '축소',
   tasksZoomFit: '캔버스에 맞추기',
   tasksNodeJump: '대화 기록 보기',
+  tasksNodeDetail: '노드 상세',
+  workflowRun: '워크플로',
   tasksNodeState: '상태',
   tasksNodeMode: '모드',
   tasksNodeModel: '모델',

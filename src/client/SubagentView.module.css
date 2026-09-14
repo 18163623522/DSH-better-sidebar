@@ -9,20 +9,24 @@
   flex-direction: column;
 }
 
+/* The page header keeps the mockup's rhythm: a 13px semibold title, a mono
+   count, and a hairline underline that separates chrome from content. */
 .subagentHeader {
   flex: none;
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
-  height: 36px;
-  padding: 0 8px 0 12px;
+  padding: 10px 10px 9px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l4);
 }
 
 .subagentTitle {
   flex: 1;
   min-width: 0;
-  font: var(--dsw-font-s-14);
-  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -31,8 +35,9 @@
 /* The descendant count badge ("3 · 1 运行中") beside the title. */
 .subagentCount {
   flex: none;
-  font: var(--dsw-font-xxxs-11);
-  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--ds-font-family-code);
+  font-size: 10px;
+  color: var(--dsw-alias-label-secondary);
 }
 
 .subagentRefresh {
@@ -40,16 +45,18 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
   border: none;
-  border-radius: 6px;
+  border-radius: 3px;
   background: transparent;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
 }
 
 .subagentRefresh:hover {
+  color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-interactive-bg-hover);
 }
 

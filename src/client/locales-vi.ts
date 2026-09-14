@@ -408,6 +408,8 @@ export const vi: Record<string, string> = {
   tasksZoomOut: 'Thu nhỏ',
   tasksZoomFit: 'Vừa khung vẽ',
   tasksNodeJump: 'Mở bản ghi hội thoại',
+  tasksNodeDetail: 'Chi tiết nút',
+  workflowRun: 'Quy trình',
   tasksNodeState: 'Trạng thái',
   tasksNodeMode: 'Chế độ',
   tasksNodeModel: 'Mô hình',

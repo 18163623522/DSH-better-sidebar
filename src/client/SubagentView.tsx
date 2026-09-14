@@ -47,7 +47,8 @@ import { TasksGraph } from './TasksGraph.tsx'
 import { TasksTree } from './TasksTree.tsx'
 import { JobsDrawer, JobOutputPopoverContent } from './JobsDrawer.tsx'
 import { AnchoredPopover } from './AnchoredPopover.tsx'
-import { AgentNodePopover, TeamBoardPopover, WorkflowNodePopover } from './TasksPopovers.tsx'
+import { AgentNodePopover, WorkflowNodePopover } from './TasksPopovers.tsx'
+import { TeamBoard } from './TeamBoard.tsx'
 import type { SidebarStore } from './state.ts'
 import type { WorkflowRunView } from '../workflow-runs.ts'
 import legacy from './SubagentView.module.css'
@@ -130,7 +131,6 @@ type PagePopover =
   | { kind: 'node'; nodeId: string; anchor: HTMLElement }
   | { kind: 'workflow'; nodeId: string; anchor: HTMLElement }
   | { kind: 'job'; jobId: string; anchor: HTMLElement }
-  | { kind: 'team'; anchor: HTMLElement }
 
 /**
  * The sidebar's Tasks page.
@@ -182,6 +182,7 @@ export function SubagentView(props: {
   const mode = modeOverride ?? prefsMode
 
   const [folded, setFolded] = useState(true)
+  const [teamBoardCollapsed, setTeamBoardCollapsed] = useState(false)
   const [popover, setPopover] = useState<PagePopover | null>(null)
 
   const model = useMemo(
@@ -347,22 +348,11 @@ export function SubagentView(props: {
   /** The current popover's resolved content (subjects re-resolve live). */
   const popoverContent = ((): ReactNode => {
     if (popover === null) return null
-    if (popover.kind === 'team' && teamView?.available === true && teamView.team !== null && rootId !== undefined) {
-      return (
-        <TeamBoardPopover
-          rootId={rootId}
-          members={teamView.team.members}
-          tasks={teamView.team.tasks}
-          onChanged={team.refresh}
-        />
-      )
-    }
     if (popover.kind === 'job') {
       const row = jobRows.find(candidate => candidate.job.id === popover.jobId)
       if (row === undefined) return null
       return <JobOutputPopoverContent ownerSessionId={row.ownerSessionId} job={row.job} active={active} />
     }
-    if (popover.kind === 'team') return null
     const node = model.find(candidate => candidate.id === popover.nodeId)
     if (node === undefined) return null
     if (popover.kind === 'workflow' && node.kind === 'workflow') {
@@ -398,17 +388,6 @@ export function SubagentView(props: {
             : ''}
         </span>
         {countLabel !== undefined && <span className={legacy.subagentCount}>{countLabel}</span>}
-        {teamView?.available === true && teamView.team !== null && (
-          <button
-            type="button"
-            className={css.teamChip}
-            onClick={(event) => {
-              setPopover(popover?.kind === 'team' ? null : { kind: 'team', anchor: event.currentTarget })
-            }}
-          >
-            {t('teamChip', { members: teamView.team.members.length, tasks: teamView.team.tasks.length })}
-          </button>
-        )}
         <button
           type="button"
           className={legacy.subagentRefresh}
@@ -423,6 +402,16 @@ export function SubagentView(props: {
           <IconRefreshOutline14 />
         </button>
       </div>
+      {rootId !== undefined && teamView?.available === true && teamView.team !== null && (
+        <TeamBoard
+          rootId={rootId}
+          members={teamView.team.members}
+          tasks={teamView.team.tasks}
+          onChanged={team.refresh}
+          collapsed={teamBoardCollapsed}
+          onToggleCollapsed={() => { setTeamBoardCollapsed(current => !current) }}
+        />
+      )}
       {failedParents.length > 0 && (
         <div className={legacy.subagentError}>
           <span>{t('catalogLoadFailed', { count: failedParents.length })}</span>

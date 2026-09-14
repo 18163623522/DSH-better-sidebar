@@ -408,6 +408,8 @@ export const th: Record<string, string> = {
   tasksZoomOut: 'ซูมออก',
   tasksZoomFit: 'พอดีผืนผ้าใบ',
   tasksNodeJump: 'เปิดบันทึกถอดความ',
+  tasksNodeDetail: 'รายละเอียดโหนด',
+  workflowRun: 'เวิร์กโฟลว์',
   tasksNodeState: 'สถานะ',
   tasksNodeMode: 'โหมด',
   tasksNodeModel: 'โมเดล',

@@ -410,6 +410,8 @@ export const pl: Record<string, string> = {
   tasksZoomOut: 'Oddal',
   tasksZoomFit: 'Dopasuj do kanwy',
   tasksNodeJump: 'Otwórz transkrypcję',
+  tasksNodeDetail: 'Szczegóły węzła',
+  workflowRun: 'Przepływ pracy',
   tasksNodeState: 'Stan',
   tasksNodeMode: 'Tryb',
   tasksNodeModel: 'Model',

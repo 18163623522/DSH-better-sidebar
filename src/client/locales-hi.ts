@@ -408,6 +408,8 @@ export const hi: Record<string, string> = {
   tasksZoomOut: 'ज़ूम आउट',
   tasksZoomFit: 'कैनवास में फ़िट करें',
   tasksNodeJump: 'ट्रांसक्रिप्ट खोलें',
+  tasksNodeDetail: 'नोड विवरण',
+  workflowRun: 'वर्कफ़्लो',
   tasksNodeState: 'स्थिति',
   tasksNodeMode: 'मोड',
   tasksNodeModel: 'मॉडल',

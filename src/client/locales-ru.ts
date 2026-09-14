@@ -406,6 +406,8 @@ export const ru: Record<string, string> = {
   tasksZoomOut: 'Уменьшить',
   tasksZoomFit: 'По размеру холста',
   tasksNodeJump: 'Открыть транскрипт',
+  tasksNodeDetail: 'Сведения об узле',
+  workflowRun: 'Рабочий процесс',
   tasksNodeState: 'Состояние',
   tasksNodeMode: 'Режим',
   tasksNodeModel: 'Модель',

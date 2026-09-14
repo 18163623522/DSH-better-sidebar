@@ -408,6 +408,8 @@ export const ja: Record<string, string> = {
   tasksZoomOut: '縮小',
   tasksZoomFit: 'キャンバスに合わせる',
   tasksNodeJump: 'トランスクリプトを開く',
+  tasksNodeDetail: 'ノード詳細',
+  workflowRun: 'ワークフロー',
   tasksNodeState: '状態',
   tasksNodeMode: 'モード',
   tasksNodeModel: 'モデル',

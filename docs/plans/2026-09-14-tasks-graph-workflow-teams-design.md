@@ -84,6 +84,24 @@ client 半（src/client/）
 6. **测试断言从 `container.textContent` 迁到 `document.body`**：输出浮窗 portal 到 body（#425 契约），jobs-view 套件相应更新。
 7. **fold 聚合节点的 aria-label 带计数文本**：与控制条的 fold 切换按钮消歧（两者同文案会导致 a11y 选择器歧义）。
 
+## 复审返工（2026-09-14 晚，真机截图反馈）
+
+用户在 3384（`DSH_HOME=~/.dsh`，profile web）看到首版实现后给出四条反馈，逐条定位并修复：
+
+| 反馈 | 根因 | 修法 |
+|---|---|---|
+| 「按钮和文本的颜色不对，不够后现代」 | 新 CSS **17 处裸用 `var(--dsw-alias-accent)`——该令牌在 DSH 主题里不存在**（旧文件的用法都带 fallback 才没暴露），声明被浏览器整条丢弃；容器边框用的 `border-l1` 只有 4% 黑，几乎不可见 | accent → `--dsw-alias-state-business-primary`；容器边 → `--dsw-alias-border-l4`（16%）；整体改回 mockup 语言：ink 边框、3px 硬投影、mono 微型字 + 字距大写标签、点阵画布、横向缩放条 |
+| 「点 ⓘ 没反应 / 图里点不动（树能点）」 | 画布 `pointerdown` 里对容器 `setPointerCapture`，捕获把派生 click 重定向到容器，节点永远收不到点击（jsdom 不模拟捕获语义，所以单测全绿——**只有真实浏览器能暴露**） | 去掉 capture，pan 仅从背景起手（`closest('[data-graph-node]'/'[data-graph-controls]')` 直接返回），监听挂 window |
+| 「图很小 / 不在中间 / 任务板没显示」 | fit 在容器为 0 尺寸时静默放弃且不再重试；只居中横轴、上限 1.0；窄面板里 5 个兄弟节点挤成 770px 宽 → 缩到 35% | ResizeObserver + 首次非零尺寸补 fit、双轴居中、`FIT_MIN_SCALE=0.78` 可读性下限；**按容器宽度求解排布**（`layoutTasksGraphForWidth`：先取仍满足可读性预算的最宽排布，只有窄到 ≤1 列才允许 20% 横向溢出）；任务板改为**常驻可见条**（不再藏在 chip 后） |
+| 「卡片信息过多过杂，都被省略看不见」 | 卡片同时塞 displayTitle + 模式 + 状态 + 模型 + live 文本，132px 宽（窄面板的目标宽度）下全部省略号 | 卡片只留三层：标题（1 行）/ mono 元信息（模式或模型 · 状态）/ live 行（仅运行中）；其余（会话标题、team 角色、模型全名、最新文本、跳转）进 ⓘ 浮窗 |
+| 「非常窄，非常挤」 | 设计按宽画布做，未以原生右侧栏窄宽为目标 | 度量全部改按 mockup 的 360×660 基准（卡片 132×46、行距 112）；行高/间距/字号显式声明（宿主 body 行高曾把行撑高）；`user-select: none` 防拖拽选中文本 |
+
+回归面：`tests/tasks-page.spec.tsx` 增 3 例（背景 pointerdown 后节点仍可激活、节点上的手势绝不启动 pan、团队任务板无需点击即常驻可见）；`tests/tasks-graph-layout.spec.ts` 重写 9 例（band 换行、换行 band 不得压到兄弟子树行、宽度求解两段式、运行时预留 live 行）。
+
+### 本地可视化自检 harness（未入库，`tmp-visual/`，git-excluded）
+
+真实浏览器里的组件级回归无法靠 jsdom 覆盖（点击捕获、fit/居中、主题令牌解析都是浏览器行为）。harness 用 esbuild 把**真实组件** + mockup 形状的 fixture（走 `buildTasksModel`，因此折叠/重挂/富化都真实生效）打包进一个页面，注入从 `dsh-client-ui-theme` 抽出的令牌 CSS，`@deepseek-ai/dsh-client-ui-primitives` 别名到轻量桩（避免把 katex/shiki 资源拖进截图包），再由 Playwright 在 360px / 720px 两档宽度截图并断言：节点点击回调、ⓘ 回调、背景拖拽平移量。本次返工的四条反馈里有三条正是它先复现、修完再确认的。
+
 ## 验证
 
 - `pnpm typecheck` / `pnpm vitest run`（1401：新增 fold/路由/模型/布局/页面交互 58 个用例）/ `pnpm build` 全绿。

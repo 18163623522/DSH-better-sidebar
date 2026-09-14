@@ -394,6 +394,8 @@ export const de: Record<string, string> = {
   tasksZoomOut: 'Verkleinern',
   tasksZoomFit: 'An die Canvas anpassen',
   tasksNodeJump: 'Transkript öffnen',
+  tasksNodeDetail: 'Knotendetails',
+  workflowRun: 'Workflow',
   tasksNodeState: 'Status',
   tasksNodeMode: 'Modus',
   tasksNodeModel: 'Modell',

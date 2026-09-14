@@ -391,6 +391,8 @@ export const pt: Record<string, string> = {
   tasksZoomOut: 'Afastar',
   tasksZoomFit: 'Ajustar à tela',
   tasksNodeJump: 'Abrir transcrição',
+  tasksNodeDetail: 'Detalhes do nó',
+  workflowRun: 'Workflow',
   tasksNodeState: 'Estado',
   tasksNodeMode: 'Modo',
   tasksNodeModel: 'Modelo',

@@ -423,6 +423,8 @@ export const zhMO: Record<string, string> = {
   tasksZoomOut: '縮小',
   tasksZoomFit: '適應畫布',
   tasksNodeJump: '檢視逐字稿',
+  tasksNodeDetail: '節點詳情',
+  workflowRun: '工作流',
   tasksNodeState: '狀態',
   tasksNodeMode: '模式',
   tasksNodeModel: '模型',
