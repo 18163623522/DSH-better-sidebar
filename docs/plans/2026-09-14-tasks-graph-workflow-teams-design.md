@@ -102,8 +102,14 @@ client 半（src/client/）
 
 真实浏览器里的组件级回归无法靠 jsdom 覆盖（点击捕获、fit/居中、主题令牌解析都是浏览器行为）。harness 用 esbuild 把**真实组件** + mockup 形状的 fixture（走 `buildTasksModel`，因此折叠/重挂/富化都真实生效）打包进一个页面，注入从 `dsh-client-ui-theme` 抽出的令牌 CSS，`@deepseek-ai/dsh-client-ui-primitives` 别名到轻量桩（避免把 katex/shiki 资源拖进截图包），再由 Playwright 在 360px / 720px 两档宽度截图并断言：节点点击回调、ⓘ 回调、背景拖拽平移量。本次返工的四条反馈里有三条正是它先复现、修完再确认的。
 
-## 验证
+## 验证结果（2026-09-14）
 
-- `pnpm typecheck` / `pnpm vitest run`（1401：新增 fold/路由/模型/布局/页面交互 58 个用例）/ `pnpm build` 全绿。
-- `pnpm test:mount`（钉版 npx CLI）：见实施偏差 5。
-- 真机：3384（profile r，无实验层）验证降级矩阵左列；3080（~/.dsh-web）验证 teams/workflow 实景。
+PR：[#680](https://github.com/omdsh-dev/DSH-better-sidebar/pull/680)（分支 `feat/tasks-graph-workflow-teams`）。
+
+- `pnpm typecheck` ✅；`pnpm vitest run` **133 文件 / 1400 用例通过**（新增：host 路由 29、模型 7、布局 9、页面交互 9）；`pnpm build` ✅（皮肤契约 / 市场清单 / chunk 纯度守卫全绿）。
+- `pnpm test:mount`（`DSH_CMD="npx -y --package @deepseek-ai/dsh@0.1.5-rc.2 dsh"`，本地必须绕开桌面 shim，见实施偏差 5）**7/7 通过**：真实挂载 + 无头 tab 全扫。其 PERF_JSON 里可读到 scratch profile（**无实验层**，等价 3384 的 profile）上 `/sidebar/api/workflows.list → {runs:[]}`、`/sidebar/api/teams.view → {available:false}` —— 即降级矩阵左列的实测证据。
+- 3080（`~/.dsh-web`，含实验层）实景协议验证：`teams.view → {available:true, team:null}`、`workflows.list → {runs:[]}`、`teams.taskCreate → 404 team-error "the tree root leads no team"`（三分支里「层在、无团队」这条）。
+- 本地可视化自检 harness（真实组件 + 真实主题令牌 + Playwright，360px/720px 两档）：节点点击、ⓘ 浮窗、背景平移（Δ+60/+40）、折叠聚合、任务板常驻全部通过；本轮四条真机反馈中的三条由它先复现。
+- 复现步骤与陷阱（令牌提取、primitives 桩、shim 与 tarball 重装坑）已沉淀到 `.workspace-docs/notes/dsh/09-14-dsh-better-sidebar任务管理页重构（工作流图与Teams任务板）.md`。
+
+未在本机自动化验证、留给用户实机确认的一项：3384 桌面应用**重启后**的 UI 级复看（新 bundle 已装进 `~/.dsh/profiles/web`，与仓库构建产物 SHA-256 一致）。
