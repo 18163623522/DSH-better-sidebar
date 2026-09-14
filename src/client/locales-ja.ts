@@ -19,7 +19,7 @@ export const ja: Record<string, string> = {
   files: 'ファイル',
   guideDescFiles: 'ワークスペースのファイルツリーを閲覧し、クリックでプレビュー／編集',
   guideDescGit: 'Git の変更と今回のセッションのファイル変更を 1 つのタブに',
-  guideDescSubagent: 'サブエージェントの構成とバックグラウンドタスクをリアルタイム表示',
+  guideDescSubagent: 'ワークフロー図・チームタスクボード・バックグラウンドジョブをリアルタイム表示',
   guideDescSidechat: '現在のセッションの文脈を引き継ぐ独立した追加スレッド',
   guideDescTerminal: '本物のシェル（xterm + pty）、再接続対応',
   guideDescBrowser: '埋め込みブラウザ。チャット内のリンクも引き受け可能',
