@@ -13,7 +13,7 @@
  * latest output text, jump action — lives in the anchored popover.
  */
 import type { ReactNode } from 'react'
-import { StateDot, type StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { LastActivity } from '../subagent-activity.ts'
 import type { TasksAgentNode, TasksNodeState, TasksWorkflowNode } from './tasks-model.ts'
 import { toolGlyph } from './tool-icons.tsx'

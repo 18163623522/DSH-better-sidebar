@@ -38,7 +38,7 @@ import {
   rootAncestor,
 } from './subagent-detect.ts'
 import { type LastActivity } from '../subagent-activity.ts'
-import { collectTreeJobs, orderJobs, type TreeJob } from './subagent-jobs.ts'
+import { collectTreeJobs, orderJobs } from './subagent-jobs.ts'
 import { api, type TeamsViewResult } from './api.ts'
 import { usePolling } from './use-polling.ts'
 import { t } from './locales.ts'
@@ -52,7 +52,6 @@ import { TeamBoard } from './TeamBoard.tsx'
 import type { SidebarStore } from './state.ts'
 import type { WorkflowRunView } from '../workflow-runs.ts'
 import legacy from './SubagentView.module.css'
-import css from './tasks-graph.module.css'
 
 /** Refresh cadence of the live "last text + tool call" lines while a child runs. */
 const POLL_MS = 3000
@@ -116,6 +115,9 @@ function useTeamView(
     if (rootId === undefined) return
     const result = await api.teamsView(rootId, signal)
     if (!signal.aborted) setView(result)
+    // `epoch` is the manual-refresh trigger: bumping it changes the task
+    // identity, which restarts the poller with an immediate tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rootId, epoch])
   usePolling(rootId !== undefined && active, poll, {
     intervalMs: TELEMETRY_POLL_MS,
@@ -463,7 +465,6 @@ export function SubagentView(props: {
       <JobsDrawer
         rows={jobRows}
         agentCount={agentCount}
-        active={active}
         onOpenOutput={(row, anchor) => {
           setPopover(popover?.kind === 'job' && popover.jobId === row.job.id
             ? null
