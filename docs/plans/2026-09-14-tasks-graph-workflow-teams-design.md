@@ -102,6 +102,19 @@ client 半（src/client/）
 
 真实浏览器里的组件级回归无法靠 jsdom 覆盖（点击捕获、fit/居中、主题令牌解析都是浏览器行为）。harness 用 esbuild 把**真实组件** + mockup 形状的 fixture（走 `buildTasksModel`，因此折叠/重挂/富化都真实生效）打包进一个页面，注入从 `dsh-client-ui-theme` 抽出的令牌 CSS，`@deepseek-ai/dsh-client-ui-primitives` 别名到轻量桩（避免把 katex/shiki 资源拖进截图包），再由 Playwright 在 360px / 720px 两档宽度截图并断言：节点点击回调、ⓘ 回调、背景拖拽平移量。本次返工的四条反馈里有三条正是它先复现、修完再确认的。
 
+## 第二轮返工（2026-09-14 深夜，13 条反馈）
+
+用户第二轮反馈三条，逐条落地：
+
+| 反馈 | 做法 |
+|---|---|
+| 任务板「太窄太小」，且任务应显示到**对应节点**上 | 任务按 `ownerName → 成员名 → 成员会话 id` 映射进模型（`TasksNodeTask`），节点第 4 行渲染「☑ 主题 · 状态 +N」；任务板改为：成员 Pill 行**兼当负责人筛选**、任务行 = 状态点 + 主题 + 负责人 + 状态 Tag + **一个**溢出菜单；新建/编辑改为 `Modal` + `Input`（真正的宽表单），负责人用 Pill 选择 |
+| 所有组件用自建、不用原生 HTML | 任务板全量换成宿主 primitives：`Menu`（含子菜单的改派）/`Modal`/`Input`/`Button`/`Pill`/`Tag`/`Switch`/`StateDot`；后台任务行的 kind/状态用 `Tag`、终止用 `Button`、输出浮窗的复制/跟随/终止同理。页面仅剩结构性 div（卡片、树行）不是表单控件 |
+| Agent 用图标而非自绘 SVG；优化工具展示 | `◉/◇/▶/✓/⇪/⇩/i/☰/⌗/⌂` 等字形全部删除，改用宿主图标：`IconAgentPresetOutline16`（代理）、`IconUserOutline16`（teammate）、`IconBranchOutline16`（workflow run）、`IconChecklistOutline14`（折叠聚合 / 任务行 / 折叠按钮）、`IconTreeCorner8x10`（树视图）、`IconFullscreenOutline16`（适应）、`IconEllipsisOutline16`（节点详情）、`IconCopyOutline16`/`IconStopFill16`（作业）。live 行改为工具自身图标 + 工具名 + 参数（去掉手绘方框） |
+| 后台任务弹窗要能拖动 + 体验 | `AnchoredPopover` 增加 `draggable`（拖动整体、按钮/输入/`pre` 不拦截、双击复位、视口内钳制）与 `width` 参数；输出浮窗宽 380 且可拖，新增「复制输出」「跟随最新」开关（关闭后不再尾钉）、kind/状态 Tag、拖动提示；抽屉行高亮当前打开的作业 |
+
+i18n：本轮新增 19 条文案，zh/en/ja + 18 份第三语言词典同步（`tests/locales.spec.ts` 16/16）。
+
 ## 验证结果（2026-09-14）
 
 PR：[#680](https://github.com/omdsh-dev/DSH-better-sidebar/pull/680)（分支 `feat/tasks-graph-workflow-teams`）。

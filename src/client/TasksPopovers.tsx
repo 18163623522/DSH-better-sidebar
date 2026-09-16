@@ -8,10 +8,12 @@
  */
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
-import { StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconRightUpOutline14, StateDot, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SidebarSubagentAddress } from '../context-types.ts'
 import type { TasksAgentNode, TasksWorkflowNode } from './tasks-model.ts'
-import { flatten, nodeDotState, workflowStatusKey } from './tasks-shared.tsx'
+import {
+  flatten, nodeDotState, taskDotState, taskStatusKey, workflowStatusKey,
+} from './tasks-shared.tsx'
 import { t, type CopyKey } from './locales.ts'
 import css from './tasks-graph.module.css'
 
@@ -80,10 +82,33 @@ export function AgentNodePopover(props: {
       {liveText !== undefined && liveTool !== undefined && (
         <div className={css.popHint}>{liveText}</div>
       )}
+      {(node.tasks?.length ?? 0) > 0 && (
+        <div className={css.popSection}>
+          <div className={css.popGroup}>{t('tasksNodeTasks')}</div>
+          <div className={css.popList}>
+            {(node.tasks ?? []).map(task => (
+              <div key={task.id} className={css.popListRow} title={task.subject}>
+                <StateDot state={taskDotState(task)} size={6} />
+                <span className={css.popListLabel}>{task.subject}</span>
+                <Tag tone={task.status === 'completed' ? 'success' : task.ready ? 'info' : 'warning'}>
+                  {t(taskStatusKey(task.status))}
+                </Tag>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {(node.childAddress !== undefined || node.parentId === undefined) && (
-        <button type="button" className={css.popPrimary} onClick={() => { onJump(node) }}>
-          {t('tasksNodeJump')}
-        </button>
+        <div className={css.popFoot}>
+          <Button
+            variant="primary"
+            size="sm"
+            icon={<IconRightUpOutline14 size={12} />}
+            onClick={() => { onJump(node) }}
+          >
+            {t('tasksNodeJump')}
+          </Button>
+        </div>
       )}
     </div>
   )

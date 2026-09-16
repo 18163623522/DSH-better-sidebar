@@ -180,6 +180,19 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+.nodeGlyph {
+  display: inline-flex;
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.treeGlyph {
+  display: inline-flex;
+  flex: none;
+  margin-top: 2px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
 .nodeMeta {
   margin-top: 2px;
   font-family: var(--ds-font-family-code);
@@ -189,6 +202,66 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ── Node shared-task line (team members only) ─────────────────────────── */
+
+/* The node's detail affordance: a small ghost button pinned to the corner. */
+.nodeInfo {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 18px;
+  padding: 0 2px;
+  opacity: 0.55;
+}
+
+.node:hover .nodeInfo,
+.nodeInfo:focus-visible {
+  opacity: 1;
+}
+
+.taskLine {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  min-width: 0;
+  font-size: 9.5px;
+  line-height: 1.3;
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.taskGlyph {
+  display: inline-flex;
+  flex: none;
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.taskSubject {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.taskState {
+  flex: none;
+  font-family: var(--ds-font-family-code);
+  font-size: 8.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.taskMore {
+  flex: none;
+  padding: 0 3px;
+  border: 1px solid var(--dsw-alias-border-l4);
+  border-radius: 2px;
+  font-family: var(--ds-font-family-code);
+  font-size: 8.5px;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 /* ── Live activity row (icon + tool + args; shared by both modes) ──────── */
@@ -443,6 +516,49 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+.popHeadActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.popFoot {
+  display: flex;
+  margin-top: 8px;
+}
+
+.popFoot > * {
+  flex: 1;
+}
+
+.jobPopTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.jobPopMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 10px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.jobPopActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
 .popTitle {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -583,6 +699,34 @@
   color: var(--dsw-alias-state-warn-primary);
 }
 
+/* ── Task create/edit dialog ───────────────────────────────────────────── */
+
+.taskForm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.taskField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.taskLabel {
+  font-family: var(--ds-font-family-code);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.taskOwnerRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
 /* ── Team board (always-visible strip under the header) ────────────────── */
 
 .teamBoard {
@@ -621,6 +765,28 @@
 .teamBoardChev {
   margin-left: auto;
   color: var(--dsw-alias-label-tertiary);
+}
+
+.teamBoardIcon {
+  display: inline-flex;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.teamMemberPill {
+  font-size: 9.5px;
+}
+
+.teamNote {
+  padding: 0 12px 6px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.teamActions {
+  display: flex;
+  gap: 6px;
+  padding: 0 12px 8px;
 }
 
 .teamMembers {

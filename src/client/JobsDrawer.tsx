@@ -1,15 +1,23 @@
 /**
- * The background-jobs bottom drawer of the Tasks page: the tree's jobs
- * (owner-labeled, fed by the `session/jobs` push mirror) collapse into a
- * bottom bar that AUTO-COLLAPSES when the agent count crosses the page's
- * threshold — the manual toggle always wins afterwards. Job output no
- * longer docks inside the page: clicking a row opens an anchored popover
- * (event replay — never the model's job_output cursor). Live rows keep the
- * two-click-confirm kill.
+ * The background-jobs bottom drawer of the Tasks page and its output popover.
+ *
+ * Drawer: the tree's jobs (owner-labeled, fed by the `session/jobs` push
+ * mirror) collapse into a bottom bar that AUTO-COLLAPSES once the tree has
+ * many agents — the manual toggle always wins afterwards.
+ *
+ * Popover: clicking a row opens a DRAGGABLE, portalled output card (see
+ * AnchoredPopover) instead of docking a pane inside the page. It shows the
+ * output the MODEL has read (event replay — never the model's job_output
+ * cursor), with a copy action, a follow-latest switch, the two-click kill,
+ * and a terminal-style tail while the job runs.
+ *
+ * Every control is a host primitive (Button / Tag / Switch / StateDot).
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import clsx from 'clsx'
-import { IconChevronUpOutline14, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  Button, IconChevronUpOutline14, IconCopyOutline16, IconStopFill16, StateDot, Switch, Tag,
+  type TagTone,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SidebarJobView } from '../context-types.ts'
 import {
   formatJobDuration,
@@ -19,7 +27,6 @@ import {
   type TreeJob,
 } from './subagent-jobs.ts'
 import { api, type JobOutputResult } from './api.ts'
-import { IconStopOutline16 } from './icons.tsx'
 import { t } from './locales.ts'
 import css from './tasks-graph.module.css'
 
@@ -27,6 +34,16 @@ import css from './tasks-graph.module.css'
 const JOB_POLL_MS = 2000
 /** How long the kill button stays armed before it needs re-confirming. */
 const JOB_KILL_ARM_MS = 3000
+/** The agent count at which the drawer starts collapsed. */
+export const JOBS_DRAWER_COLLAPSE_AT = 8
+
+/** The Tag tone of one job status. */
+function jobTone(job: SidebarJobView): TagTone {
+  if (job.status === 'running') return 'info'
+  if (job.status === 'completed') return 'success'
+  if (job.status === 'failed') return 'danger'
+  return 'neutral'
+}
 
 export interface JobsDrawerProps {
   rows: readonly TreeJob[]
@@ -34,13 +51,12 @@ export interface JobsDrawerProps {
   agentCount: number
   /** Open the output popover of one row (anchor = the row's main button). */
   onOpenOutput(row: TreeJob, anchor: HTMLElement): void
+  /** The job whose output popover is currently open (row highlight). */
+  openJobId?: string
 }
 
-/** The agent count at which the drawer starts collapsed. */
-export const JOBS_DRAWER_COLLAPSE_AT = 8
-
 export function JobsDrawer(props: JobsDrawerProps): ReactNode {
-  const { rows, agentCount, onOpenOutput } = props
+  const { rows, agentCount, onOpenOutput, openJobId } = props
   const autoOpen = agentCount < JOBS_DRAWER_COLLAPSE_AT
   /** Manual override; undefined = follow the auto rule. */
   const [manualOpen, setManualOpen] = useState<boolean | undefined>(undefined)
@@ -103,15 +119,11 @@ export function JobsDrawer(props: JobsDrawerProps): ReactNode {
         <span>{t('jobs')}</span>
         <span className={css.jobsBigNum}>{liveCount > 0 ? liveCount : rows.length}</span>
         <span className={css.jobsDrawerCount}>{countLabel}</span>
-        <span className={clsx(css.jobsDrawerChev, open && css.jobsDrawerChevOpen)} aria-hidden="true">
+        <span className={css.jobsDrawerChev} data-open={open ? 'true' : 'false'} aria-hidden="true">
           <IconChevronUpOutline14 size={12} />
         </span>
       </button>
-      {!autoOpen && (
-        <div className={css.jobsAutoNote}>
-          {t('jobsAutoCollapsed')}
-        </div>
-      )}
+      {!autoOpen && <div className={css.jobsAutoNote}>{t('jobsAutoCollapsed')}</div>}
       {open && (
         <div className={css.jobsDrawerBody}>
           {rows.map((row) => {
@@ -125,39 +137,47 @@ export function JobsDrawer(props: JobsDrawerProps): ReactNode {
               : (job.finishedAt ?? job.startedAt) - job.startedAt
             const secondary = [
               ...(multiOwner ? [row.ownerTitle] : []),
-              jobStatusLabel(job.status, t),
               ...(job.detail !== undefined && job.detail !== '' ? [job.detail] : []),
               formatJobDuration(elapsed, t),
             ].filter(Boolean).join(' · ')
             return (
-              <div key={job.id} className={clsx(css.jobsRow, !live && css.jobsRowSettled)}>
-                <button
-                  type="button"
+              <div
+                key={job.id}
+                className={css.jobsRow}
+                data-settled={live ? 'false' : 'true'}
+                data-open={openJobId === job.id ? 'true' : 'false'}
+              >
+                <Button
+                  variant="ghost"
+                  size="sm"
                   className={css.jobsRowMain}
-                  aria-label={`${job.label} ${secondary}`}
+                  aria-label={`${job.label} ${jobStatusLabel(job.status, t)} ${secondary}`}
                   title={t('jobViewOutput')}
                   onClick={(event) => { onOpenOutput(row, event.currentTarget) }}
                 >
                   <StateDot state={jobDotState(job.status)} size={6} />
-                  <span className={css.jobsKind}>{job.kind}</span>
+                  <Tag tone="quiet">{job.kind}</Tag>
                   <span className={css.jobsLabel} title={job.label}>{job.label}</span>
+                  <Tag tone={jobTone(job)}>{jobStatusLabel(job.status, t)}</Tag>
                   <span className={css.jobsMeta}>{secondary}</span>
-                </button>
+                </Button>
                 {job.status === 'running' && (
-                  <button
-                    type="button"
-                    className={clsx(css.jobsKill, armed && css.jobsKillArmed)}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={css.jobsKill}
+                    data-armed={armed ? 'true' : 'false'}
+                    icon={<IconStopFill16 size={11} />}
                     aria-label={armed ? t('jobKillConfirm') : t('jobKill')}
                     title={armed ? t('jobKillConfirm') : t('jobKill')}
                     disabled={killing}
-                    onClick={(event) => {
-                      event.stopPropagation()
+                    onClick={() => {
                       if (armed) void kill(row)
                       else setArmedId(job.id)
                     }}
                   >
-                    {armed ? '!' : <IconStopOutline16 size={12} />}
-                  </button>
+                    {armed ? t('jobKillConfirm') : undefined}
+                  </Button>
                 )}
                 {killFailed && <span className={css.jobsKillError}>{t('jobKillError')}</span>}
               </div>
@@ -172,8 +192,9 @@ export function JobsDrawer(props: JobsDrawerProps): ReactNode {
 /**
  * The output popover content of one job: the text the MODEL has read so far
  * (replayed from the owner session's event log), refreshed every
- * {@link JOB_POLL_MS} while the job runs and the page is visible, pinned to
- * the newest output like a terminal tail while live.
+ * {@link JOB_POLL_MS} while the job runs and the page is visible. The reader
+ * can copy the output and turn the terminal-style tail off; the kill action
+ * keeps its two-click confirm.
  */
 export function JobOutputPopoverContent(props: {
   ownerSessionId: string
@@ -182,8 +203,14 @@ export function JobOutputPopoverContent(props: {
 }): ReactNode {
   const { ownerSessionId, job, active } = props
   const [state, setState] = useState<'loading' | JobOutputResult | 'error'>('loading')
+  const [follow, setFollow] = useState(true)
+  const [copied, setCopied] = useState(false)
+  const [armed, setArmed] = useState(false)
+  const [killing, setKilling] = useState(false)
+  const [killFailed, setKillFailed] = useState(false)
   const controllerRef = useRef<AbortController | undefined>(undefined)
   const preRef = useRef<HTMLPreElement>(null)
+  const live = isJobLive(job)
 
   const load = useCallback(async (): Promise<void> => {
     controllerRef.current?.abort()
@@ -201,47 +228,117 @@ export function JobOutputPopoverContent(props: {
 
   useEffect(() => {
     void load()
-    if (!active || !isJobLive(job)) return
+    if (!active || !live) return
     const timer = window.setInterval(() => { void load() }, JOB_POLL_MS)
     return () => { window.clearInterval(timer) }
-    // isJobLive reads only job.status; whole-job identity churns on every
-    // catalog refresh and must not restart the poll interval.
+    // isJobLive reads only job.status; the job object churns on every catalog
+    // refresh and must not restart the poll interval.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load, active, job.status])
 
   useEffect(() => () => { controllerRef.current?.abort() }, [])
 
-  // Terminal-tail behavior: while the job runs, each refresh pins the view
-  // to the newest output; a settled popover leaves scrolling to the reader.
+  // The armed kill disarms itself, like the drawer's button.
   useEffect(() => {
-    if (!isJobLive(job) || typeof state !== 'object' || state.text.length === 0) return
+    if (!armed) return
+    const timer = window.setTimeout(() => { setArmed(false) }, JOB_KILL_ARM_MS)
+    return () => { window.clearTimeout(timer) }
+  }, [armed])
+
+  // Terminal-tail behavior: each refresh pins the view to the newest output
+  // while the reader keeps the follow switch on.
+  useEffect(() => {
+    if (!live || !follow || typeof state !== 'object' || state.text.length === 0) return
     const pre = preRef.current
     if (pre !== null) pre.scrollTop = pre.scrollHeight
-    // Same as the poll effect above: only the status transition matters.
+    // Same as the poll effect: only the status transition matters.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, job.status])
+  }, [state, job.status, follow])
+
+  const text = typeof state === 'object' ? state.text : ''
+
+  /** Two-click kill from the popover (then re-read so the row settles). */
+  const kill = async (): Promise<void> => {
+    setKilling(true)
+    setKillFailed(false)
+    try {
+      await api.jobKill({ sessionId: ownerSessionId }, job.id)
+      setArmed(false)
+      await load()
+    } catch {
+      setKillFailed(true)
+    } finally {
+      setKilling(false)
+    }
+  }
 
   return (
-    <div className={css.popCard} style={{ width: 340 }}>
-      <span className={css.popTitle} title={job.label}>
-        <StateDot state={jobDotState(job.status)} size={8} /> {job.label}
-      </span>
-      <span className={css.popHint}>
-        {jobStatusLabel(job.status, t)}
-        {job.detail !== undefined && job.detail !== '' ? ` · ${job.detail}` : ''}
-      </span>
+    <div className={css.popCard} data-popover-handle>
+      <div className={css.popHead}>
+        <span>{t('jobs')}</span>
+        <span className={css.popHeadActions} data-popover-no-drag>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<IconCopyOutline16 size={12} />}
+            aria-label={copied ? t('jobCopied') : t('jobCopyOutput')}
+            title={copied ? t('jobCopied') : t('jobCopyOutput')}
+            disabled={text === ''}
+            onClick={() => {
+              void navigator.clipboard?.writeText(text).then(() => {
+                setCopied(true)
+                window.setTimeout(() => { setCopied(false) }, 1500)
+              })
+            }}
+          />
+        </span>
+      </div>
+      <div className={css.jobPopTitle}>
+        <StateDot state={jobDotState(job.status)} size={6} />
+        <span className={css.popTitle} title={job.label}>{job.label}</span>
+        <Tag tone={jobTone(job)}>{jobStatusLabel(job.status, t)}</Tag>
+      </div>
+      <div className={css.jobPopMeta}>
+        <Tag tone="quiet">{job.kind}</Tag>
+        {job.detail !== undefined && job.detail !== '' && <span>{job.detail}</span>}
+        <span className={css.popHint}>{t('jobDragHint')}</span>
+      </div>
       {state === 'loading' && <div className={css.popHint}>{t('loading')}</div>}
       {state === 'error' && <div className={css.popError}>{t('jobOutputError')}</div>}
       {typeof state === 'object' && (
         <>
           {state.text.length > 0
-            ? <pre ref={preRef} className={css.popPre}>{state.text}</pre>
+            ? <pre ref={preRef} className={css.popPre} data-popover-no-drag>{state.text}</pre>
             : state.read
               ? <div className={css.popHint}>{t('jobNoOutput')}</div>
               : <div className={css.popHint}>{t('jobNotReadYet')}</div>}
           {state.truncated && <div className={css.popHint}>{t('jobOutputTruncated')}</div>}
         </>
       )}
+      <div className={css.jobPopActions} data-popover-no-drag>
+        <Switch
+          checked={follow}
+          onChange={setFollow}
+          label={t('jobFollowTail')}
+          disabled={!live}
+        />
+        {live && (
+          <Button
+            variant={armed ? 'primary' : 'outline'}
+            size="sm"
+            className={armed ? css.jobPopKillArmed : undefined}
+            icon={<IconStopFill16 size={11} />}
+            disabled={killing}
+            onClick={() => {
+              if (armed) void kill()
+              else setArmed(true)
+            }}
+          >
+            {armed ? t('jobKillConfirm') : t('jobKill')}
+          </Button>
+        )}
+      </div>
+      {killFailed && <div className={css.popError}>{t('jobKillError')}</div>}
     </div>
   )
 }

@@ -23,11 +23,17 @@ import {
   type ReactNode,
 } from 'react'
 import clsx from 'clsx'
-import { StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  Button, IconChecklistOutline14, IconEllipsisOutline16, IconFullscreenOutline16, IconTreeCorner8x10,
+  StateDot,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TasksAgentNode, TasksFoldNode, TasksNode, TasksWorkflowNode } from './tasks-model.ts'
 import { tasksEdges } from './tasks-model.ts'
 import { GRAPH_NODE_W, layoutTasksGraphForWidth, type GraphBox } from './tasks-graph-layout.ts'
-import { agentMeta, foldPreviews, LiveLine, nodeDotState, workflowMeta } from './tasks-shared.tsx'
+import {
+  AgentGlyph, agentMeta, FoldGlyph, foldPreviews, LiveLine, nodeDotState, TaskLine,
+  WorkflowGlyph, workflowMeta,
+} from './tasks-shared.tsx'
 import { t } from './locales.ts'
 import css from './tasks-graph.module.css'
 
@@ -72,17 +78,19 @@ export function ViewModeToggle(props: {
 }): ReactNode {
   const { mode, onModeChange } = props
   const toTree = mode === 'graph'
-  const label = toTree ? `▤ ${t('tasksViewTree')}` : `⌗ ${t('tasksViewGraph')}`
+  const label = toTree ? t('tasksViewTree') : t('tasksViewGraph')
   return (
-    <button
-      type="button"
-      className={clsx(css.controlBtn, css.controlMode)}
+    <Button
+      variant="ghost"
+      size="sm"
+      className={css.controlMode}
+      icon={toTree ? <IconTreeCorner8x10 /> : <WorkflowGlyph size={13} />}
       aria-label={t(toTree ? 'tasksViewSwitchToTree' : 'tasksViewSwitchToGraph')}
       title={t(toTree ? 'tasksViewSwitchToTree' : 'tasksViewSwitchToGraph')}
       onClick={() => { onModeChange(toTree ? 'tree' : 'graph') }}
     >
       {label}
-    </button>
+    </Button>
   )
 }
 
@@ -90,16 +98,16 @@ export function ViewModeToggle(props: {
 export function FoldToggleButton(props: { folded: boolean; onToggleFold(): void }): ReactNode {
   const { folded, onToggleFold } = props
   return (
-    <button
-      type="button"
-      className={css.controlBtn}
+    <Button
+      variant="ghost"
+      size="sm"
+      className={clsx(css.controlBtn, folded && css.controlBtnActive)}
+      icon={<IconChecklistOutline14 size={13} />}
       aria-pressed={folded}
       aria-label={t(folded ? 'tasksFoldExpand' : 'tasksFoldCollapse')}
       title={t(folded ? 'tasksFoldExpand' : 'tasksFoldCollapse')}
       onClick={onToggleFold}
-    >
-      {folded ? '⇪' : '⇩'}
-    </button>
+    />
   )
 }
 
@@ -333,34 +341,36 @@ export function TasksGraph(props: TasksGraphProps): ReactNode {
         <div className={css.controls} data-graph-controls>
           <ViewModeToggle mode={mode} onModeChange={onModeChange} />
           <FoldToggleButton folded={folded} onToggleFold={onToggleFold} />
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
             className={css.controlBtn}
             aria-label={t('tasksZoomOut')}
             title={t('tasksZoomOut')}
             onClick={() => { zoomBy(1 / 1.2) }}
           >
             −
-          </button>
+          </Button>
           <span className={css.controlZoomLevel} aria-hidden="true">{Math.round(tf.k * 100)}%</span>
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
             className={css.controlBtn}
             aria-label={t('tasksZoomIn')}
             title={t('tasksZoomIn')}
             onClick={() => { zoomBy(1.2) }}
           >
             +
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             className={css.controlBtn}
+            icon={<IconFullscreenOutline16 size={13} />}
             aria-label={t('tasksZoomFit')}
             title={t('tasksZoomFit')}
             onClick={refit}
-          >
-            ⌂
-          </button>
+          />
         </div>
       </div>
     </div>
@@ -399,25 +409,24 @@ function renderAgentNode(
     >
       <span className={css.nodeHeader}>
         <StateDot state={nodeDotState(node.state)} size={6} className={css.nodeDot} />
-        <span className={css.nodeTitle} title={node.label}>
-          {node.team?.role === 'teammate' ? `◇ ${node.label}` : node.label}
-        </span>
+        <span className={css.nodeGlyph} aria-hidden="true"><AgentGlyph node={node} /></span>
+        <span className={css.nodeTitle} title={node.label}>{node.label}</span>
       </span>
       <span className={css.nodeMeta} title={agentMeta(node)}>{agentMeta(node)}</span>
       {node.state === 'running' && <LiveLine live={node.live} />}
-      <button
-        type="button"
-        className={css.treeInfo}
-        style={{ position: 'absolute', top: 3, right: 3 }}
-        aria-label={t('tasksNodeState')}
-        title={t('tasksNodeState')}
+      <TaskLine tasks={node.tasks} />
+      <Button
+        variant="ghost"
+        size="sm"
+        className={css.nodeInfo}
+        icon={<IconEllipsisOutline16 size={12} />}
+        aria-label={t('tasksNodeDetail')}
+        title={t('tasksNodeDetail')}
         onClick={(event) => {
           event.stopPropagation()
           onNodeInfo(node, event.currentTarget)
         }}
-      >
-        i
-      </button>
+      />
     </div>
   )
 }
@@ -445,7 +454,8 @@ function renderWorkflowNode(
     >
       <span className={css.nodeHeader}>
         <StateDot state={node.run.status === 'running' ? 'ongoing' : 'done'} size={6} className={css.nodeDot} />
-        <span className={css.nodeTitle} title={node.run.name}>{`▶ ${node.run.name}`}</span>
+        <span className={css.nodeGlyph} aria-hidden="true"><WorkflowGlyph /></span>
+        <span className={css.nodeTitle} title={node.run.name}>{node.run.name}</span>
       </span>
       <span className={css.nodeMeta}>{workflowMeta(node)}</span>
     </div>
@@ -474,13 +484,13 @@ function renderFoldNode(
       }}
     >
       <span className={css.nodeHeader}>
-        <StateDot state="done" size={6} className={css.nodeDot} />
+        <span className={css.nodeGlyph} aria-hidden="true"><FoldGlyph /></span>
         <span className={clsx(css.nodeTitle, css.nodeTitlePlain)}>
           {t('tasksFoldCompleted', { count: node.count })}
         </span>
       </span>
       <span className={css.nodeMeta} title={foldPreviews(node.previews)}>
-        {`⇪ ${t('tasksFoldExpand')} · ${foldPreviews(node.previews)}`}
+        {`${t('tasksFoldExpand')} · ${foldPreviews(node.previews)}`}
       </span>
     </div>
   )

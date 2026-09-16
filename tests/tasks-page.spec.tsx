@@ -54,14 +54,33 @@ function jsonResponse(value: unknown): Response {
 }
 
 let teamPayload: unknown = { available: false }
+const teamMutations: Array<{ method: string; body: Record<string, unknown> }> = []
+const fetchedMethods: string[] = []
 
 beforeEach(() => {
   teamPayload = { available: false }
-  vi.stubGlobal('fetch', async (url: string | URL | Request) => {
+  teamMutations.length = 0
+  fetchedMethods.length = 0
+  vi.stubGlobal('fetch', async (url: string | URL | Request, init?: RequestInit) => {
     const method = String(url).split('/').pop()
+    fetchedMethods.push(method ?? '')
+    const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
     if (method === 'subagents.live') return jsonResponse({ ok: true, value: { live: {} } })
     if (method === 'workflows.list') return jsonResponse({ ok: true, value: { runs: [] } })
     if (method === 'teams.view') return jsonResponse({ ok: true, value: teamPayload })
+    if (method === 'teams.taskCreate' || method === 'teams.taskUpdate') {
+      teamMutations.push({ method: method ?? '', body })
+      return jsonResponse({
+        ok: true,
+        value: {
+          ok: true,
+          value: {
+            id: 't9', revision: 9, subject: body.subject ?? 'x', description: body.description ?? '',
+            status: 'pending', blockedBy: [], writeScopes: [], ready: true, writeScopeWarnings: [],
+          },
+        },
+      })
+    }
     if (method === 'jobs.output') return jsonResponse({ ok: true, value: { text: 'out', truncated: false, read: true } })
     throw new Error(`unexpected fetch ${String(url)}`)
   })
@@ -178,8 +197,8 @@ describe('Tasks page interactions', () => {
     const { container, unmount } = renderRoot(
       createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
     )
-    // The root node's ⓘ opens the detail card (portaled to body).
-    const info = container.querySelector('button[aria-label="状态"]') as HTMLButtonElement
+    // The root node's detail affordance opens the detail card (portaled to body).
+    const info = container.querySelector('button[aria-label="节点详情"]') as HTMLButtonElement
     await act(async () => { info.click() })
     expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1)
     expect(document.body.textContent).toContain('查看转录')
@@ -254,6 +273,117 @@ describe('Tasks page graph interactions and team board', () => {
     expect(container.textContent).toContain('lead')
     expect(container.textContent).toContain('writer')
     expect(container.textContent).toContain('收窄卡片')
+    unmount()
+  })
+})
+
+describe('Tasks page: owned tasks, host-primitive controls, draggable output', () => {
+  /** A team payload whose only task is owned by the child agent. */
+  function teamWithOwnedTask(): unknown {
+    return {
+      available: true,
+      team: {
+        members: [
+          { id: 'root', name: 'lead', role: 'lead', status: 'running', diagnostics: [] },
+          { id: 'child-0', name: 'writer', role: 'teammate', status: 'running', model: 'glm-5.3', diagnostics: [] },
+        ],
+        tasks: [
+          {
+            id: 't1', revision: 1, subject: '收窄卡片与图标化', description: '细节', status: 'in_progress',
+            ownerName: 'writer', blockedBy: [], writeScopes: [], ready: true, writeScopeWarnings: [],
+          },
+          {
+            id: 't2', revision: 2, subject: '补点击回归', description: '', status: 'pending',
+            ownerName: 'writer', blockedBy: ['t1'], writeScopes: [], ready: false, writeScopeWarnings: [],
+          },
+        ],
+      },
+    }
+  }
+
+  it('renders the owned task on its agent node', async () => {
+    teamPayload = teamWithOwnedTask()
+    const store = makeStore(snapshotWithChildren(1))
+    const { container, unmount } = renderRoot(
+      createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
+    )
+    await act(async () => { await Promise.resolve() })
+    const node = container.querySelector('[data-graph-node="child-0"]') as HTMLElement
+    expect(node).not.toBeNull()
+    // The node carries the task subject + its status word + the +N tail.
+    expect(node.textContent).toContain('收窄卡片与图标化')
+    expect(node.textContent).toContain('进行中')
+    expect(node.textContent).toContain('+1')
+    unmount()
+  })
+
+  it('ships no native select/input: the board edits through host primitives', async () => {
+    teamPayload = teamWithOwnedTask()
+    const store = makeStore(snapshotWithChildren(1))
+    const { container, unmount } = renderRoot(
+      createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
+    )
+    await act(async () => { await Promise.resolve() })
+    // No native form controls anywhere on the page.
+    expect(container.querySelectorAll('select')).toHaveLength(0)
+    expect(container.querySelectorAll('input')).toHaveLength(0)
+    // The row's overflow menu is a host Menu opened from a host Button.
+    const menuButton = container.querySelector('button[aria-label^="任务操作"]') as HTMLButtonElement
+    expect(menuButton).not.toBeNull()
+    await act(async () => { menuButton.click() })
+    expect(document.body.textContent).toContain('完成')
+    expect(document.body.textContent).toContain('编辑')
+    expect(document.body.textContent).toContain('删除')
+    unmount()
+  })
+
+  it('creates a task through the dialog (host Input + modal) and posts the CAS-free create', async () => {
+    teamPayload = teamWithOwnedTask()
+    const store = makeStore(snapshotWithChildren(1))
+    const { container, unmount } = renderRoot(
+      createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
+    )
+    await act(async () => { await Promise.resolve() })
+    const create = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('新建任务'))
+    expect(create).toBeDefined()
+    await act(async () => { create?.click() })
+    // The dialog's field is a host Input (rendered as a real <input> inside the modal).
+    const field = document.querySelector('input[aria-label="标题"]') as HTMLInputElement
+    expect(field).not.toBeNull()
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+      setter?.call(field, '新任务标题')
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const dialog = document.querySelector('[role="dialog"]') as HTMLElement
+    expect(dialog).not.toBeNull()
+    const save = [...dialog.querySelectorAll('button')].find(button => button.textContent?.includes('新建任务'))
+    expect(save).toBeDefined()
+    expect(field.value).toBe('新任务标题')
+    expect((save as HTMLButtonElement).disabled).toBe(false)
+    await act(async () => { save?.click() })
+    await act(async () => { await Promise.resolve() })
+    expect(fetchedMethods).toContain('teams.taskCreate')
+    expect(teamMutations[0]?.body.subject).toBe('新任务标题')
+    unmount()
+  })
+
+  it('drags the job output popover away from its anchor', async () => {
+    const store = makeStore(snapshotWithChildren(1))
+    const { container, unmount } = renderRoot(
+      createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
+    )
+    const row = container.querySelector('button[aria-label*="sleep 300"]') as HTMLButtonElement
+    await act(async () => { row.click() })
+    const card = document.querySelector('[role="dialog"]') as HTMLElement
+    expect(card).not.toBeNull()
+    const before = { left: card.style.left, top: card.style.top }
+    await act(async () => {
+      card.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 40, clientY: 40 }))
+      window.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 140, clientY: 120 }))
+      window.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }))
+    })
+    expect({ left: card.style.left, top: card.style.top }).not.toEqual(before)
     unmount()
   })
 })

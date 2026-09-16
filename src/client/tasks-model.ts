@@ -25,6 +25,7 @@ import type {
   SidebarSubagentCatalog,
   SidebarSubagentChildEntry,
   SidebarTeamMemberView,
+  SidebarTeamTaskView,
 } from '../context-types.ts'
 import type { LastActivity } from '../subagent-activity.ts'
 import type { WorkflowRunView } from '../workflow-runs.ts'
@@ -32,6 +33,15 @@ import { isSideThreadSummary } from './subagent-detect.ts'
 
 /** Display state of one agent node (drives the dot + fold candidacy). */
 export type TasksNodeState = 'running' | 'idle' | 'done' | 'error'
+
+/** One shared task as a node shows it (the board owns the full editing). */
+export interface TasksNodeTask {
+  id: string
+  subject: string
+  status: 'pending' | 'in_progress' | 'completed'
+  /** Not ready = blocked by another task. */
+  ready: boolean
+}
 
 /** One agent node (root, subagent, teammate, or synthesized workflow member). */
 export interface TasksAgentNode {
@@ -60,6 +70,8 @@ export interface TasksAgentNode {
   }
   /** The catalog's durable children signal (fold candidacy's leaf test). */
   hasChildren?: boolean
+  /** Shared tasks owned by this agent (team boards only; empty otherwise). */
+  tasks?: TasksNodeTask[]
   /** Synthesized from a workflow run's member row (no catalog entry). */
   synthesized?: boolean
   /** Jump target of the row (absent on the root node). */
@@ -97,6 +109,8 @@ export interface TasksModelInput {
   live: Readonly<Record<string, LastActivity | undefined>>
   runs: readonly WorkflowRunView[]
   teamMembers: readonly SidebarTeamMemberView[]
+  /** The team's shared tasks; each lands on its OWNER's node. */
+  teamTasks?: readonly SidebarTeamTaskView[]
   /** Whether settled leaves collapse into fold nodes. */
   folded: boolean
 }
@@ -138,7 +152,23 @@ function memberOutcomeState(outcome: 'completed' | 'failed' | 'cancelled' | unde
  */
 export function buildTasksModel(input: TasksModelInput): TasksNode[] {
   const { byId, catalogs, rootId, currentSessionId, live, runs, teamMembers, folded } = input
+  const teamTasks = input.teamTasks ?? []
   const teamById = new Map(teamMembers.map(member => [member.id, member]))
+  /** Owner display name → node id (the board assigns by member name). */
+  const nodeByOwner = new Map<string, string>()
+  for (const member of teamMembers) nodeByOwner.set(member.name, member.id)
+  const tasksByNode = new Map<string, TasksNodeTask[]>()
+  for (const task of teamTasks) {
+    if (task.status === 'deleted' || task.ownerName === undefined) continue
+    const nodeId = nodeByOwner.get(task.ownerName)
+    if (nodeId === undefined) continue
+    const list = tasksByNode.get(nodeId)
+    const entry: TasksNodeTask = {
+      id: task.id, subject: task.subject, status: task.status, ready: task.ready,
+    }
+    if (list === undefined) tasksByNode.set(nodeId, [entry])
+    else list.push(entry)
+  }
   const runsByOrigin = new Map<string, WorkflowRunView[]>()
   for (const run of runs) {
     const list = runsByOrigin.get(run.originSessionId)
@@ -183,6 +213,7 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
         current: entry.id === currentSessionId,
         ...(live[entry.id] !== undefined ? { live: live[entry.id] } : {}),
         ...(team !== undefined ? { team } : {}),
+        ...(tasksByNode.get(entry.id) !== undefined ? { tasks: tasksByNode.get(entry.id) } : {}),
         hasChildren: entry.hasChildren,
         childAddress: { parentSessionId: parentId, childSessionId: entry.id, mode: entry.mode },
       })
@@ -203,6 +234,7 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
             : undefined
           if (existing !== undefined) {
             existing.parentId = runNode.id
+            if (tasksByNode.get(existing.id) !== undefined) existing.tasks = tasksByNode.get(existing.id)
             members.push(existing)
           } else {
             const childKnown = member.childId !== ''
@@ -215,6 +247,8 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
               activity: member.outcome === undefined ? 'running' : 'inactive',
               current: member.childId !== '' && member.childId === currentSessionId,
               synthesized: true,
+              ...(childKnown && tasksByNode.get(member.childId) !== undefined
+                ? { tasks: tasksByNode.get(member.childId) } : {}),
               ...(childKnown
                 ? { childAddress: { parentSessionId: parentId, childSessionId: member.childId, mode: 'one-shot' as const } }
                 : {}),
@@ -298,6 +332,7 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
     activity: rootSummary?.running === true ? 'running' : 'inactive',
     current: rootId === currentSessionId,
     ...(rootTeam !== undefined ? { team: rootTeam } : {}),
+    ...(tasksByNode.get(rootId) !== undefined ? { tasks: tasksByNode.get(rootId) } : {}),
   })
   appendChildren(rootId)
   return out

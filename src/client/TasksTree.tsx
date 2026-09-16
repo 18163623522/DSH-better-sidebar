@@ -7,9 +7,12 @@
  */
 import { useCallback, useMemo, useRef, type KeyboardEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconChevronUpOutline14, IconEllipsisOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TasksAgentNode, TasksNode, TasksWorkflowNode } from './tasks-model.ts'
-import { agentMeta, foldPreviews, LiveLine, nodeDotState, workflowMeta } from './tasks-shared.tsx'
+import {
+  AgentGlyph, agentMeta, FoldGlyph, foldPreviews, LiveLine, nodeDotState, TaskLine,
+  WorkflowGlyph, workflowMeta,
+} from './tasks-shared.tsx'
 import { FoldToggleButton, ViewModeToggle } from './TasksGraph.tsx'
 import { t } from './locales.ts'
 import css from './tasks-graph.module.css'
@@ -94,12 +97,12 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
           onClick={onToggleFold}
           onKeyDown={(event) => { activateOnKey(event, onToggleFold) }}
         >
-          <StateDot state="done" size={6} />
+          <span className={css.treeGlyph} aria-hidden="true"><FoldGlyph /></span>
           <span className={css.treeContent}>
             <span className={css.treeTitle}>
               {t('tasksFoldCompleted', { count: node.count })}
               <span className={css.treeMeta}>
-                {`${folded ? '⇪' : '⇩'} ${t(folded ? 'tasksFoldExpand' : 'tasksFoldCollapse')}`}
+                {t(folded ? 'tasksFoldExpand' : 'tasksFoldCollapse')}
               </span>
             </span>
             <span className={css.treeMeta}>{foldPreviews(node.previews)}</span>
@@ -123,8 +126,9 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
             }}
           >
             <StateDot state={node.run.status === 'running' ? 'ongoing' : 'done'} size={6} />
+            <span className={css.treeGlyph} aria-hidden="true"><WorkflowGlyph /></span>
             <span className={css.treeContent}>
-              <span className={css.treeTitle}>{`▶ ${node.run.name}`}</span>
+              <span className={css.treeTitle}>{node.run.name}</span>
               <span className={css.treeMeta}>{workflowMeta(node)}</span>
             </span>
           </div>
@@ -147,25 +151,25 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
             onKeyDown={(event) => { activateOnKey(event, () => { onActivate(node) }) }}
           >
             <StateDot state={nodeDotState(node.state)} size={6} />
+            <span className={css.treeGlyph} aria-hidden="true"><AgentGlyph node={node} /></span>
             <span className={css.treeContent}>
-              <span className={css.treeTitle}>
-                {node.team?.role === 'teammate' ? `◇ ${node.label}` : node.label}
-              </span>
+              <span className={css.treeTitle}>{node.label}</span>
               <span className={css.treeMeta}>{agentMeta(node)}</span>
               {node.state === 'running' && <LiveLine live={node.live} />}
+              <TaskLine tasks={node.tasks} />
             </span>
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
               className={css.treeInfo}
-              aria-label={t('tasksNodeState')}
-              title={t('tasksNodeState')}
+              icon={<IconEllipsisOutline16 size={12} />}
+              aria-label={t('tasksNodeDetail')}
+              title={t('tasksNodeDetail')}
               onClick={(event) => {
                 event.stopPropagation()
                 onNodeInfo(node, event.currentTarget)
               }}
-            >
-              i
-            </button>
+            />
           </div>
         )
     if (children.length === 0) return <div key={node.id}>{row}</div>
@@ -191,7 +195,10 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
         onKeyDown={onTreeKeyDown}
       >
         {loading === true && roots.length === 0 && (
-          <div className={css.viewEmptyHint}>{t('loading')}</div>
+          <div className={css.viewEmptyHint}>
+            <span className={css.treeGlyph} aria-hidden="true"><IconChevronUpOutline14 size={12} /></span>
+            {t('loading')}
+          </div>
         )}
         {roots.map(root => renderNode(root, 0))}
       </div>

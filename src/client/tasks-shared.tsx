@@ -1,27 +1,29 @@
 /**
- * Shared presentation bits of the Tasks page's two modes (graph + tree): the
- * state-dot mapping, the SHORT mono meta line (one or two tokens — the card
- * is 132px wide in the narrow native sidebar, so anything longer moves into
- * the ⓘ popover), the iconified live activity row ("glyph + tool + args",
- * the approved format), and the fold aggregate caption.
+ * Shared presentation bits of the Tasks page's two modes (graph + tree):
+ * the state dot, the agent/workflow/task GLYPHS (host primitive icons — the
+ * page draws no glyphs of its own), the short mono meta line, the node task
+ * line, and the iconified live activity row ("tool icon + tool + args").
  *
  * Card content contract (the page's answer to "everything is ellipsized"):
- *   line 1  dot + name            (11px, semibold, one line)
- *   line 2  mode/model · activity (9px mono, one line)
- *   line 3  live line             (running nodes only)
- * Everything else — display title, full model id, team role, phase names,
- * latest output text, jump action — lives in the anchored popover.
+ *   line 1  state dot + agent icon + name   (11px semibold, one line)
+ *   line 2  mode/model · activity           (9px mono, one line)
+ *   line 3  live tool line                  (running nodes only)
+ *   line 4  owned shared task               (team members only)
+ * Everything else lives in the popovers.
  */
 import type { ReactNode } from 'react'
-import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  IconAgentPresetOutline16, IconBranchOutline16, IconChecklistOutline14, IconUserOutline16,
+  type StateDotState,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { LastActivity } from '../subagent-activity.ts'
-import type { TasksAgentNode, TasksNodeState, TasksWorkflowNode } from './tasks-model.ts'
+import type { TasksAgentNode, TasksNodeState, TasksNodeTask, TasksWorkflowNode } from './tasks-model.ts'
 import { toolGlyph } from './tool-icons.tsx'
 import { t, type CopyKey } from './locales.ts'
 import css from './tasks-graph.module.css'
 
 /** Preview cap of one tool-call argument line. */
-const ARGS_PREVIEW = 42
+const ARGS_PREVIEW = 48
 /** Preview cap of one text line. */
 const TEXT_PREVIEW = 72
 
@@ -45,6 +47,21 @@ export function stateLabel(state: TasksNodeState): string {
   return t(key)
 }
 
+/** The task status label key. */
+export function taskStatusKey(status: TasksNodeTask['status']): CopyKey {
+  switch (status) {
+    case 'pending': return 'teamTaskPending'
+    case 'in_progress': return 'teamTaskInProgress'
+    case 'completed': return 'teamTaskCompleted'
+  }
+}
+
+/** The host StateDot semantic of a task row/line. */
+export function taskDotState(task: TasksNodeTask): StateDotState {
+  if (task.status === 'completed') return 'done'
+  return task.ready ? 'ongoing' : 'warning'
+}
+
 /** First `limit` characters with an ellipsis when truncated. */
 export function preview(text: string, limit: number = ARGS_PREVIEW): string {
   return text.length > limit ? `${text.slice(0, limit)}…` : text
@@ -53,6 +70,23 @@ export function preview(text: string, limit: number = ARGS_PREVIEW): string {
 /** Collapse whitespace for single-line previews. */
 export function flatten(text: string): string {
   return text.replace(/\s+/g, ' ').trim()
+}
+
+/** The host icon of one agent node (the lead and plain children share one). */
+export function AgentGlyph(props: { node: TasksAgentNode; size?: number }): ReactNode {
+  const size = props.size ?? 11
+  if (props.node.team?.role === 'teammate') return <IconUserOutline16 size={size} />
+  return <IconAgentPresetOutline16 size={size} />
+}
+
+/** The workflow-run glyph. */
+export function WorkflowGlyph(props: { size?: number }): ReactNode {
+  return <IconBranchOutline16 size={props.size ?? 11} />
+}
+
+/** The fold aggregate glyph. */
+export function FoldGlyph(props: { size?: number }): ReactNode {
+  return <IconChecklistOutline14 size={props.size ?? 11} />
 }
 
 /**
@@ -97,10 +131,39 @@ export function workflowStatusKey(status: TasksWorkflowNode['run']['status']): C
   }
 }
 
+/** The task a node surfaces first: in-progress, else pending, else the last. */
+export function primaryTask(tasks: readonly TasksNodeTask[]): TasksNodeTask | undefined {
+  return tasks.find(task => task.status === 'in_progress')
+    ?? tasks.find(task => task.status === 'pending')
+    ?? tasks[tasks.length - 1]
+}
+
 /**
- * The live activity row of a RUNNING agent: "glyph + tool + args" (the
- * approved format), plus the flattened last text line underneath. A running
- * node with neither reads as thinking.
+ * The node's shared-task line: an icon, the primary task's subject, its
+ * status word, and a `+N` tail when the agent owns more. Renders nothing
+ * without tasks, so non-team nodes keep the three-line shape.
+ */
+export function TaskLine(props: { tasks: readonly TasksNodeTask[] | undefined }): ReactNode {
+  const tasks = props.tasks ?? []
+  const primary = primaryTask(tasks)
+  if (primary === undefined) return null
+  return (
+    <span
+      className={css.taskLine}
+      title={tasks.map(task => `${task.subject}（${t(taskStatusKey(task.status))}）`).join('\n')}
+    >
+      <span className={css.taskGlyph} aria-hidden="true"><IconChecklistOutline14 size={9} /></span>
+      <span className={css.taskSubject}>{primary.subject}</span>
+      <span className={css.taskState}>{t(taskStatusKey(primary.status))}</span>
+      {tasks.length > 1 && <span className={css.taskMore}>{`+${tasks.length - 1}`}</span>}
+    </span>
+  )
+}
+
+/**
+ * The live activity row of a RUNNING agent: the tool's own icon + tool name +
+ * args (the approved format), plus the flattened last text line underneath.
+ * A running node with neither reads as thinking.
  */
 export function LiveLine(props: { live: LastActivity | undefined }): ReactNode {
   const { live } = props
@@ -111,7 +174,7 @@ export function LiveLine(props: { live: LastActivity | undefined }): ReactNode {
     <>
       {live.tool !== undefined && (
         <span className={css.live}>
-          <span className={css.liveGlyph} aria-hidden="true">{toolGlyph(live.tool.name)(8)}</span>
+          <span className={css.liveGlyph} aria-hidden="true">{toolGlyph(live.tool.name)(9)}</span>
           <span className={css.liveTool}>{live.tool.name}</span>
           {live.tool.args !== '' && <span className={css.liveArgs}>{preview(live.tool.args)}</span>}
         </span>

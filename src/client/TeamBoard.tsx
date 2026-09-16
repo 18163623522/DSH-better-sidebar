@@ -1,16 +1,24 @@
 /**
  * The Agent Teams board — ALWAYS VISIBLE under the page header whenever the
- * tree's root leads a team (the explicit review ask: the board must not hide
- * behind a chip). It is a full-width strip, not a side rail, because the
- * native sidebar is narrow (~360px): members wrap as chips and the task list
- * scrolls inside a bounded height, so the canvas keeps its room.
+ * tree's root leads a team, plus the task editor dialog. Every control is a
+ * host primitive (Menu / Modal / Input / Button / Pill / Tag / StateDot); the
+ * page ships no native form control of its own.
  *
- * Mutations are CAS: every action sends the task's CURRENT revision; a
+ * Layout: the strip is full width because the native sidebar is narrow — a
+ * member row of Pills (also the owner filter), then task rows (subject +
+ * owner + status Tag + ONE overflow Menu). Editing opens a Modal with real
+ * Inputs — that is where the "too narrow to use" complaint is answered.
+ *
+ * Mutations are CAS: each action sends the task's CURRENT revision; a
  * conflict surfaces as a note and re-syncs through the parent's poller.
  */
-import { useState, type ReactNode } from 'react'
-import clsx from 'clsx'
-import { IconChevronUpOutline14, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useMemo, useState, type ReactNode } from 'react'
+import {
+  Button, IconChecklistOutline14, IconCheckOutline14, IconChevronUpOutline14, IconEditOutline16,
+  IconEllipsisOutline16, IconPlusOutline16, IconRefreshOutline14, IconTrashOutline16,
+  IconUserOutline16, Input, Menu, Modal, Pill, StateDot, Tag,
+  type MenuEntry, type TagTone,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SidebarTeamMemberView, SidebarTeamTaskView } from '../context-types.ts'
 import { api } from './api.ts'
 import { t, type CopyKey } from './locales.ts'
@@ -26,8 +34,24 @@ function taskStatusKey(status: SidebarTeamTaskView['status']): CopyKey {
   }
 }
 
+/** The status Tag tone of one task. */
+function taskTone(task: SidebarTeamTaskView): TagTone {
+  if (task.status === 'completed') return 'success'
+  if (!task.ready) return 'warning'
+  return task.status === 'in_progress' ? 'info' : 'neutral'
+}
+
 /** One mutation outcome (the host route's own union). */
 type MutationResult = { ok: true } | { ok: false; error: { code: string; message: string } }
+
+/** The task being created or edited (undefined = dialog closed). */
+interface TaskDraft {
+  /** The task under edit; undefined = a new task. */
+  task: SidebarTeamTaskView | undefined
+  subject: string
+  description: string
+  owner: string
+}
 
 export interface TeamBoardProps {
   rootId: string
@@ -44,11 +68,17 @@ export function TeamBoard(props: TeamBoardProps): ReactNode {
   const { rootId, members, tasks, onChanged, collapsed, onToggleCollapsed } = props
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<string | undefined>(undefined)
-  const [editingId, setEditingId] = useState<string | undefined>(undefined)
-  const [creating, setCreating] = useState(false)
+  const [draft, setDraft] = useState<TaskDraft | undefined>(undefined)
+  const [menuTaskId, setMenuTaskId] = useState<string | undefined>(undefined)
   const [armedDeleteId, setArmedDeleteId] = useState<string | undefined>(undefined)
+  const [ownerFilter, setOwnerFilter] = useState<string | undefined>(undefined)
 
-  const open = tasks.filter(task => task.status !== 'deleted')
+  const teammates = useMemo(() => members.filter(member => member.role === 'teammate'), [members])
+  const live = useMemo(() => tasks.filter(task => task.status !== 'deleted'), [tasks])
+  const shown = useMemo(
+    () => live.filter(task => ownerFilter === undefined || task.ownerName === ownerFilter),
+    [live, ownerFilter],
+  )
 
   /** Run one mutation with the shared busy/conflict handling. */
   const mutate = async (action: () => Promise<MutationResult>): Promise<void> => {
@@ -70,7 +100,117 @@ export function TeamBoard(props: TeamBoardProps): ReactNode {
     }
   }
 
-  const teammates = members.filter(member => member.role === 'teammate')
+  /** The overflow menu of one task (actions per status). */
+  const menuItems = (task: SidebarTeamTaskView): MenuEntry[] => {
+    const entries: MenuEntry[] = []
+    if (task.status === 'completed') {
+      entries.push({ id: 'reopen', label: t('teamTaskReopen'), icon: <IconRefreshOutline14 size={14} /> })
+    } else {
+      entries.push({ id: 'complete', label: t('teamTaskComplete'), icon: <IconCheckOutline14 size={14} /> })
+    }
+    entries.push({ id: 'edit', label: t('teamTaskEdit'), icon: <IconEditOutline16 size={14} /> })
+    if (teammates.length > 0) {
+      entries.push({
+        id: 'reassign',
+        label: t('teamTaskOwner'),
+        icon: <IconUserOutline16 size={14} />,
+        submenu: [
+          { id: 'reassign:', label: t('teamTaskUnowned') },
+          ...teammates.map(member => ({
+            id: `reassign:${member.name}`,
+            label: member.name,
+            ...(task.ownerName === member.name ? { disabled: true } : {}),
+          })),
+        ],
+      })
+    }
+    entries.push({ type: 'separator', id: 'team-task-sep' })
+    entries.push({
+      id: 'delete',
+      label: armedDeleteId === task.id ? t('teamTaskDeleteConfirm') : t('teamTaskDelete'),
+      icon: <IconTrashOutline16 size={14} />,
+      danger: true,
+    })
+    return entries
+  }
+
+  /** Dispatch one overflow-menu pick. */
+  const onMenuSelect = (task: SidebarTeamTaskView, id: string): void => {
+    if (id === 'complete') {
+      setMenuTaskId(undefined)
+      void mutate(() => api.teamsTaskUpdate(rootId, {
+        taskId: task.id, expectedRevision: task.revision, action: 'complete',
+      }))
+      return
+    }
+    if (id === 'reopen') {
+      setMenuTaskId(undefined)
+      void mutate(() => api.teamsTaskUpdate(rootId, {
+        taskId: task.id, expectedRevision: task.revision, action: 'reopen',
+      }))
+      return
+    }
+    if (id === 'edit') {
+      setMenuTaskId(undefined)
+      setDraft({ task, subject: task.subject, description: task.description, owner: task.ownerName ?? '' })
+      return
+    }
+    if (id === 'delete') {
+      // Two-step: the first pick arms the label, the second deletes.
+      if (armedDeleteId !== task.id) {
+        setArmedDeleteId(task.id)
+        return
+      }
+      setArmedDeleteId(undefined)
+      setMenuTaskId(undefined)
+      void mutate(() => api.teamsTaskUpdate(rootId, {
+        taskId: task.id, expectedRevision: task.revision, action: 'delete',
+      }))
+      return
+    }
+    if (id.startsWith('reassign:')) {
+      const owner = id.slice('reassign:'.length)
+      setMenuTaskId(undefined)
+      setArmedDeleteId(undefined)
+      void mutate(() => api.teamsTaskUpdate(rootId, {
+        taskId: task.id,
+        expectedRevision: task.revision,
+        action: 'reassign',
+        ...(owner === '' ? {} : { owner }),
+      }))
+    }
+  }
+
+  /** Commit the create/edit dialog (subject/description, then the owner). */
+  const saveDraft = async (): Promise<void> => {
+    const current = draft
+    if (current === undefined) return
+    const subject = current.subject.trim()
+    if (subject === '') return
+    await mutate(async () => {
+      const result = current.task === undefined
+        ? await api.teamsTaskCreate(rootId, { subject, description: current.description.trim() })
+        : await api.teamsTaskUpdate(rootId, {
+          taskId: current.task.id,
+          expectedRevision: current.task.revision,
+          action: 'edit',
+          subject,
+          description: current.description.trim(),
+        })
+      if (!result.ok) return result
+      if (current.task !== undefined && current.owner !== (current.task.ownerName ?? '')) {
+        const moved = await api.teamsTaskUpdate(rootId, {
+          taskId: current.task.id,
+          expectedRevision: result.value.revision,
+          action: 'reassign',
+          ...(current.owner === '' ? {} : { owner: current.owner }),
+        })
+        if (!moved.ok) return moved
+      }
+      setDraft(undefined)
+      return result
+    })
+  }
 
   return (
     <section className={css.teamBoard} aria-label={t('teamBoard')}>
@@ -80,9 +220,10 @@ export function TeamBoard(props: TeamBoardProps): ReactNode {
         aria-expanded={!collapsed}
         onClick={onToggleCollapsed}
       >
+        <span className={css.teamBoardIcon} aria-hidden="true"><IconChecklistOutline14 size={11} /></span>
         <span>{t('teamBoard')}</span>
         <span className={css.teamBoardCount}>
-          {t('teamChip', { members: members.length, tasks: open.length })}
+          {t('teamChip', { members: members.length, tasks: live.length })}
         </span>
         <span
           className={css.teamBoardChev}
@@ -95,11 +236,22 @@ export function TeamBoard(props: TeamBoardProps): ReactNode {
       {!collapsed && (
         <>
           <div className={css.teamMembers}>
+            <Pill
+              active={ownerFilter === undefined}
+              className={css.teamMemberPill}
+              onClick={() => { setOwnerFilter(undefined) }}
+            >
+              {t('teamFilterAll')}
+            </Pill>
             {members.map(member => (
-              <span
+              <Pill
                 key={member.id}
-                className={clsx(css.teamMember, member.role === 'lead' && css.teamMemberLead)}
+                active={ownerFilter === member.name}
+                className={css.teamMemberPill}
                 title={`${member.name} · ${member.role}`}
+                onClick={() => {
+                  setOwnerFilter(current => (current === member.name ? undefined : member.name))
+                }}
               >
                 <StateDot
                   size={6}
@@ -108,226 +260,142 @@ export function TeamBoard(props: TeamBoardProps): ReactNode {
                     : member.status === 'failed' ? 'error' : 'idle'}
                 />
                 <span className={css.teamMemberName}>{member.name}</span>
-              </span>
+              </Pill>
             ))}
           </div>
-          {open.length === 0 && !creating && <div className={css.teamEmpty}>{t('teamTasksEmpty')}</div>}
-          {open.length > 0 && (
-            <div className={css.teamTasks}>
-              {open.map(task => (
-                <TeamTaskRow
-                  key={task.id}
-                  rootId={rootId}
-                  task={task}
-                  teammates={teammates}
-                  busy={busy}
-                  editing={editingId === task.id}
-                  armedDelete={armedDeleteId === task.id}
-                  onEdit={(edit) => { setEditingId(edit ? task.id : undefined) }}
-                  onArmDelete={(armed) => { setArmedDeleteId(armed ? task.id : undefined) }}
-                  mutate={mutate}
+          <div className={css.teamTasks}>
+            {shown.length === 0 && <div className={css.teamEmpty}>{t('teamTasksEmpty')}</div>}
+            {shown.map(task => (
+              <div key={task.id} className={css.teamTask}>
+                <StateDot
+                  size={6}
+                  state={task.status === 'completed' ? 'done' : task.ready ? 'ongoing' : 'warning'}
                 />
-              ))}
-            </div>
-          )}
-          {note !== undefined && <div className={css.teamEmpty}>{note}</div>}
-          {creating
-            ? (
-              <TeamTaskForm
-                busy={busy}
-                submitLabel={t('teamTaskCreate')}
-                onCancel={() => { setCreating(false) }}
-                onSubmit={(subject, description) => void mutate(async () => {
-                  const result = await api.teamsTaskCreate(rootId, { subject, description })
-                  if (result.ok) setCreating(false)
-                  return result
-                })}
-              />
-            )
-            : (
-              <div className={css.teamFormActions} style={{ padding: '0 12px 8px' }}>
-                <button
-                  type="button"
-                  className={css.teamBtn}
-                  disabled={busy}
-                  onClick={() => { setCreating(true) }}
+                <span
+                  className={css.teamTaskSubject}
+                  title={`${task.subject}${task.description === '' ? '' : `\n${task.description}`}`}
                 >
-                  {`＋ ${t('teamTaskCreate')}`}
-                </button>
+                  {task.subject}
+                </span>
+                {task.ownerName !== undefined && (
+                  <span className={css.teamTaskOwner}>{task.ownerName}</span>
+                )}
+                <Tag tone={taskTone(task)}>
+                  {t(task.ready ? taskStatusKey(task.status) : 'teamTaskBlocked')}
+                </Tag>
+                <Menu
+                  open={menuTaskId === task.id}
+                  onClose={() => {
+                    setMenuTaskId(undefined)
+                    setArmedDeleteId(undefined)
+                  }}
+                  items={menuItems(task)}
+                  onSelect={(id) => { onMenuSelect(task, id) }}
+                  align="end"
+                  portal
+                  compact
+                  anchor={(
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon={<IconEllipsisOutline16 size={13} />}
+                      aria-label={`${t('teamTaskActions')} ${task.subject}`}
+                      title={t('teamTaskActions')}
+                      onClick={() => {
+                        setArmedDeleteId(undefined)
+                        setMenuTaskId(current => (current === task.id ? undefined : task.id))
+                      }}
+                    />
+                  )}
+                />
               </div>
-            )}
+            ))}
+          </div>
+          {note !== undefined && <div className={css.teamNote}>{note}</div>}
+          <div className={css.teamActions}>
+            <Button
+              variant="outline"
+              size="sm"
+              icon={<IconPlusOutline16 size={13} />}
+              disabled={busy}
+              onClick={() => { setDraft({ task: undefined, subject: '', description: '', owner: '' }) }}
+            >
+              {t('teamTaskCreate')}
+            </Button>
+          </div>
         </>
       )}
-    </section>
-  )
-}
-
-/** One task row: status dot, subject, owner select, status chip, actions. */
-function TeamTaskRow(props: {
-  rootId: string
-  task: SidebarTeamTaskView
-  teammates: readonly SidebarTeamMemberView[]
-  busy: boolean
-  editing: boolean
-  armedDelete: boolean
-  onEdit(edit: boolean): void
-  onArmDelete(armed: boolean): void
-  mutate(action: () => Promise<MutationResult>): Promise<void>
-}): ReactNode {
-  const { rootId, task, teammates, busy, editing, armedDelete, onEdit, onArmDelete, mutate } = props
-  if (editing) {
-    return (
-      <TeamTaskForm
-        busy={busy}
-        initialSubject={task.subject}
-        initialDescription={task.description}
-        submitLabel={t('teamTaskSave')}
-        onCancel={() => { onEdit(false) }}
-        onSubmit={(subject, description) => void mutate(async () => {
-          const result = await api.teamsTaskUpdate(rootId, {
-            taskId: task.id,
-            expectedRevision: task.revision,
-            action: 'edit',
-            subject,
-            description,
-          })
-          if (result.ok) onEdit(false)
-          return result
-        })}
-      />
-    )
-  }
-  return (
-    <div className={css.teamTask}>
-      <StateDot size={6} state={task.status === 'completed' ? 'done' : task.ready ? 'ongoing' : 'warning'} />
-      <span className={css.teamTaskSubject} title={`${task.subject}${task.description === '' ? '' : `\n${task.description}`}`}>
-        {task.subject}
-      </span>
-      <select
-        className={css.teamOwnerSelect}
-        aria-label={t('teamTaskOwner')}
-        title={t('teamTaskOwner')}
-        disabled={busy || task.status === 'completed'}
-        value={task.ownerName ?? ''}
-        onChange={(event) => {
-          const owner = event.target.value
-          void mutate(() => api.teamsTaskUpdate(rootId, {
-            taskId: task.id,
-            expectedRevision: task.revision,
-            action: 'reassign',
-            ...(owner === '' ? {} : { owner }),
-          }))
-        }}
+      <Modal
+        open={draft !== undefined}
+        onClose={() => { setDraft(undefined) }}
+        title={draft?.task === undefined ? t('teamTaskCreate') : t('teamTaskEdit')}
+        closeLabel={t('teamTaskCancel')}
+        footer={(
+          <>
+            <Button variant="outline" onClick={() => { setDraft(undefined) }}>
+              {t('teamTaskCancel')}
+            </Button>
+            <Button
+              variant="primary"
+              disabled={busy || (draft?.subject.trim() ?? '') === ''}
+              onClick={() => { void saveDraft() }}
+            >
+              {draft?.task === undefined ? t('teamTaskCreate') : t('teamTaskSave')}
+            </Button>
+          </>
+        )}
       >
-        <option value="">{t('teamTaskUnowned')}</option>
-        {teammates.map(member => (
-          <option key={member.id} value={member.name}>{member.name}</option>
-        ))}
-      </select>
-      <span className={clsx(css.teamTaskStatus, !task.ready && css.teamTaskBlocked)}>
-        {t(task.ready ? taskStatusKey(task.status) : 'teamTaskBlocked')}
-      </span>
-      <span className={css.teamActions}>
-        {task.status !== 'completed'
-          ? (
-            <button
-              type="button"
-              className={css.teamBtn}
-              disabled={busy}
-              title={t('teamTaskComplete')}
-              aria-label={`${t('teamTaskComplete')} ${task.subject}`}
-              onClick={() => void mutate(() => api.teamsTaskUpdate(rootId, {
-                taskId: task.id, expectedRevision: task.revision, action: 'complete',
-              }))}
-            >
-              ✓
-            </button>
-          )
-          : (
-            <button
-              type="button"
-              className={css.teamBtn}
-              disabled={busy}
-              title={t('teamTaskReopen')}
-              aria-label={`${t('teamTaskReopen')} ${task.subject}`}
-              onClick={() => void mutate(() => api.teamsTaskUpdate(rootId, {
-                taskId: task.id, expectedRevision: task.revision, action: 'reopen',
-              }))}
-            >
-              ↺
-            </button>
-          )}
-        <button
-          type="button"
-          className={css.teamBtn}
-          disabled={busy}
-          title={t('teamTaskEdit')}
-          aria-label={`${t('teamTaskEdit')} ${task.subject}`}
-          onClick={() => { onEdit(true) }}
-        >
-          ✎
-        </button>
-        <button
-          type="button"
-          className={clsx(css.teamBtn, armedDelete && css.teamBtnDanger)}
-          disabled={busy}
-          title={armedDelete ? t('teamTaskDeleteConfirm') : t('teamTaskDelete')}
-          aria-label={`${armedDelete ? t('teamTaskDeleteConfirm') : t('teamTaskDelete')} ${task.subject}`}
-          onClick={() => {
-            if (!armedDelete) { onArmDelete(true); return }
-            onArmDelete(false)
-            void mutate(() => api.teamsTaskUpdate(rootId, {
-              taskId: task.id, expectedRevision: task.revision, action: 'delete',
-            }))
-          }}
-        >
-          {armedDelete ? '!' : '✕'}
-        </button>
-      </span>
-    </div>
-  )
-}
-
-/** The create/edit task form (subject + description). */
-function TeamTaskForm(props: {
-  busy: boolean
-  initialSubject?: string
-  initialDescription?: string
-  submitLabel: string
-  onCancel(): void
-  onSubmit(subject: string, description: string): void
-}): ReactNode {
-  const [subject, setSubject] = useState(props.initialSubject ?? '')
-  const [description, setDescription] = useState(props.initialDescription ?? '')
-  return (
-    <div className={css.teamForm}>
-      <input
-        className={css.teamInput}
-        placeholder={t('teamTaskSubject')}
-        aria-label={t('teamTaskSubject')}
-        value={subject}
-        onChange={(event) => { setSubject(event.target.value) }}
-      />
-      <input
-        className={css.teamInput}
-        placeholder={t('teamTaskDescription')}
-        aria-label={t('teamTaskDescription')}
-        value={description}
-        onChange={(event) => { setDescription(event.target.value) }}
-      />
-      <div className={css.teamFormActions}>
-        <button
-          type="button"
-          className={css.teamBtn}
-          disabled={props.busy || subject.trim() === ''}
-          onClick={() => { props.onSubmit(subject.trim(), description.trim()) }}
-        >
-          {props.submitLabel}
-        </button>
-        <button type="button" className={css.teamBtn} disabled={props.busy} onClick={props.onCancel}>
-          {t('teamTaskCancel')}
-        </button>
-      </div>
-    </div>
+        <div className={css.taskForm}>
+          <label className={css.taskField}>
+            <span className={css.taskLabel}>{t('teamTaskSubject')}</span>
+            <Input
+              value={draft?.subject ?? ''}
+              placeholder={t('teamTaskSubjectPlaceholder')}
+              aria-label={t('teamTaskSubject')}
+              onChange={(event) => {
+                const value = event.target.value
+                setDraft(current => (current === undefined ? current : { ...current, subject: value }))
+              }}
+            />
+          </label>
+          <label className={css.taskField}>
+            <span className={css.taskLabel}>{t('teamTaskDescription')}</span>
+            <Input
+              value={draft?.description ?? ''}
+              placeholder={t('teamTaskDescriptionPlaceholder')}
+              aria-label={t('teamTaskDescription')}
+              onChange={(event) => {
+                const value = event.target.value
+                setDraft(current => (current === undefined ? current : { ...current, description: value }))
+              }}
+            />
+          </label>
+          <div className={css.taskField}>
+            <span className={css.taskLabel}>{t('teamTaskOwner')}</span>
+            <div className={css.taskOwnerRow}>
+              <Pill
+                active={(draft?.owner ?? '') === ''}
+                onClick={() => {
+                  setDraft(current => (current === undefined ? current : { ...current, owner: '' }))
+                }}
+              >
+                {t('teamTaskUnowned')}
+              </Pill>
+              {teammates.map(member => (
+                <Pill
+                  key={member.id}
+                  active={draft?.owner === member.name}
+                  onClick={() => {
+                    setDraft(current => (current === undefined ? current : { ...current, owner: member.name }))
+                  }}
+                >
+                  {member.name}
+                </Pill>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Modal>
+    </section>
   )
 }

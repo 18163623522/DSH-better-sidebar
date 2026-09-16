@@ -198,9 +198,10 @@ export function SubagentView(props: {
         live,
         runs,
         teamMembers,
+        teamTasks: teamView?.available === true ? teamView.team?.tasks ?? [] : [],
         folded,
       })),
-    [byId, catalogs, rootId, sessionId, live, runs, teamMembers, folded],
+    [byId, catalogs, rootId, sessionId, live, runs, teamMembers, teamView, folded],
   )
 
   /** Catalog owners currently consuming live membership updates. */
@@ -465,13 +466,19 @@ export function SubagentView(props: {
       <JobsDrawer
         rows={jobRows}
         agentCount={agentCount}
+        openJobId={popover?.kind === 'job' ? popover.jobId : undefined}
         onOpenOutput={(row, anchor) => {
           setPopover(popover?.kind === 'job' && popover.jobId === row.job.id
             ? null
             : { kind: 'job', jobId: row.job.id, anchor })
         }}
       />
-      <AnchoredPopover anchor={popover?.anchor ?? null} onClose={closePopover}>
+      <AnchoredPopover
+        anchor={popover?.anchor ?? null}
+        onClose={closePopover}
+        draggable={popover?.kind === 'job'}
+        width={popover?.kind === 'job' ? 380 : 280}
+      >
         {popoverContent}
       </AnchoredPopover>
     </div>
