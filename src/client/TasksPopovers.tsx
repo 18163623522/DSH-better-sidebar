@@ -46,8 +46,10 @@ function PopRow(props: { label: string; mono?: boolean; children: ReactNode }): 
 export function AgentNodePopover(props: {
   node: TasksAgentNode
   onJump(node: TasksAgentNode): void
+  /** Open the shared task window for one of the node's tasks. */
+  onOpenTask(taskId: string, anchor: HTMLElement): void
 }): ReactNode {
-  const { node, onJump } = props
+  const { node, onJump, onOpenTask } = props
   const liveText = node.live?.text !== undefined ? flatten(node.live.text) : undefined
   const liveTool = node.live?.tool !== undefined
     ? `${node.live.tool.name}${node.live.tool.args === '' ? '' : ` ${node.live.tool.args}`}`
@@ -87,13 +89,19 @@ export function AgentNodePopover(props: {
           <div className={css.popGroup}>{t('tasksNodeTasks')}</div>
           <div className={css.popList}>
             {(node.tasks ?? []).map(task => (
-              <div key={task.id} className={css.popListRow} title={task.subject}>
+              <button
+                key={task.id}
+                type="button"
+                className={css.popListRow}
+                title={task.subject}
+                onClick={(event) => { onOpenTask(task.id, event.currentTarget) }}
+              >
                 <StateDot state={taskDotState(task)} size={6} />
                 <span className={css.popListLabel}>{task.subject}</span>
                 <Tag tone={task.status === 'completed' ? 'success' : task.ready ? 'info' : 'warning'}>
                   {t(taskStatusKey(task.status))}
                 </Tag>
-              </div>
+              </button>
             ))}
           </div>
         </div>

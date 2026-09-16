@@ -115,6 +115,26 @@ client 半（src/client/）
 
 i18n：本轮新增 19 条文案，zh/en/ja + 18 份第三语言词典同步（`tests/locales.spec.ts` 16/16）。
 
+## 第三轮返工（2026-09-14 深夜，交互统一）
+
+用户第三轮反馈两点，都指向「减少控件、统一入口」：
+
+| 反馈 | 做法 |
+|---|---|
+| 图卡片去掉详情按钮，「统一改为弹出详细」 | 删除每张卡片右上角的 `…` 按钮（树行同理）：**卡片/行本身就是详情入口**，点击即弹详情窗口；跳转转录改为详情窗口内的主按钮。折叠聚合节点仍保留「点击=展开/再折叠」的语义 |
+| 任务所有入口统一为「点击弹出非全屏可拖动编辑（兼查看）窗口」，含 编辑owner + 编辑 + 重开 + 删除；默认多行 markdown 预览，点编辑才进入多行编辑 | 新增单一组件 `TaskWindow.tsx`：`TaskWindow`（内容）+ `TaskPopover`（可拖动外壳，宽 430）+ `MultilineField`（自建多行输入）+ `OwnerPicker`（Pill 即点即改派）+ `TaskCreateButton`。三处入口全部复用它——任务板行、节点任务行、节点详情里的任务清单；「新建」也走同一个窗口（create 模式直接进入编辑态）。任务板由此**删掉了溢出菜单与 Modal**，只留筛选 Pills、任务行与新建按钮 |
+
+新文案 3 条（任务详情 / 暂无描述 / 被阻塞），zh/en/ja + 18 份第三语言同步。
+
+组件复用清单（本轮）：
+
+| 组件 | 复用点 |
+|---|---|
+| `TaskPopover` | 任务板行、节点任务行、节点详情任务清单、新建按钮（4 处） |
+| `MultilineField` | 任务描述编辑（宿主 primitives 无多行输入，故自建） |
+| `TaskCreateButton` | 任务板 / 其它入口共用同一外观 |
+| `AgentGlyph` / `WorkflowGlyph` / `FoldGlyph` / `TaskLine` | 图与树两种模式共用 |
+
 ## 验证结果（2026-09-14）
 
 PR：[#680](https://github.com/omdsh-dev/DSH-better-sidebar/pull/680)（分支 `feat/tasks-graph-workflow-teams`）。

@@ -161,7 +161,7 @@ describe('Tasks page interactions', () => {
     unmount()
   })
 
-  it('jumps to the transcript on node click and opens the ⓘ popover', async () => {
+  it('opens the node detail window on card click; the jump button goes to the transcript', async () => {
     const opened: unknown[] = []
     const store = makeStore(snapshotWithChildren(1))
     const ctx = makeCtx(store, { openSubagent: (address) => { opened.push(address) } })
@@ -171,8 +171,16 @@ describe('Tasks page interactions', () => {
     // Folded by default: unfold so the settled child is visible.
     const foldToggle = container.querySelector('button[aria-label="展开已完成的节点"]') as HTMLButtonElement
     await act(async () => { foldToggle.click() })
-    const node = container.querySelector('[aria-label*="子代理 0"]') as HTMLElement
+    const node = container.querySelector('[data-graph-node="child-0"]') as HTMLElement
     await act(async () => { node.click() })
+    // The card no longer jumps directly: it IS the detail affordance.
+    expect(opened).toEqual([])
+    const dialog = document.querySelector('[role="dialog"]') as HTMLElement
+    expect(dialog).not.toBeNull()
+    expect(dialog.textContent).toContain('节点详情')
+    const jump = [...dialog.querySelectorAll('button')].find(button => button.textContent?.includes('查看转录'))
+    expect(jump).toBeDefined()
+    await act(async () => { jump?.click() })
     expect(opened).toEqual([{ parentSessionId: 'root', childSessionId: 'child-0', mode: 'one-shot' }])
     unmount()
   })
@@ -192,14 +200,16 @@ describe('Tasks page interactions', () => {
     unmount()
   })
 
-  it('opens the node detail popover from the ⓘ button', async () => {
+  it('ships no per-card detail button any more (the card itself is the affordance)', async () => {
     const store = makeStore(snapshotWithChildren(1))
     const { container, unmount } = renderRoot(
       createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
     )
-    // The root node's detail affordance opens the detail card (portaled to body).
-    const info = container.querySelector('button[aria-label="节点详情"]') as HTMLButtonElement
-    await act(async () => { info.click() })
+    const root = container.querySelector('[data-graph-node="root"]') as HTMLElement
+    expect(root).not.toBeNull()
+    // A card is a single click target: no nested control inside it.
+    expect(root.querySelectorAll('button')).toHaveLength(0)
+    await act(async () => { root.click() })
     expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1)
     expect(document.body.textContent).toContain('查看转录')
     unmount()
@@ -226,7 +236,9 @@ describe('Tasks page graph interactions and team board', () => {
     const node = container.querySelector('[data-graph-node="child-0"]') as HTMLElement
     expect(node).not.toBeNull()
     await act(async () => { node.click() })
-    expect(opened).toEqual([{ parentSessionId: 'root', childSessionId: 'child-0', mode: 'one-shot' }])
+    // The click is not stolen: the card's own action (its detail window) ran.
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(opened).toEqual([])
     unmount()
   })
 
@@ -317,23 +329,29 @@ describe('Tasks page: owned tasks, host-primitive controls, draggable output', (
     unmount()
   })
 
-  it('ships no native select/input: the board edits through host primitives', async () => {
+  it('opens the shared task window from a board row (markdown first, no native select)', async () => {
     teamPayload = teamWithOwnedTask()
     const store = makeStore(snapshotWithChildren(1))
     const { container, unmount } = renderRoot(
       createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
     )
     await act(async () => { await Promise.resolve() })
-    // No native form controls anywhere on the page.
     expect(container.querySelectorAll('select')).toHaveLength(0)
-    expect(container.querySelectorAll('input')).toHaveLength(0)
-    // The row's overflow menu is a host Menu opened from a host Button.
-    const menuButton = container.querySelector('button[aria-label^="任务操作"]') as HTMLButtonElement
-    expect(menuButton).not.toBeNull()
-    await act(async () => { menuButton.click() })
-    expect(document.body.textContent).toContain('完成')
-    expect(document.body.textContent).toContain('编辑')
-    expect(document.body.textContent).toContain('删除')
+    const row = container.querySelector('button[aria-label^="任务详情"]') as HTMLButtonElement
+    expect(row).not.toBeNull()
+    await act(async () => { row.click() })
+    const dialog = document.querySelector('[role="dialog"]') as HTMLElement
+    expect(dialog).not.toBeNull()
+    // View mode first: the description renders as markdown, edited only on demand.
+    expect(dialog.textContent).toContain('细节')
+    expect(dialog.querySelector('textarea')).toBeNull()
+    const edit = [...dialog.querySelectorAll('button')].find(button => button.textContent?.includes('编辑'))
+    expect(edit).toBeDefined()
+    await act(async () => { edit?.click() })
+    // Editing turns the SAME window into the multi-line editor.
+    const textarea = dialog.querySelector('textarea')
+    expect(textarea).not.toBeNull()
+    expect(textarea?.getAttribute('aria-label')).toBe('描述')
     unmount()
   })
 
@@ -384,6 +402,87 @@ describe('Tasks page: owned tasks, host-primitive controls, draggable output', (
       window.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }))
     })
     expect({ left: card.style.left, top: card.style.top }).not.toEqual(before)
+    unmount()
+  })
+})
+
+describe('Tasks page: the shared task window', () => {
+  it('opens from an agent node task line and saves a multi-line edit', async () => {
+    teamPayload = {
+      available: true,
+      team: {
+        members: [
+          { id: 'root', name: 'lead', role: 'lead', status: 'running', diagnostics: [] },
+          { id: 'child-0', name: 'writer', role: 'teammate', status: 'running', model: 'glm-5.3', diagnostics: [] },
+        ],
+        tasks: [{
+          id: 't1', revision: 4, subject: '收窄卡片', description: '第一行\n\n- 第二行', status: 'in_progress',
+          ownerName: 'writer', blockedBy: [], writeScopes: [], ready: true, writeScopeWarnings: [],
+        }],
+      },
+    }
+    const store = makeStore(snapshotWithChildren(1))
+    const { container, unmount } = renderRoot(
+      createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
+    )
+    await act(async () => { await Promise.resolve() })
+    const node = container.querySelector('[data-graph-node="child-0"]') as HTMLElement
+    const taskLine = node.querySelector('[role="button"]') as HTMLElement
+    expect(taskLine).not.toBeNull()
+    await act(async () => { taskLine.click() })
+    const dialog = document.querySelector('[role="dialog"]') as HTMLElement
+    expect(dialog).not.toBeNull()
+    expect(dialog.textContent).toContain('收窄卡片')
+    // Markdown view renders the multi-line body before any editing.
+    expect(dialog.querySelector('textarea')).toBeNull()
+    const edit = [...dialog.querySelectorAll('button')].find(button => button.textContent?.includes('编辑'))
+    await act(async () => { edit?.click() })
+    const area = dialog.querySelector('textarea') as HTMLTextAreaElement
+    expect(area.value).toBe('第一行\n\n- 第二行')
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set
+      setter?.call(area, '改过的描述')
+      area.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const save = [...dialog.querySelectorAll('button')].find(button => button.textContent?.includes('保存'))
+    await act(async () => { save?.click() })
+    await act(async () => { await Promise.resolve() })
+    const update = teamMutations.find(entry => entry.method === 'teams.taskUpdate')
+    expect(update?.body.action).toBe('edit')
+    expect(update?.body.expectedRevision).toBe(4)
+    expect(update?.body.description).toBe('改过的描述')
+    unmount()
+  })
+
+  it('reassigns the owner straight from the window (CAS on the current revision)', async () => {
+    teamPayload = {
+      available: true,
+      team: {
+        members: [
+          { id: 'root', name: 'lead', role: 'lead', status: 'running', diagnostics: [] },
+          { id: 'child-0', name: 'writer', role: 'teammate', status: 'running', diagnostics: [] },
+          { id: 'child-1', name: 'reviewer', role: 'teammate', status: 'idle', diagnostics: [] },
+        ],
+        tasks: [{
+          id: 't1', revision: 7, subject: '收窄卡片', description: '', status: 'pending',
+          ownerName: 'writer', blockedBy: [], writeScopes: [], ready: true, writeScopeWarnings: [],
+        }],
+      },
+    }
+    const store = makeStore(snapshotWithChildren(2))
+    const { container, unmount } = renderRoot(
+      createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
+    )
+    await act(async () => { await Promise.resolve() })
+    const row = container.querySelector('button[aria-label^="任务详情"]') as HTMLButtonElement
+    await act(async () => { row.click() })
+    const dialog = document.querySelector('[role="dialog"]') as HTMLElement
+    const reviewer = [...dialog.querySelectorAll('button')].find(button => button.textContent === 'reviewer')
+    expect(reviewer).toBeDefined()
+    await act(async () => { reviewer?.click() })
+    await act(async () => { await Promise.resolve() })
+    const update = teamMutations.find(entry => entry.method === 'teams.taskUpdate')
+    expect(update?.body).toMatchObject({ action: 'reassign', owner: 'reviewer', expectedRevision: 7 })
     unmount()
   })
 })

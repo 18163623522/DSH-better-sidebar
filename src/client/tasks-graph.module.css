@@ -223,6 +223,7 @@
 
 .taskLine {
   display: flex;
+  cursor: pointer;
   align-items: center;
   gap: 4px;
   margin-top: 3px;
@@ -238,6 +239,16 @@
   display: inline-flex;
   flex: none;
   color: var(--dsw-alias-state-business-primary);
+}
+
+.taskLine:hover .taskSubject {
+  color: var(--dsw-alias-label-primary);
+}
+
+.taskLine:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 1px;
+  border-radius: 2px;
 }
 
 .taskSubject {
@@ -699,6 +710,38 @@
   color: var(--dsw-alias-state-warn-primary);
 }
 
+/* ── Task window: markdown view + multi-line edit ──────────────────────── */
+
+.taskMarkdown {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 2px 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--dsw-alias-label-primary);
+  scrollbar-width: thin;
+}
+
+.taskTextarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 6px 8px;
+  border: 1px solid var(--dsw-alias-border-l4);
+  border-radius: 3px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-code);
+  font-size: 11.5px;
+  line-height: 1.5;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.taskTextarea:focus {
+  outline: none;
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
 /* ── Task create/edit dialog ───────────────────────────────────────────── */
 
 .taskForm {
@@ -836,8 +879,14 @@
   display: flex;
   align-items: center;
   gap: 5px;
+  width: 100%;
   padding: 3px 5px;
   border-radius: 3px;
+  text-align: left;
+}
+
+.teamTask > * {
+  min-width: 0;
 }
 
 .teamTask:hover {

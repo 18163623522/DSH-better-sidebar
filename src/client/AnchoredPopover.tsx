@@ -86,7 +86,7 @@ export function AnchoredPopover(props: AnchoredPopoverProps): ReactNode {
     if (!draggable || event.button !== 0) return
     const target = event.target as HTMLElement
     // A control inside the card (copy, kill, follow…) must not start a drag.
-    if (target.closest('button, input, select, a, [data-popover-no-drag]') !== null) return
+    if (target.closest('button, input, textarea, select, a, [data-popover-no-drag]') !== null) return
     event.preventDefault()
     const startX = event.clientX
     const startY = event.clientY

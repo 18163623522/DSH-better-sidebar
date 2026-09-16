@@ -7,7 +7,7 @@
  */
 import { useCallback, useMemo, useRef, type KeyboardEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { Button, IconChevronUpOutline14, IconEllipsisOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronUpOutline14, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TasksAgentNode, TasksNode, TasksWorkflowNode } from './tasks-model.ts'
 import {
   AgentGlyph, agentMeta, FoldGlyph, foldPreviews, LiveLine, nodeDotState, TaskLine,
@@ -20,9 +20,10 @@ import css from './tasks-graph.module.css'
 export interface TasksTreeProps {
   nodes: readonly TasksNode[]
   folded: boolean
-  onActivate(node: TasksAgentNode): void
   onNodeInfo(node: TasksAgentNode, anchor: HTMLElement): void
   onWorkflowInfo(node: TasksWorkflowNode, anchor: HTMLElement): void
+  /** Open the shared task window for one task id. */
+  onOpenTask(taskId: string, anchor: HTMLElement): void
   onToggleFold(): void
   mode: 'graph' | 'tree'
   onModeChange(mode: 'graph' | 'tree'): void
@@ -32,7 +33,7 @@ export interface TasksTreeProps {
 
 export function TasksTree(props: TasksTreeProps): ReactNode {
   const {
-    nodes, folded, onActivate, onNodeInfo, onWorkflowInfo, onToggleFold, mode, onModeChange, loading,
+    nodes, folded, onNodeInfo, onWorkflowInfo, onOpenTask, onToggleFold, mode, onModeChange, loading,
   } = props
   const bodyRef = useRef<HTMLDivElement>(null)
 
@@ -147,8 +148,10 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
               node.current && css.treeRowActive,
               (node.state === 'done' || node.state === 'error') && !node.current && css.treeRowSettled,
             )}
-            onClick={() => { onActivate(node) }}
-            onKeyDown={(event) => { activateOnKey(event, () => { onActivate(node) }) }}
+            onClick={(event) => { onNodeInfo(node, event.currentTarget) }}
+            onKeyDown={(event) => {
+              activateOnKey(event, () => { onNodeInfo(node, event.currentTarget as HTMLElement) })
+            }}
           >
             <StateDot state={nodeDotState(node.state)} size={6} />
             <span className={css.treeGlyph} aria-hidden="true"><AgentGlyph node={node} /></span>
@@ -156,20 +159,8 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
               <span className={css.treeTitle}>{node.label}</span>
               <span className={css.treeMeta}>{agentMeta(node)}</span>
               {node.state === 'running' && <LiveLine live={node.live} />}
-              <TaskLine tasks={node.tasks} />
+              <TaskLine tasks={node.tasks} onOpenTask={onOpenTask} />
             </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className={css.treeInfo}
-              icon={<IconEllipsisOutline16 size={12} />}
-              aria-label={t('tasksNodeDetail')}
-              title={t('tasksNodeDetail')}
-              onClick={(event) => {
-                event.stopPropagation()
-                onNodeInfo(node, event.currentTarget)
-              }}
-            />
           </div>
         )
     if (children.length === 0) return <div key={node.id}>{row}</div>

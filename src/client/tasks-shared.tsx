@@ -143,14 +143,29 @@ export function primaryTask(tasks: readonly TasksNodeTask[]): TasksNodeTask | un
  * status word, and a `+N` tail when the agent owns more. Renders nothing
  * without tasks, so non-team nodes keep the three-line shape.
  */
-export function TaskLine(props: { tasks: readonly TasksNodeTask[] | undefined }): ReactNode {
+export function TaskLine(props: {
+  tasks: readonly TasksNodeTask[] | undefined
+  onOpenTask(taskId: string, anchor: HTMLElement): void
+}): ReactNode {
   const tasks = props.tasks ?? []
   const primary = primaryTask(tasks)
   if (primary === undefined) return null
   return (
     <span
+      role="button"
+      tabIndex={0}
       className={css.taskLine}
       title={tasks.map(task => `${task.subject}（${t(taskStatusKey(task.status))}）`).join('\n')}
+      onClick={(event) => {
+        event.stopPropagation()
+        props.onOpenTask(primary.id, event.currentTarget)
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        event.stopPropagation()
+        props.onOpenTask(primary.id, event.currentTarget)
+      }}
     >
       <span className={css.taskGlyph} aria-hidden="true"><IconChecklistOutline14 size={9} /></span>
       <span className={css.taskSubject}>{primary.subject}</span>

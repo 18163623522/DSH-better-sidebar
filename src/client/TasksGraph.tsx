@@ -24,8 +24,7 @@ import {
 } from 'react'
 import clsx from 'clsx'
 import {
-  Button, IconChecklistOutline14, IconEllipsisOutline16, IconFullscreenOutline16, IconTreeCorner8x10,
-  StateDot,
+  Button, IconChecklistOutline14, IconFullscreenOutline16, IconTreeCorner8x10, StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TasksAgentNode, TasksFoldNode, TasksNode, TasksWorkflowNode } from './tasks-model.ts'
 import { tasksEdges } from './tasks-model.ts'
@@ -63,9 +62,10 @@ export interface TasksGraphProps {
   folded: boolean
   /** Re-fit trigger: the topology root id (a reroot re-centers). */
   rootId: string | undefined
-  onActivate(node: TasksAgentNode): void
   onNodeInfo(node: TasksAgentNode, anchor: HTMLElement): void
   onWorkflowInfo(node: TasksWorkflowNode, anchor: HTMLElement): void
+  /** Open the shared task window for one task id. */
+  onOpenTask(taskId: string, anchor: HTMLElement): void
   onToggleFold(): void
   mode: 'graph' | 'tree'
   onModeChange(mode: 'graph' | 'tree'): void
@@ -112,7 +112,7 @@ export function FoldToggleButton(props: { folded: boolean; onToggleFold(): void 
 }
 
 export function TasksGraph(props: TasksGraphProps): ReactNode {
-  const { nodes, folded, rootId, onActivate, onNodeInfo, onWorkflowInfo, onToggleFold, mode, onModeChange } = props
+  const { nodes, folded, rootId, onNodeInfo, onWorkflowInfo, onOpenTask, onToggleFold, mode, onModeChange } = props
   const containerRef = useRef<HTMLDivElement>(null)
   const [tf, setTf] = useState({ x: 0, y: 0, k: 1 })
   const [dragging, setDragging] = useState(false)
@@ -335,7 +335,7 @@ export function TasksGraph(props: TasksGraphProps): ReactNode {
             if (node.kind === 'workflow') {
               return renderWorkflowNode(node, style, onWorkflowInfo, clickAllowed)
             }
-            return renderAgentNode(node, style, onActivate, onNodeInfo, clickAllowed)
+            return renderAgentNode(node, style, onNodeInfo, onOpenTask, clickAllowed)
           })}
         </div>
         <div className={css.controls} data-graph-controls>
@@ -381,8 +381,8 @@ export function TasksGraph(props: TasksGraphProps): ReactNode {
 function renderAgentNode(
   node: TasksAgentNode,
   style: { left: number; top: number; width: number; minHeight: number },
-  onActivate: (node: TasksAgentNode) => void,
   onNodeInfo: (node: TasksAgentNode, anchor: HTMLElement) => void,
+  onOpenTask: (taskId: string, anchor: HTMLElement) => void,
   clickAllowed: () => boolean,
 ): ReactNode {
   return (
@@ -402,9 +402,9 @@ function renderAgentNode(
         node.state === 'error' && css.nodeError,
       )}
       style={style}
-      onClick={() => {
+      onClick={(event) => {
         if (!clickAllowed()) return
-        onActivate(node)
+        onNodeInfo(node, event.currentTarget)
       }}
     >
       <span className={css.nodeHeader}>
@@ -414,19 +414,7 @@ function renderAgentNode(
       </span>
       <span className={css.nodeMeta} title={agentMeta(node)}>{agentMeta(node)}</span>
       {node.state === 'running' && <LiveLine live={node.live} />}
-      <TaskLine tasks={node.tasks} />
-      <Button
-        variant="ghost"
-        size="sm"
-        className={css.nodeInfo}
-        icon={<IconEllipsisOutline16 size={12} />}
-        aria-label={t('tasksNodeDetail')}
-        title={t('tasksNodeDetail')}
-        onClick={(event) => {
-          event.stopPropagation()
-          onNodeInfo(node, event.currentTarget)
-        }}
-      />
+      <TaskLine tasks={node.tasks} onOpenTask={onOpenTask} />
     </div>
   )
 }

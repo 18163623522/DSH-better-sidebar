@@ -49,6 +49,7 @@ import { JobsDrawer, JobOutputPopoverContent } from './JobsDrawer.tsx'
 import { AnchoredPopover } from './AnchoredPopover.tsx'
 import { AgentNodePopover, WorkflowNodePopover } from './TasksPopovers.tsx'
 import { TeamBoard } from './TeamBoard.tsx'
+import { TaskPopover } from './TaskWindow.tsx'
 import type { SidebarStore } from './state.ts'
 import type { WorkflowRunView } from '../workflow-runs.ts'
 import legacy from './SubagentView.module.css'
@@ -133,6 +134,8 @@ type PagePopover =
   | { kind: 'node'; nodeId: string; anchor: HTMLElement }
   | { kind: 'workflow'; nodeId: string; anchor: HTMLElement }
   | { kind: 'job'; jobId: string; anchor: HTMLElement }
+  /** The shared task window; taskId undefined = create mode. */
+  | { kind: 'task'; taskId: string | undefined; anchor: HTMLElement }
 
 /**
  * The sidebar's Tasks page.
@@ -274,9 +277,8 @@ export function SubagentView(props: {
     void sessions.refreshSubagents?.(parentSessionId)
   }, [sessions])
 
-  /** Node click = jump to the transcript (synthesized members without a
-   *  session address open their detail popover instead). */
-  const activateNode = useCallback((node: TasksAgentNode): void => {
+  /** Jump from the detail window into the node's transcript. */
+  const jumpToNode = useCallback((node: TasksAgentNode): void => {
     if (node.childAddress !== undefined) {
       openChild(node.childAddress)
       setPopover(null)
@@ -286,9 +288,20 @@ export function SubagentView(props: {
       openMain()
       setPopover(null)
     }
-    // Synthesized workflow members without a childId have no transcript to
-    // jump to: their ⓘ popover is the only detail surface.
   }, [openChild, openMain])
+
+  /** Open the shared task window from a board row (undefined = create). */
+  const openTaskFromBoard = useCallback((
+    task: { id: string } | undefined,
+    anchor: HTMLElement,
+  ): void => {
+    setPopover({ kind: 'task', taskId: task?.id, anchor })
+  }, [])
+
+  /** Open the shared task window by id (node task lines, detail lists). */
+  const openTaskById = useCallback((taskId: string, anchor: HTMLElement): void => {
+    setPopover({ kind: 'task', taskId, anchor })
+  }, [])
 
   const totals = useMemo(
     () => rootId === undefined
@@ -351,6 +364,25 @@ export function SubagentView(props: {
   /** The current popover's resolved content (subjects re-resolve live). */
   const popoverContent = ((): ReactNode => {
     if (popover === null) return null
+    if (popover.kind === 'task') {
+      if (teamView?.available !== true || teamView.team === null || rootId === undefined) return null
+      const task = popover.taskId === undefined
+        ? undefined
+        : teamView.team.tasks.find(candidate => candidate.id === popover.taskId)
+      // A task that vanished (deleted elsewhere) closes the window instead of
+      // showing a stale card.
+      if (popover.taskId !== undefined && task === undefined) return null
+      return (
+        <TaskPopover
+          rootId={rootId}
+          task={task}
+          members={teamView.team.members}
+          onChanged={team.refresh}
+          onClose={closePopover}
+          anchor={popover.anchor}
+        />
+      )
+    }
     if (popover.kind === 'job') {
       const row = jobRows.find(candidate => candidate.job.id === popover.jobId)
       if (row === undefined) return null
@@ -370,11 +402,8 @@ export function SubagentView(props: {
       return (
         <AgentNodePopover
           node={node}
-          onJump={(target) => {
-            if (target.childAddress !== undefined) openChild(target.childAddress)
-            else openMain()
-            setPopover(null)
-          }}
+          onJump={jumpToNode}
+          onOpenTask={openTaskById}
         />
       )
     }
@@ -410,7 +439,7 @@ export function SubagentView(props: {
           rootId={rootId}
           members={teamView.team.members}
           tasks={teamView.team.tasks}
-          onChanged={team.refresh}
+          onOpenTask={openTaskFromBoard}
           collapsed={teamBoardCollapsed}
           onToggleCollapsed={() => { setTeamBoardCollapsed(current => !current) }}
         />
@@ -441,9 +470,9 @@ export function SubagentView(props: {
               nodes={model}
               folded={folded}
               rootId={rootId}
-              onActivate={activateNode}
               onNodeInfo={(node, anchor) => { setPopover({ kind: 'node', nodeId: node.id, anchor }) }}
               onWorkflowInfo={(node, anchor) => { setPopover({ kind: 'workflow', nodeId: node.id, anchor }) }}
+              onOpenTask={openTaskById}
               onToggleFold={() => { setFolded(current => !current) }}
               mode={mode}
               onModeChange={setModeOverride}
@@ -454,9 +483,9 @@ export function SubagentView(props: {
               nodes={model}
               folded={folded}
               loading={summaryBackedLoading}
-              onActivate={activateNode}
               onNodeInfo={(node, anchor) => { setPopover({ kind: 'node', nodeId: node.id, anchor }) }}
               onWorkflowInfo={(node, anchor) => { setPopover({ kind: 'workflow', nodeId: node.id, anchor }) }}
+              onOpenTask={openTaskById}
               onToggleFold={() => { setFolded(current => !current) }}
               mode={mode}
               onModeChange={setModeOverride}
@@ -473,14 +502,18 @@ export function SubagentView(props: {
             : { kind: 'job', jobId: row.job.id, anchor })
         }}
       />
-      <AnchoredPopover
-        anchor={popover?.anchor ?? null}
-        onClose={closePopover}
-        draggable={popover?.kind === 'job'}
-        width={popover?.kind === 'job' ? 380 : 280}
-      >
-        {popoverContent}
-      </AnchoredPopover>
+      {popover?.kind === 'task'
+        ? popoverContent
+        : (
+          <AnchoredPopover
+            anchor={popover?.anchor ?? null}
+            onClose={closePopover}
+            draggable={popover?.kind === 'job'}
+            width={popover?.kind === 'job' ? 380 : 280}
+          >
+            {popoverContent}
+          </AnchoredPopover>
+        )}
     </div>
   )
 }
