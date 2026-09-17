@@ -12,6 +12,23 @@
  * hidden at zero size, so a one-shot fit on mount is not enough), centering
  * on both axes and scaling UP to {@link FIT_MAX_SCALE} so a small tree fills
  * the narrow panel instead of hugging the top-left corner.
+ *
+ * Visual language: every node is a shadcn `Card` — a single 1px `border-border`
+ * hairline over the surface ladder, `hover:bg-muted` as the only hover change,
+ * no shadow (nothing here floats) and no card tint (the old double/dashed
+ * borders and the filled workflow cards are gone; "current" is a 2px accent
+ * bar, running is the host `StateDot` plus the live line). Statuses ride the
+ * mono meta line, team membership is a `Badge`, a truncated line carries its
+ * full text in a shadcn `Tooltip`, and the control cluster is the vendored
+ * `Button` recipe (`ghost` / `sm`) with a tooltip per control. The phase frames
+ * are 1px dashed `border-border` boxes and the relations are hairline strokes
+ * in the border ink (see tasks-canvas.module.css for the canvas-only pieces:
+ * the dotted grid, the transformed layer and the edge strokes).
+ *
+ * Behaviour is unchanged: the same pointer-down-on-background pan, the same
+ * wheel zoom to cursor, the same click tolerance, the same auto-fit, and the
+ * same stable hooks (`data-graph-node`, `data-graph-controls`, `role="group"`,
+ * the aria-label copy).
  */
 import {
   useCallback,
@@ -22,9 +39,8 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react'
-import clsx from 'clsx'
 import {
-  Button, IconChecklistOutline14, IconFullscreenOutline16, IconTreeCorner8x10, StateDot,
+  IconChecklistOutline14, IconFullscreenOutline16, IconTreeCorner8x10, StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TasksAgentNode, TasksFoldNode, TasksNode, TasksWorkflowNode } from './tasks-model.ts'
 import { tasksEdges } from './tasks-model.ts'
@@ -34,7 +50,13 @@ import {
   WorkflowGlyph, workflowMeta,
 } from './tasks-shared.tsx'
 import { t } from './locales.ts'
-import css from './tasks-graph.module.css'
+import { Badge } from './ui/badge.tsx'
+import { buttonVariants } from './ui/button.tsx'
+import { Card } from './ui/card.tsx'
+import { Spinner } from './ui/spinner.tsx'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip.tsx'
+import { cn } from './ui/utils.ts'
+import css from './tasks-canvas.module.css'
 
 /** The zoom bounds of the canvas. */
 const ZOOM_MIN = 0.3
@@ -46,6 +68,25 @@ const FIT_MAX_SCALE = 1.15
 const FIT_MIN_SCALE = 0.78
 /** Drag-vs-click separation: pointer travel below this stays a click. */
 const CLICK_TOLERANCE_PX = 4
+
+/**
+ * The shared shell of every node card: absolute (the layout owns left/top),
+ * one 1px hairline, the card surface, and `hover:bg-muted` as the only hover
+ * change. No shadow — a node never floats — and no tint.
+ */
+const NODE_CARD = 'absolute cursor-pointer gap-0 overflow-hidden rounded-lg border-border bg-card px-2 py-1.5 transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-ring'
+/** The on-screen session: a 2px accent bar, never a tinted or shadowed card. */
+const NODE_ACCENT = 'border-l-2 border-l-primary'
+/** Settled nodes recede by INK, not by opacity: the whole card drops to the
+ *  secondary ink (the title inherits it) and the meta line goes one level
+ *  further down (`text-foreground-3`, appended over NODE_META). */
+const NODE_SETTLED = 'text-muted-foreground'
+/** Card line 1: 12px medium, clamped to TWO lines — at 150px a single
+ *  ellipsized line left ~7 CJK characters, which is what made a dense graph
+ *  unreadable. The tooltip still carries the full name. */
+const NODE_TITLE = 'min-w-0 flex-1 line-clamp-2 text-xs leading-[1.3] font-medium [overflow-wrap:anywhere]'
+/** The mono meta line: 11px, tabular figures, secondary ink. */
+const NODE_META = 'mt-0.5 truncate font-mono text-[11px] leading-[1.3] tabular-nums text-muted-foreground'
 
 /** One phase frame of a run node (the dashed box behind its members). */
 interface PhaseFrame {
@@ -69,6 +110,67 @@ export interface TasksGraphProps {
   onToggleFold(): void
   mode: 'graph' | 'tree'
   onModeChange(mode: 'graph' | 'tree'): void
+  /** Fallback loading overlay while the root catalog hydrates (the same
+   *  signal TasksTree renders its loading row for). */
+  loading?: boolean
+}
+
+/**
+ * One button of the control cluster: the vendored `Button`'s own `ghost` / `sm`
+ * recipe on a real `<button>`, with a shadcn tooltip carrying the same copy as
+ * the aria-label (`title` used to carry it; the bubble replaces it).
+ *
+ * The recipe comes from `buttonVariants` rather than the `Button` component for
+ * one concrete reason: Radix's `TooltipTrigger` has to attach its ref to the
+ * anchor, and the vendored `Button` is a plain function component (not a
+ * `forwardRef` one), so on React 18 the cloned ref is dropped with a warning
+ * and the tooltip would measure nothing. The rendered element is exactly what
+ * `<Button variant="ghost" size="sm">` renders.
+ */
+function ControlButton(props: {
+  label: string
+  pressed?: boolean
+  onClick(): void
+  children: ReactNode
+}): ReactNode {
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className={cn(
+              buttonVariants({ variant: 'ghost', size: 'sm' }),
+              'flex-none px-2 text-[13px]',
+              props.pressed === true && 'bg-muted text-foreground',
+            )}
+            aria-label={props.label}
+            aria-pressed={props.pressed}
+            onClick={props.onClick}
+          >
+            {props.children}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="text-[11px]">{props.label}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
+/**
+ * One ellipsized card line plus the tooltip that carries its full text — the
+ * shadcn replacement for the native `title` these lines used to wear. The
+ * anchor is the line itself, so hovering the dot/glyph gutter stays quiet.
+ */
+function CardLine(props: { className: string; label: string; children?: ReactNode }): ReactNode {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className={props.className}>{props.children ?? props.label}</span>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="max-w-[260px] text-[11px]">{props.label}</TooltipContent>
+    </Tooltip>
+  )
 }
 
 /** The shared view-mode toggle (glyph + label, per the mockup). */
@@ -80,17 +182,13 @@ export function ViewModeToggle(props: {
   const toTree = mode === 'graph'
   const label = toTree ? t('tasksViewTree') : t('tasksViewGraph')
   return (
-    <Button
-      variant="ghost"
-      size="sm"
-      className={css.controlMode}
-      icon={toTree ? <IconTreeCorner8x10 /> : <WorkflowGlyph size={13} />}
-      aria-label={t(toTree ? 'tasksViewSwitchToTree' : 'tasksViewSwitchToGraph')}
-      title={t(toTree ? 'tasksViewSwitchToTree' : 'tasksViewSwitchToGraph')}
+    <ControlButton
+      label={t(toTree ? 'tasksViewSwitchToTree' : 'tasksViewSwitchToGraph')}
       onClick={() => { onModeChange(toTree ? 'tree' : 'graph') }}
     >
+      {toTree ? <IconTreeCorner8x10 /> : <WorkflowGlyph />}
       {label}
-    </Button>
+    </ControlButton>
   )
 }
 
@@ -98,21 +196,18 @@ export function ViewModeToggle(props: {
 export function FoldToggleButton(props: { folded: boolean; onToggleFold(): void }): ReactNode {
   const { folded, onToggleFold } = props
   return (
-    <Button
-      variant="ghost"
-      size="sm"
-      className={clsx(css.controlBtn, folded && css.controlBtnActive)}
-      icon={<IconChecklistOutline14 size={13} />}
-      aria-pressed={folded}
-      aria-label={t(folded ? 'tasksFoldExpand' : 'tasksFoldCollapse')}
-      title={t(folded ? 'tasksFoldExpand' : 'tasksFoldCollapse')}
+    <ControlButton
+      label={t(folded ? 'tasksFoldExpand' : 'tasksFoldCollapse')}
+      pressed={folded}
       onClick={onToggleFold}
-    />
+    >
+      <IconChecklistOutline14 />
+    </ControlButton>
   )
 }
 
 export function TasksGraph(props: TasksGraphProps): ReactNode {
-  const { nodes, folded, rootId, onNodeInfo, onWorkflowInfo, onOpenTask, onToggleFold, mode, onModeChange } = props
+  const { nodes, folded, rootId, onNodeInfo, onWorkflowInfo, onOpenTask, onToggleFold, mode, onModeChange, loading } = props
   const containerRef = useRef<HTMLDivElement>(null)
   const [tf, setTf] = useState({ x: 0, y: 0, k: 1 })
   const [dragging, setDragging] = useState(false)
@@ -282,95 +377,102 @@ export function TasksGraph(props: TasksGraphProps): ReactNode {
   }
 
   return (
-    <div className={css.graphView}>
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
       <div
         ref={containerRef}
-        className={clsx(css.canvas, dragging && css.canvasDragging)}
+        className={cn(css.canvas, dragging && css.canvasDragging)}
         role="group"
         aria-label={t('tasksViewGraph')}
         onPointerDown={onPointerDown}
       >
-        <div
-          className={css.canvasInner}
-          style={{
-            width: layout.width,
-            height: layout.height,
-            transform: `translate(${tf.x}px, ${tf.y}px) scale(${tf.k})`,
-          }}
-        >
-          <svg className={css.edges} width={layout.width} height={layout.height} aria-hidden="true">
-            {edges.map((edge) => {
-              const from = layout.boxes.get(edge.from)
-              const to = layout.boxes.get(edge.to)
-              if (from === undefined || to === undefined) return null
-              const target = nodeById.get(edge.to)
-              return (
-                <path
-                  key={`${edge.from}->${edge.to}`}
-                  className={clsx(
-                    css.edge,
-                    edge.kind === 'team' && css.edgeTeam,
-                    edge.kind === 'workflow' && css.edgeWorkflow,
-                    target?.kind === 'fold' && css.edgeFold,
-                  )}
-                  d={edgePath(from, to)}
-                />
-              )
-            })}
-          </svg>
-          {phaseFrames.map(frame => (
-            <div
-              key={frame.key}
-              className={css.phaseFrame}
-              style={{ left: frame.x, top: frame.y, width: frame.w, height: frame.h }}
-            >
-              <span className={css.phaseLabel}>{frame.title ?? t('workflowPhaseUnnamed')}</span>
+        <TooltipProvider delayDuration={400}>
+          {/* The graph twin of TasksTree's loading row (same Spinner + the
+              same `loading` copy key). `pointer-events-none` keeps the
+              canvas's pan/zoom/node clicks fully live underneath. */}
+          {loading === true && nodes.length === 0 && (
+            <div className="pointer-events-none absolute inset-0 z-[6] flex items-center justify-center">
+              <span className="flex items-center gap-1.5 px-6 py-3 text-xs text-muted-foreground">
+                {/* The visible line carries the copy; the glyph is decoration. */}
+                <span aria-hidden="true" className="flex flex-none items-center">
+                  <Spinner size={12} />
+                </span>
+                {t('loading')}
+              </span>
             </div>
-          ))}
-          {nodes.map((node) => {
-            const box = layout.boxes.get(node.id)
-            if (box === undefined) return null
-            const style = { left: box.x, top: box.y, width: GRAPH_NODE_W, minHeight: box.h }
-            if (node.kind === 'fold') return renderFoldNode(node, style, onToggleFold, clickAllowed)
-            if (node.kind === 'workflow') {
-              return renderWorkflowNode(node, style, onWorkflowInfo, clickAllowed)
-            }
-            return renderAgentNode(node, style, onNodeInfo, onOpenTask, clickAllowed)
-          })}
-        </div>
-        <div className={css.controls} data-graph-controls>
+          )}
+          <div
+            className={css.canvasInner}
+            style={{
+              width: layout.width,
+              height: layout.height,
+              transform: `translate(${tf.x}px, ${tf.y}px) scale(${tf.k})`,
+            }}
+          >
+            <svg className={css.edges} width={layout.width} height={layout.height} aria-hidden="true">
+              {edges.map((edge) => {
+                const from = layout.boxes.get(edge.from)
+                const to = layout.boxes.get(edge.to)
+                if (from === undefined || to === undefined) return null
+                const target = nodeById.get(edge.to)
+                return (
+                  <path
+                    key={`${edge.from}->${edge.to}`}
+                    className={cn(
+                      css.edge,
+                      edge.kind === 'team' && css.edgeTeam,
+                      edge.kind === 'workflow' && css.edgeWorkflow,
+                      target?.kind === 'fold' && css.edgeFold,
+                    )}
+                    d={edgePath(from, to)}
+                  />
+                )
+              })}
+            </svg>
+            {phaseFrames.map(frame => (
+              <div
+                key={frame.key}
+                className="pointer-events-none absolute rounded-md border border-dashed border-border"
+                style={{ left: frame.x, top: frame.y, width: frame.w, height: frame.h }}
+              >
+                <span className="absolute -top-[7px] left-2 bg-background px-1 font-mono text-[11px] leading-[1.3] tracking-wide text-foreground-3 uppercase">
+                  {frame.title ?? t('workflowPhaseUnnamed')}
+                </span>
+              </div>
+            ))}
+            {/* KEYBOARD ACCESS (deliberate, F4): graph nodes render with
+                tabIndex={-1} on purpose — a graph with dozens of nodes would
+                add dozens of Tab stops and drown the page's real controls,
+                and the canvas itself supports pointer pan/zoom only. The
+                keyboard-equivalent path is the bottom-right control cluster
+                (`data-graph-controls`): its "切换为树状图" view toggle is a
+                NATIVE <button> (Tab-reachable, Enter/Space-activatable), and
+                tree mode provides the full ArrowUp/ArrowDown/Home/End/Enter/
+                Space navigation over the same nodes (see TasksTree). Do NOT
+                "fix" the nodes' tabIndex without fixing the tab-stop flood. */}
+            {nodes.map((node) => {
+              const box = layout.boxes.get(node.id)
+              if (box === undefined) return null
+              const style = { left: box.x, top: box.y, width: GRAPH_NODE_W, minHeight: box.h }
+              if (node.kind === 'fold') return renderFoldNode(node, style, onToggleFold, clickAllowed)
+              if (node.kind === 'workflow') {
+                return renderWorkflowNode(node, style, onWorkflowInfo, clickAllowed)
+              }
+              return renderAgentNode(node, style, onNodeInfo, onOpenTask, clickAllowed)
+            })}
+          </div>
+        </TooltipProvider>
+        <div className="absolute right-2.5 bottom-2.5 z-[6] flex flex-row items-center gap-0.5" data-graph-controls>
           <ViewModeToggle mode={mode} onModeChange={onModeChange} />
           <FoldToggleButton folded={folded} onToggleFold={onToggleFold} />
-          <Button
-            variant="ghost"
-            size="sm"
-            className={css.controlBtn}
-            aria-label={t('tasksZoomOut')}
-            title={t('tasksZoomOut')}
-            onClick={() => { zoomBy(1 / 1.2) }}
+          <ControlButton label={t('tasksZoomOut')} onClick={() => { zoomBy(1 / 1.2) }}>−</ControlButton>
+          <span
+            className="flex-none px-1.5 font-mono text-[11px] tabular-nums text-muted-foreground"
+            aria-hidden="true"
           >
-            −
-          </Button>
-          <span className={css.controlZoomLevel} aria-hidden="true">{Math.round(tf.k * 100)}%</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className={css.controlBtn}
-            aria-label={t('tasksZoomIn')}
-            title={t('tasksZoomIn')}
-            onClick={() => { zoomBy(1.2) }}
-          >
-            +
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className={css.controlBtn}
-            icon={<IconFullscreenOutline16 size={13} />}
-            aria-label={t('tasksZoomFit')}
-            title={t('tasksZoomFit')}
-            onClick={refit}
-          />
+            {Math.round(tf.k * 100)}%
+          </span>
+          <ControlButton label={t('tasksZoomIn')} onClick={() => { zoomBy(1.2) }}>+</ControlButton>
+          <ControlButton label={t('tasksZoomFit')} onClick={refit}><IconFullscreenOutline16 /></ControlButton>
         </div>
       </div>
     </div>
@@ -385,21 +487,22 @@ function renderAgentNode(
   onOpenTask: (taskId: string, anchor: HTMLElement) => void,
   clickAllowed: () => boolean,
 ): ReactNode {
+  const meta = agentMeta(node)
+  const settled = (node.state === 'done' || node.state === 'error') && !node.current
   return (
-    <div
+    <Card
       key={node.id}
       data-graph-node={node.id}
       role="button"
       tabIndex={-1}
-      aria-label={`${node.label} ${agentMeta(node)}`}
+      aria-label={`${node.label} ${meta}`}
       aria-current={node.current ? 'true' : undefined}
-      className={clsx(
-        css.node,
-        node.parentId === undefined && css.nodeLead,
-        node.team?.role === 'teammate' && css.nodeTeam,
-        node.current && css.nodeCurrent,
-        (node.state === 'done' || node.state === 'error') && !node.current && css.nodeSettled,
-        node.state === 'error' && css.nodeError,
+      className={cn(
+        NODE_CARD,
+        // The lead keeps the stronger hairline rung; the meta line names it.
+        node.parentId === undefined && 'border-border-strong',
+        node.current && NODE_ACCENT,
+        settled && NODE_SETTLED,
       )}
       style={style}
       onClick={(event) => {
@@ -407,15 +510,32 @@ function renderAgentNode(
         onNodeInfo(node, event.currentTarget)
       }}
     >
-      <span className={css.nodeHeader}>
-        <StateDot state={nodeDotState(node.state)} size={6} className={css.nodeDot} />
-        <span className={css.nodeGlyph} aria-hidden="true"><AgentGlyph node={node} /></span>
-        <span className={css.nodeTitle} title={node.label}>{node.label}</span>
+      <span className="flex min-w-0 items-center gap-1">
+        <StateDot state={nodeDotState(node.state)} size={6} className="flex-none" />
+        <span className="flex flex-none text-foreground-3" aria-hidden="true"><AgentGlyph node={node} /></span>
+        <CardLine className={NODE_TITLE} label={node.label} />
+        {node.team?.role === 'teammate' && node.team.name !== '' && (
+          <Badge
+            variant="outline"
+            className="h-4 max-w-[48px] flex-none truncate px-1.5 py-0 text-[11px] font-normal text-muted-foreground"
+          >
+            {node.team.name}
+          </Badge>
+        )}
       </span>
-      <span className={css.nodeMeta} title={agentMeta(node)}>{agentMeta(node)}</span>
+      {/* Error is data, not chrome: the card keeps the shared hairline (F6)
+          and the state rides the StateDot plus the destructive meta ink —
+          the same family success/warning already use on their meta words. */}
+      <CardLine
+        className={cn(
+          NODE_META,
+          node.state === 'error' ? 'text-destructive' : settled && 'text-foreground-3',
+        )}
+        label={meta}
+      />
       {node.state === 'running' && <LiveLine live={node.live} />}
       <TaskLine tasks={node.tasks} onOpenTask={onOpenTask} />
-    </div>
+    </Card>
   )
 }
 
@@ -426,60 +546,61 @@ function renderWorkflowNode(
   onWorkflowInfo: (node: TasksWorkflowNode, anchor: HTMLElement) => void,
   clickAllowed: () => boolean,
 ): ReactNode {
+  const meta = workflowMeta(node)
+  const settled = node.run.status !== 'running'
   return (
-    <div
+    <Card
       key={node.id}
       data-graph-node={node.id}
       role="button"
       tabIndex={-1}
-      aria-label={`${node.run.name} ${workflowMeta(node)}`}
-      className={clsx(css.node, css.nodeWorkflow, node.run.status !== 'running' && css.nodeSettled)}
+      aria-label={`${node.run.name} ${meta}`}
+      className={cn(NODE_CARD, settled && NODE_SETTLED)}
       style={style}
       onClick={(event) => {
         if (!clickAllowed()) return
         onWorkflowInfo(node, event.currentTarget)
       }}
     >
-      <span className={css.nodeHeader}>
-        <StateDot state={node.run.status === 'running' ? 'ongoing' : 'done'} size={6} className={css.nodeDot} />
-        <span className={css.nodeGlyph} aria-hidden="true"><WorkflowGlyph /></span>
-        <span className={css.nodeTitle} title={node.run.name}>{node.run.name}</span>
+      <span className="flex min-w-0 items-center gap-1">
+        <StateDot state={node.run.status === 'running' ? 'ongoing' : 'done'} size={6} className="flex-none" />
+        <span className="flex flex-none text-foreground-3" aria-hidden="true"><WorkflowGlyph /></span>
+        <CardLine className={NODE_TITLE} label={node.run.name} />
       </span>
-      <span className={css.nodeMeta}>{workflowMeta(node)}</span>
-    </div>
+      <CardLine className={cn(NODE_META, settled && 'text-foreground-3')} label={meta} />
+    </Card>
   )
 }
 
-/** One fold aggregate node. */
+/** One fold aggregate node: the settled leaves as a dashed card. */
 function renderFoldNode(
   node: TasksFoldNode,
   style: { left: number; top: number; width: number; minHeight: number },
   onToggleFold: () => void,
   clickAllowed: () => boolean,
 ): ReactNode {
+  const previews = foldPreviews(node.previews)
   return (
-    <div
+    <Card
       key={node.id}
       data-graph-node={node.id}
       role="button"
       tabIndex={-1}
       aria-label={`${t('tasksFoldCompleted', { count: node.count })} · ${t('tasksFoldExpand')}`}
-      className={clsx(css.node, css.nodeFold)}
+      className={cn(NODE_CARD, 'border-dashed text-muted-foreground')}
       style={style}
       onClick={() => {
         if (!clickAllowed()) return
         onToggleFold()
       }}
     >
-      <span className={css.nodeHeader}>
-        <span className={css.nodeGlyph} aria-hidden="true"><FoldGlyph /></span>
-        <span className={clsx(css.nodeTitle, css.nodeTitlePlain)}>
-          {t('tasksFoldCompleted', { count: node.count })}
-        </span>
+      <span className="flex min-w-0 items-center gap-1">
+        <span className="flex flex-none" aria-hidden="true"><FoldGlyph /></span>
+        <span className={NODE_TITLE}>{t('tasksFoldCompleted', { count: node.count })}</span>
       </span>
-      <span className={css.nodeMeta} title={foldPreviews(node.previews)}>
-        {`${t('tasksFoldExpand')} · ${foldPreviews(node.previews)}`}
-      </span>
-    </div>
+      <CardLine className={NODE_META} label={previews}>
+        {`${t('tasksFoldExpand')} · ${previews}`}
+      </CardLine>
+    </Card>
   )
 }

@@ -15,10 +15,13 @@ import { tasksEdges } from './tasks-model.ts'
 /** Geometry constants of the canvas (px, pre-scale). Metrics follow the
  *  approved Variant-D mockup, whose design target is the NARROW native right
  *  sidebar (~360px): a 132px card fits two per row plus the gutter. */
-export const GRAPH_NODE_W = 132
-export const GRAPH_NODE_H = 46
+export const GRAPH_NODE_W = 150
+/** Two title lines plus the mono meta line: the card clamps long agent names
+ *  to two lines instead of ellipsizing them to a couple of characters, so the
+ *  reserved height covers that (see NODE_TITLE in TasksGraph.tsx). */
+export const GRAPH_NODE_H = 60
 /** Extra height of an agent node carrying a live line. */
-export const GRAPH_LIVE_H = 13
+export const GRAPH_LIVE_H = 14
 export const GRAPH_GAP_X = 28
 export const GRAPH_GAP_Y = 53
 export const GRAPH_PAD = 16

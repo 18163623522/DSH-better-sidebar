@@ -191,3 +191,44 @@ describe('tasksEdges', () => {
     expect(kindOf('m1')).toBe('workflow')
   })
 })
+
+describe('buildTasksModel: duplicate workflow members', () => {
+  it('never synthesizes a second node for a member another parent already lists', () => {
+    // `m1` is a real child of `a`, but a run started by `root` names it as a
+    // member — the node must stay single (React keys / edge map depend on it)
+    // and the run simply does not duplicate it on the canvas.
+    const audit = run({
+      originSessionId: 'root',
+      phases: [{ title: '侦察', members: [{ seq: 1, label: 'm1', childId: 'm1', outcome: 'completed' }] }],
+    })
+    const model = buildTasksModel(input({
+      catalogs: {
+        root: catalog([child('a')]),
+        a: catalog([child('m1', { activity: 'inactive' })]),
+      },
+      byId: { root: summary('root'), a: summary('a'), m1: summary('m1') },
+      runs: [audit],
+      folded: false,
+    }))
+    const ids = model.map(node => node.id)
+    expect(ids.filter(id => id === 'm1')).toHaveLength(1)
+    expect(new Set(ids).size).toBe(ids.length)
+    // The real node keeps its catalog parent.
+    expect(model.find(node => node.id === 'm1')?.parentId).toBe('a')
+  })
+
+  it('still synthesizes a member no catalog knows', () => {
+    const audit = run({
+      originSessionId: 'root',
+      phases: [{ title: '侦察', members: [{ seq: 1, label: 'ghost member', childId: 'ghost' }] }],
+    })
+    const model = buildTasksModel(input({
+      catalogs: { root: catalog([]) },
+      byId: { root: summary('root') },
+      runs: [audit],
+      folded: false,
+    }))
+    const ghost = model.find(node => node.id === 'ghost')
+    expect(ghost).toMatchObject({ parentId: 'run:run-1', synthesized: true })
+  })
+})

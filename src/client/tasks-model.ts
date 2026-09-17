@@ -185,6 +185,24 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
 
   const out: TasksNode[] = []
 
+  /**
+   * Every session id the catalogs know about, anywhere in the tree. A
+   * workflow member whose `childId` is listed under a DIFFERENT parent (or
+   * whose catalog row is missing from the run's origin) must NOT be
+   * synthesized into a second node with the same id: duplicate ids collide in
+   * React keys and in the edge map. Known ids keep their single real node;
+   * unknown ones are synthesized below.
+   */
+  const knownAgentIds = new Set<string>()
+  for (const catalog of Object.values(catalogs)) {
+    if (catalog?.state !== 'ready') continue
+    for (const entry of catalog.entries) {
+      if (entry.kind === 'child') knownAgentIds.add(entry.id)
+    }
+  }
+  // The local children lists of `appendChildren` are built lazily per parent,
+  // so this global set is what makes the guard below order-independent.
+
   /** The agent children of one parent, in catalog order (side threads and
    *  diagnostics excluded), with workflow runs appended in start order. */
   const appendChildren = (parentId: string): void => {
@@ -236,6 +254,9 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
             existing.parentId = runNode.id
             if (tasksByNode.get(existing.id) !== undefined) existing.tasks = tasksByNode.get(existing.id)
             members.push(existing)
+          } else if (member.childId !== '' && knownAgentIds.has(member.childId)) {
+            // Its real node exists elsewhere in the tree: the run's popover
+            // already lists the member, so no card is duplicated here.
           } else {
             const childKnown = member.childId !== ''
             members.push({
@@ -335,7 +356,16 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
     ...(tasksByNode.get(rootId) !== undefined ? { tasks: tasksByNode.get(rootId) } : {}),
   })
   appendChildren(rootId)
-  return out
+
+  // Last-resort guard: one node per session id, first occurrence wins. Real
+  // catalogs list a child under exactly one parent, so this only fires on
+  // pathological trees (and keeps React keys unique when it does).
+  const seen = new Set<string>()
+  return out.filter((node) => {
+    if (seen.has(node.id)) return false
+    seen.add(node.id)
+    return true
+  })
 }
 
 /** The parent→child edges of a model (derived, kept out of the build). */

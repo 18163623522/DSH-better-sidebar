@@ -7,24 +7,40 @@
  * Shape: a non-fullscreen, DRAGGABLE card (never a modal dialog). Details
  * render as multi-line MARKDOWN by default; 编辑 switches the same card into
  * multi-line editing, so reading and writing never jump between surfaces.
- * Actions: owner reassignment (Pills, CAS-immediate), edit/save, reopen or
- * complete, and a two-step delete.
+ * Actions: owner reassignment (CAS-immediate), edit/save, reopen or complete,
+ * and a two-step delete.
  *
- * Host primitives everywhere (Button / Input / Pill / Tag / StateDot) plus
- * the plugin's own `MultilineField` (the host set ships no multi-line input)
- * and the shared `MarkdownText` renderer with the plugin's copy labels.
+ * Visual base: the vendored shadcn/ui set — `Card` shell, `Badge` status,
+ * `Input` / `Textarea` fields, a `ToggleGroup` owner picker and `Button`
+ * actions — over the token bridge in src/client/ui/theme.css, plus the shared
+ * `MarkdownText` renderer with the plugin's copy labels. The shell paints no
+ * surface of its own: the window is portaled to `document.body`, where
+ * `AnchoredPopover` owns the floating border/radius/shadow, so this card is
+ * layout and content only (the page's "static panels cast no shadow" rule).
+ *
+ * That portal also sits OUTSIDE the task page root, so the card re-declares
+ * the page root class (`dsw-tasks`) to pick up the scoped base reset the
+ * plugin ships instead of preflight — box-sizing and form-control font
+ * inheritance; without preflight a bare `<button>`/`<textarea>` would render
+ * in the UA's own font.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
-  Button, IconCheckOutline14, IconCloseOutline16, IconEditOutline16, IconPlusOutline16,
-  IconRefreshOutline14, IconTrashOutline16, Input, MarkdownText, Pill, StateDot, Tag,
+  IconCheckOutline14, IconCloseOutline16, IconEditOutline16, IconPlusOutline16,
+  IconRefreshOutline14, IconTrashOutline16, MarkdownText, StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SidebarTeamMemberView, SidebarTeamTaskView } from '../context-types.ts'
 import { api } from './api.ts'
 import { markdownTextProps } from './markdown-labels.tsx'
 import { AnchoredPopover } from './AnchoredPopover.tsx'
 import { t, type CopyKey } from './locales.ts'
-import css from './tasks-graph.module.css'
+import { Badge } from './ui/badge.tsx'
+import { Button } from './ui/button.tsx'
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from './ui/card.tsx'
+import { Input } from './ui/input.tsx'
+import { Separator } from './ui/separator.tsx'
+import { Textarea } from './ui/textarea.tsx'
+import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group.tsx'
 
 /** One mutation outcome (the host route's own union). */
 type MutationResult = { ok: true } | { ok: false; error: { code: string; message: string } }
@@ -40,9 +56,21 @@ function taskStatusKey(status: SidebarTeamTaskView['status']): CopyKey {
 }
 
 /**
+ * The status badge's ink — hue carries meaning only: done = success, running =
+ * accent, blocked = warning, everything else stays on quiet meta ink.
+ */
+function statusTone(task: SidebarTeamTaskView): string {
+  if (task.status === 'completed') return 'border-success/40 text-success'
+  if (task.status === 'in_progress') return 'border-primary/40 text-primary'
+  return task.ready ? 'text-muted-foreground' : 'border-warning/40 text-warning'
+}
+
+/**
  * The plugin's own multi-line input: the host primitive set ships no
  * textarea, so this is OUR component (token-styled, drag-exempt) and every
- * multi-line edit in the page goes through it.
+ * multi-line edit in the page goes through it. The surface is the vendored
+ * shadcn `Textarea`; `rows` keeps the caller's height contract and the
+ * content-driven growth is capped so a long body cannot outgrow the viewport.
  */
 export function MultilineField(props: {
   value: string
@@ -52,8 +80,8 @@ export function MultilineField(props: {
   onChange?(next: string): void
 }): ReactNode {
   return (
-    <textarea
-      className={css.taskTextarea}
+    <Textarea
+      className="max-h-[45vh] min-h-[120px] resize-y leading-relaxed"
       value={props.value}
       rows={props.rows ?? 7}
       placeholder={props.placeholder}
@@ -64,33 +92,54 @@ export function MultilineField(props: {
   )
 }
 
-/** The owner picker (Pills; CAS-immediate, so it is never a draft field). */
-function OwnerPicker(props: {
+/**
+ * The unowned option's sentinel value: Radix reads an EMPTY string as "nothing
+ * is selected" (`value ? [value] : []`), so `''` could never render pressed —
+ * and the unowned chip must be visibly the active one on an unowned task.
+ */
+const UNOWNED = '__unowned__'
+
+/**
+ * The owner chips' ink: an unselected owner is meta ink, the picked one is
+ * full ink, and the vendored toggle adds its accent tint on top — the tint
+ * alone would read exactly like hover. (Weight cannot carry the selection
+ * here: the page's scoped base reset gives every form control `font: inherit`,
+ * which outranks a font-weight utility.)
+ */
+const OWNER_CHIP = 'text-muted-foreground data-[state=on]:text-foreground'
+
+/** The owner picker (single-select toggles; CAS-immediate, so never a draft field). */
+export function OwnerPicker(props: {
   members: readonly SidebarTeamMemberView[]
   owner: string | undefined
   disabled: boolean
   onPick(owner: string): void
 }): ReactNode {
   return (
-    <div className={css.taskOwnerRow}>
-      <Pill
-        active={props.owner === undefined}
-        disabled={props.disabled}
-        onClick={() => { props.onPick('') }}
-      >
+    <ToggleGroup
+      type="single"
+      value={props.owner ?? UNOWNED}
+      disabled={props.disabled}
+      spacing={1}
+      aria-label={t('teamTaskOwner')}
+      className="flex-wrap"
+      onValueChange={(next) => {
+        // '' is Radix's deselect of the pressed chip (the reader re-clicked the
+        // current owner): the old pill row re-sent the same owner, i.e. no
+        // mutation — the window never unassigns behind a re-click.
+        if (next === '') return
+        props.onPick(next === UNOWNED ? '' : next)
+      }}
+    >
+      <ToggleGroupItem value={UNOWNED} variant="outline" size="sm" className={OWNER_CHIP}>
         {t('teamTaskUnowned')}
-      </Pill>
+      </ToggleGroupItem>
       {props.members.map(member => (
-        <Pill
-          key={member.id}
-          active={props.owner === member.name}
-          disabled={props.disabled}
-          onClick={() => { props.onPick(member.name) }}
-        >
+        <ToggleGroupItem key={member.id} value={member.name} variant="outline" size="sm" className={OWNER_CHIP}>
           {member.name}
-        </Pill>
+        </ToggleGroupItem>
       ))}
-    </div>
+    </ToggleGroup>
   )
 }
 
@@ -104,38 +153,38 @@ function TaskViewBody(props: {
   const { task } = props
   const body = task.description.trim()
   return (
-    <>
-      <div className={css.jobPopTitle}>
+    <div className="flex min-w-0 flex-col gap-2.5">
+      <div className="flex min-w-0 items-center gap-1.5">
         <StateDot
           size={6}
           state={task.status === 'completed' ? 'done' : task.ready ? 'ongoing' : 'warning'}
         />
-        <span className={css.popTitle} title={task.subject}>{task.subject}</span>
-        <Tag tone={task.status === 'completed' ? 'success' : task.ready ? 'info' : 'warning'}>
+        <span className="min-w-0 flex-1 truncate font-medium" title={task.subject}>{task.subject}</span>
+        <Badge variant="outline" className={`h-5 px-2 text-[11px] ${statusTone(task)}`}>
           {t(task.ready ? taskStatusKey(task.status) : 'teamTaskBlocked')}
-        </Tag>
+        </Badge>
       </div>
-      <div className={css.jobPopMeta}>
-        <span className={css.popKey}>{t('teamTaskOwner')}</span>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+        <span className="text-foreground-3">{t('teamTaskOwner')}</span>
         <span>{task.ownerName ?? t('teamTaskUnowned')}</span>
         {task.blockedBy.length > 0 && (
           <>
-            <span className={css.popKey}>{t('teamTaskBlockedBy')}</span>
-            <span>{task.blockedBy.join(' · ')}</span>
+            <span className="text-foreground-3">{t('teamTaskBlockedBy')}</span>
+            <span className="font-mono tabular-nums">{task.blockedBy.join(' · ')}</span>
           </>
         )}
       </div>
-      <div className={css.taskMarkdown}>
+      <div className="max-h-[260px] overflow-y-auto leading-[1.55] text-foreground">
         {body === ''
-          ? <div className={css.popHint}>{t('teamTaskNoDescription')}</div>
+          ? <div className="text-xs leading-snug text-muted-foreground">{t('teamTaskNoDescription')}</div>
           : (
             <MarkdownText
               {...markdownTextProps(body, { copyLabel: t('copy'), copiedLabel: t('copied') })}
             />
           )}
       </div>
-      <div className={css.taskField}>
-        <span className={css.taskLabel}>{t('teamTaskOwner')}</span>
+      <div className="flex flex-col gap-1.5">
+        <span className="font-mono text-[11px] text-foreground-3">{t('teamTaskOwner')}</span>
         <OwnerPicker
           members={props.teammates}
           owner={task.ownerName}
@@ -143,11 +192,11 @@ function TaskViewBody(props: {
           onPick={props.onReassign}
         />
       </div>
-    </>
+    </div>
   )
 }
 
-/** The editing body: subject (host Input) + description (our multi-line field). */
+/** The editing body: subject (shadcn Input) + description (our multi-line field). */
 function TaskEditBody(props: {
   subject: string
   description: string
@@ -155,18 +204,19 @@ function TaskEditBody(props: {
   onDescription(next: string): void
 }): ReactNode {
   return (
-    <div className={css.taskForm} data-popover-no-drag>
-      <label className={css.taskField}>
-        <span className={css.taskLabel}>{t('teamTaskSubject')}</span>
+    <div className="flex flex-col gap-2.5" data-popover-no-drag>
+      <label className="flex flex-col gap-1">
+        <span className="font-mono text-[11px] text-foreground-3">{t('teamTaskSubject')}</span>
         <Input
+          className="h-8"
           value={props.subject}
           placeholder={t('teamTaskSubjectPlaceholder')}
           aria-label={t('teamTaskSubject')}
           onChange={(event) => { props.onSubject(event.target.value) }}
         />
       </label>
-      <label className={css.taskField}>
-        <span className={css.taskLabel}>{t('teamTaskDescription')}</span>
+      <label className="flex flex-col gap-1">
+        <span className="font-mono text-[11px] text-foreground-3">{t('teamTaskDescription')}</span>
         <MultilineField
           value={props.description}
           label={t('teamTaskDescription')}
@@ -277,52 +327,67 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
   }
 
   return (
-    <div className={css.popCard} data-popover-handle>
-      <div className={css.popHead}>
-        <span>{creating ? t('teamTaskCreate') : editing ? t('teamTaskEdit') : t('teamTaskDetail')}</span>
-        <span className={css.popHeadActions} data-popover-no-drag>
+    <Card
+      className="dsw-tasks box-border gap-0 rounded-lg border-0 bg-transparent py-0 text-[13px]"
+      data-popover-handle
+    >
+      <CardHeader className="flex flex-row items-center justify-between gap-2 px-3 py-2">
+        <CardTitle className="min-w-0 flex-1 truncate font-mono text-[11px] font-medium text-foreground-3">
+          {creating ? t('teamTaskCreate') : editing ? t('teamTaskEdit') : t('teamTaskDetail')}
+        </CardTitle>
+        <div className="flex flex-none items-center gap-1" data-popover-no-drag>
           <Button
             variant="ghost"
-            size="sm"
-            icon={<IconCloseOutline16 size={12} />}
+            size="icon"
+            // Load-bearing reset: the plugin ships no preflight, so a control
+            // whose variant declares no paint keeps the UA's `buttonface` fill
+            // and 2px `outset` border. A ghost icon button must be chrome-free.
+            className="size-7 border-0 bg-transparent"
             aria-label={t('teamTaskCancel')}
             title={t('teamTaskCancel')}
             onClick={onClose}
-          />
-        </span>
-      </div>
+          >
+            <IconCloseOutline16 />
+          </Button>
+        </div>
+      </CardHeader>
+      <Separator />
 
-      {editing || task === undefined
-        ? (
-          <TaskEditBody
-            subject={subject}
-            description={description}
-            onSubject={setSubject}
-            onDescription={setDescription}
-          />
-        )
-        : (
-          <TaskViewBody
-            task={task}
-            teammates={teammates}
-            busy={busy}
-            onReassign={reassign}
-          />
-        )}
+      <CardContent className="px-3 py-2.5">
+        {editing || task === undefined
+          ? (
+            <TaskEditBody
+              subject={subject}
+              description={description}
+              onSubject={setSubject}
+              onDescription={setDescription}
+            />
+          )
+          : (
+            <TaskViewBody
+              task={task}
+              teammates={teammates}
+              busy={busy}
+              onReassign={reassign}
+            />
+          )}
+        {note !== undefined && <div className="mt-2 text-xs leading-snug text-warning">{note}</div>}
+      </CardContent>
 
-      {note !== undefined && <div className={css.teamNote}>{note}</div>}
-
-      <div className={css.jobPopActions} data-popover-no-drag>
+      <Separator />
+      <CardFooter className="flex-wrap justify-end gap-1.5 px-3 py-2" data-popover-no-drag>
         {editing
           ? (
             <>
               <Button
-                variant="primary"
                 size="sm"
-                icon={<IconCheckOutline14 size={12} />}
+                // Same preflight reset as the ghost button: `default` declares no
+                // border, so the UA's 2px `outset` edge would frame the fill.
+                className="border-0"
                 disabled={busy || subject.trim() === ''}
                 onClick={save}
               >
+                <IconCheckOutline14 />
                 {creating ? t('teamTaskCreate') : t('teamTaskSave')}
               </Button>
               <Button
@@ -344,12 +409,8 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
           )
           : task === undefined ? null : (
             <>
-              <Button
-                variant="outline"
-                size="sm"
-                icon={<IconEditOutline16 size={12} />}
-                onClick={() => { setEditing(true) }}
-              >
+              <Button variant="outline" size="sm" onClick={() => { setEditing(true) }}>
+                <IconEditOutline16 />
                 {t('teamTaskEdit')}
               </Button>
               {task.status === 'completed'
@@ -357,12 +418,12 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
                   <Button
                     variant="outline"
                     size="sm"
-                    icon={<IconRefreshOutline14 size={12} />}
                     disabled={busy}
                     onClick={() => void mutate(() => api.teamsTaskUpdate(rootId, {
                       taskId: task.id, expectedRevision: task.revision, action: 'reopen',
                     }))}
                   >
+                    <IconRefreshOutline14 />
                     {t('teamTaskReopen')}
                   </Button>
                 )
@@ -370,20 +431,22 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
                   <Button
                     variant="outline"
                     size="sm"
-                    icon={<IconCheckOutline14 size={12} />}
                     disabled={busy}
                     onClick={() => void mutate(() => api.teamsTaskUpdate(rootId, {
                       taskId: task.id, expectedRevision: task.revision, action: 'complete',
                     }))}
                   >
+                    <IconCheckOutline14 />
                     {t('teamTaskComplete')}
                   </Button>
                 )}
               <Button
                 variant="outline"
                 size="sm"
-                className={armedDelete ? css.jobPopKillArmed : undefined}
-                icon={<IconTrashOutline16 size={12} />}
+                // Two-step confirm, danger only on the armed click: outline +
+                // destructive ink beats a permanently red button (and keeps the
+                // variant's own 1px border).
+                className={armedDelete ? 'border-destructive/40 text-destructive' : undefined}
                 disabled={busy}
                 onClick={() => {
                   if (!armedDelete) { setArmedDelete(true); return }
@@ -393,12 +456,13 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
                   }), { close: true })
                 }}
               >
+                <IconTrashOutline16 />
                 {armedDelete ? t('teamTaskDeleteConfirm') : t('teamTaskDelete')}
               </Button>
             </>
           )}
-      </div>
-    </div>
+      </CardFooter>
+    </Card>
   )
 }
 
@@ -424,10 +488,10 @@ export function TaskCreateButton(props: {
     <Button
       variant="outline"
       size="sm"
-      icon={<IconPlusOutline16 size={13} />}
       disabled={props.disabled}
       onClick={(event) => { props.onClick(event.currentTarget) }}
     >
+      <IconPlusOutline16 />
       {t('teamTaskCreate')}
     </Button>
   )

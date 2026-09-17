@@ -25,7 +25,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSyncExternalStore } from 'react'
 import {
-  IconRefreshOutline14,
+  IconAgentPresetOutline16, IconRefreshOutline14,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   Context,
@@ -52,6 +52,9 @@ import { TeamBoard } from './TeamBoard.tsx'
 import { TaskPopover } from './TaskWindow.tsx'
 import type { SidebarStore } from './state.ts'
 import type { WorkflowRunView } from '../workflow-runs.ts'
+import { Button as UiButton } from './ui/button.tsx'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from './ui/empty.tsx'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip.tsx'
 import legacy from './SubagentView.module.css'
 
 /** Refresh cadence of the live "last text + tool call" lines while a child runs. */
@@ -411,28 +414,46 @@ export function SubagentView(props: {
   })()
 
   return (
-    <div className={legacy.subagent} style={{ position: 'relative' }}>
-      <div className={legacy.subagentHeader}>
-        <span className={legacy.subagentTitle}>
+    <div className={`dsw-tasks ${legacy.subagent} relative`}>
+      {/*
+        Page header: title + mono descendant count + refresh, closed by a 1px
+        hairline. The control cluster (view toggle / fold / zoom) stays on the
+        canvas itself, so it is visible in BOTH modes.
+      */}
+      <div className="flex flex-none items-center gap-2 border-b border-border px-3 py-2">
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">
           {t('subagent')}
           {rootSummary?.displayTitle !== undefined && rootSummary.displayTitle !== ''
             ? ` · ${rootSummary.displayTitle}`
             : ''}
         </span>
-        {countLabel !== undefined && <span className={legacy.subagentCount}>{countLabel}</span>}
-        <button
-          type="button"
-          className={legacy.subagentRefresh}
-          aria-label={t('refresh')}
-          title={t('refresh')}
-          disabled={rootId === undefined}
-          onClick={() => {
-            if (rootId !== undefined) refresh(rootId)
-            team.refresh()
-          }}
-        >
-          <IconRefreshOutline14 />
-        </button>
+        {countLabel !== undefined && (
+          <span className="flex-none font-mono text-[11px] tabular-nums text-muted-foreground">
+            {countLabel}
+          </span>
+        )}
+        {/* Delay so the label never flashes while the pointer crosses the row. */}
+        <TooltipProvider delayDuration={300}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <UiButton
+                variant="ghost"
+                size="icon"
+                className="size-7 flex-none"
+                aria-label={t('refresh')}
+                title={t('refresh')}
+                disabled={rootId === undefined}
+                onClick={() => {
+                  if (rootId !== undefined) refresh(rootId)
+                  team.refresh()
+                }}
+              >
+                <IconRefreshOutline14 size={13} />
+              </UiButton>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-[11px]">{t('refresh')}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
       {rootId !== undefined && teamView?.available === true && teamView.team !== null && (
         <TeamBoard
@@ -445,23 +466,29 @@ export function SubagentView(props: {
         />
       )}
       {failedParents.length > 0 && (
-        <div className={legacy.subagentError}>
+        <div className="flex flex-none items-center justify-between gap-2 px-3 py-2 text-xs text-destructive">
           <span>{t('catalogLoadFailed', { count: failedParents.length })}</span>
-          <button
-            type="button"
-            className={legacy.subagentErrorRetry}
+          <UiButton
+            variant="ghost"
+            size="sm"
+            className="flex-none"
             onClick={() => { for (const parent of failedParents) refresh(parent) }}
           >
-            <IconRefreshOutline14 />
+            <IconRefreshOutline14 size={12} />
             {t('retry')}
-          </button>
+          </UiButton>
         </div>
       )}
       {readyEmpty && (
-        <div className={legacy.subagentEmpty}>
-          <div>{t('subagentEmpty')}</div>
-          <div className={legacy.subagentEmptyHint}>{t('subagentEmptyDesc')}</div>
-        </div>
+        <Empty className="flex-1 gap-4 border-0 p-4">
+          <EmptyHeader className="gap-2">
+            <EmptyMedia variant="icon" className="size-8 rounded-md">
+              <IconAgentPresetOutline16 size={16} />
+            </EmptyMedia>
+            <EmptyTitle className="text-sm font-medium">{t('subagentEmpty')}</EmptyTitle>
+            <EmptyDescription className="text-xs">{t('subagentEmptyDesc')}</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       )}
       {!readyEmpty && rootId !== undefined && (
         mode === 'graph'
@@ -476,6 +503,7 @@ export function SubagentView(props: {
               onToggleFold={() => { setFolded(current => !current) }}
               mode={mode}
               onModeChange={setModeOverride}
+              loading={summaryBackedLoading}
             />
           )
           : (
