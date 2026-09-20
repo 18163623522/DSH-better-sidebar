@@ -14,14 +14,14 @@
  * Visual language: Tailwind utilities over the shadcn tokens
  * (src/client/ui/theme.css) with the vendored Collapsible / ScrollArea /
  * Button for the interactive shells. Hierarchy comes from a 1px `border-border`
- * hairline plus the surface ladder (`bg-background` → `bg-muted` on hover) —
+ *  hairline plus the surface ladder (`bg-background` → `bg-muted` on hover) —
  * the static drawer carries no shadow; the only float is the popover card,
- * whose surface/shadow belong to AnchoredPopover. Body copy is 13px, meta
- * 11–12px, identifiers/durations `font-mono tabular-nums`.
+ * whose surface/shadow belong to AnchoredPopover. Body copy is text-sm, meta
+ * text-xs, identifiers/durations `font-mono tabular-nums`.
  *
  * Every non-shadcn control is a host primitive (Switch / StateDot), and every
  * icon is a host `IconXxx` glyph — the badges are the vendored shadcn `Badge`
- * on the page's shared outline + semantic-tone classes.
+ * on its stock variants.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
@@ -51,15 +51,13 @@ const JOB_KILL_ARM_MS = 3000
 export const JOBS_DRAWER_COLLAPSE_AT = 8
 
 /**
- * The status badge's semantic ink (the page's shared `outline` + tone class
- * pattern): a running job wears the accent, success/failure their own family,
- * and an ending/killed job stays neutral.
+ * The status badge's stock shadcn variant: running = `default` (the accent),
+ * failed = `destructive`, settled/ending = `secondary`.
  */
-function statusTone(job: SidebarJobView): string {
-  if (job.status === 'running') return 'border-primary/40 text-primary'
-  if (job.status === 'completed') return 'border-success/40 text-success'
-  if (job.status === 'failed') return 'border-destructive/40 text-destructive'
-  return 'text-muted-foreground'
+function statusVariant(job: SidebarJobView): 'default' | 'secondary' | 'destructive' {
+  if (job.status === 'running') return 'default'
+  if (job.status === 'failed') return 'destructive'
+  return 'secondary'
 }
 
 export interface JobsDrawerProps {
@@ -136,10 +134,10 @@ export function JobsDrawer(props: JobsDrawerProps): ReactNode {
       {/* The bar keeps the drawer's whole toggle affordance (title, running
           tally, count line) and Radix owns aria-expanded / aria-controls. */}
       <CollapsibleTrigger
-        className="flex w-full cursor-pointer items-center gap-2 rounded-none border-0 bg-transparent px-3 py-[7px] text-left font-mono text-[11px] tracking-[0.12em] text-muted-foreground uppercase transition-colors outline-none hover:bg-muted focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        className="flex w-full cursor-pointer items-center gap-2 rounded-none border-0 bg-transparent px-3 py-[7px] text-left font-mono text-xs tracking-[0.12em] text-muted-foreground uppercase transition-colors outline-none hover:bg-muted focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
         <span>{t('jobs')}</span>
-        <span className="text-[13px] font-semibold text-primary tabular-nums">
+        <span className="text-sm font-semibold text-primary tabular-nums">
           {liveCount > 0 ? liveCount : rows.length}
         </span>
         <span className="tracking-[0.02em] text-foreground-3 normal-case">{countLabel}</span>
@@ -154,7 +152,7 @@ export function JobsDrawer(props: JobsDrawerProps): ReactNode {
         </span>
       </CollapsibleTrigger>
       {!autoOpen && (
-        <div className="px-3 pb-2 font-mono text-[11px] text-foreground-3">{t('jobsAutoCollapsed')}</div>
+        <div className="px-3 pb-2 font-mono text-xs text-foreground-3">{t('jobsAutoCollapsed')}</div>
       )}
       <CollapsibleContent>
         {/* Bounded log surface: one row per job, hairline-separated by the
@@ -186,7 +184,7 @@ export function JobsDrawer(props: JobsDrawerProps): ReactNode {
                 <div
                   key={job.id}
                   className={cn(
-                    'flex items-center gap-[7px] rounded-md px-1.5 py-1 transition-colors',
+                    'group flex items-center gap-[7px] rounded-md px-1.5 py-1 transition-colors',
                     'hover:bg-muted',
                     openJobId === job.id && 'bg-muted',
                     // A settled job recedes by ink (the label line drops to the
@@ -199,7 +197,7 @@ export function JobsDrawer(props: JobsDrawerProps): ReactNode {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-auto min-w-0 flex-1 justify-start gap-[7px] px-0 py-0 text-left text-[13px] font-normal tracking-normal normal-case"
+                    className="h-auto min-w-0 flex-1 justify-start gap-[7px] px-0 py-0 text-left text-sm font-normal tracking-normal normal-case"
                     aria-label={`${job.label} ${jobStatusLabel(job.status, t)} ${secondary}`}
                     title={t('jobViewOutput')}
                     onClick={(event) => { onOpenOutput(row, event.currentTarget) }}
@@ -209,19 +207,19 @@ export function JobsDrawer(props: JobsDrawerProps): ReactNode {
                         running state draws an svg, the others a span), so the
                         indicator keeps its 6px. */}
                     <StateDot state={jobDotState(job.status)} size={6} className="size-1.5" />
-                    <Badge variant="outline" className="h-4 flex-none px-1.5 py-0 font-mono text-[11px] font-normal text-muted-foreground">
+                    <Badge variant="outline" className="flex-none font-mono font-normal text-muted-foreground">
                       {job.kind}
                     </Badge>
                     <span
                       className={cn(
-                        'min-w-0 flex-1 truncate font-mono text-[13px]',
+                        'min-w-0 flex-1 truncate font-mono text-sm',
                         live ? 'text-foreground' : 'text-muted-foreground',
                       )}
                       title={job.label}
                     >
                       {job.label}
                     </span>
-                    <Badge variant="outline" className={cn('h-4 flex-none px-1.5 py-0 text-[11px] font-normal', statusTone(job))}>
+                    <Badge variant={statusVariant(job)} className="flex-none">
                       {jobStatusLabel(job.status, t)}
                     </Badge>
                     {context !== '' && (
@@ -237,11 +235,11 @@ export function JobsDrawer(props: JobsDrawerProps): ReactNode {
                     <Button
                       variant="outline"
                       size="sm"
-                      // `border-border` is explicit: preflight is never loaded
-                      // (see ui/theme.css), so a bare `border` here would take
-                      // `currentColor` instead of the hairline token.
+                      // Inline row action: quiet until the row is hovered, but
+                      // keyboard focus brings it back (focus-visible below).
                       className={cn(
-                        'h-auto shrink-0 border-border px-1.5 py-0.5 font-mono text-[11px] font-normal text-muted-foreground',
+                        'h-auto shrink-0 font-mono text-xs font-normal text-muted-foreground',
+                        'opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100',
                         armed && 'border-destructive text-destructive',
                       )}
                       data-armed={armed ? 'true' : 'false'}
@@ -258,7 +256,7 @@ export function JobsDrawer(props: JobsDrawerProps): ReactNode {
                     </Button>
                   )}
                   {killFailed && (
-                    <span className="shrink-0 font-mono text-[11px] text-destructive">{t('jobKillError')}</span>
+                    <span className="shrink-0 font-mono text-xs text-destructive">{t('jobKillError')}</span>
                   )}
                 </div>
               )
@@ -363,14 +361,13 @@ export function JobOutputPopoverContent(props: {
     // `dsw-tasks`: this card renders inside AnchoredPopover's portal at
     // document.body — OUTSIDE the page root — so it re-declares the page root
     // class for the scoped base reset (see TaskWindow.tsx).
-    <div className="dsw-tasks box-border flex flex-col gap-1 p-2.5 text-[13px] text-popover-foreground" data-popover-handle>
-      <div className="mb-1 flex items-baseline justify-between gap-2 font-mono text-[11px] tracking-[0.14em] text-foreground-3 uppercase">
+    <div className="dsw-tasks box-border flex flex-col gap-1 p-2.5 text-sm text-popover-foreground" data-popover-handle>
+      <div className="mb-1 flex items-baseline justify-between gap-2 font-mono text-xs tracking-[0.14em] text-foreground-3 uppercase">
         <span>{t('jobs')}</span>
         <span className="inline-flex items-center gap-0.5 tracking-normal normal-case" data-popover-no-drag>
           <Button
             variant="ghost"
-            size="sm"
-            className="size-7 p-0"
+            size="icon"
             aria-label={copied ? t('jobCopied') : t('jobCopyOutput')}
             title={copied ? t('jobCopied') : t('jobCopyOutput')}
             disabled={text === ''}
@@ -387,15 +384,15 @@ export function JobOutputPopoverContent(props: {
       </div>
       <div className="flex min-w-0 items-center gap-1.5">
         <StateDot state={jobDotState(job.status)} size={6} />
-        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground" title={job.label}>
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground" title={job.label}>
           {job.label}
         </span>
-        <Badge variant="outline" className={cn('h-5 flex-none px-2 text-[11px]', statusTone(job))}>
+        <Badge variant={statusVariant(job)} className="flex-none">
           {jobStatusLabel(job.status, t)}
         </Badge>
       </div>
       <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-        <Badge variant="outline" className="h-4 flex-none px-1.5 py-0 font-mono text-[11px] font-normal text-muted-foreground">
+        <Badge variant="outline" className="flex-none font-mono font-normal text-muted-foreground">
           {job.kind}
         </Badge>
         {job.detail !== undefined && job.detail !== '' && <span>{job.detail}</span>}
@@ -435,7 +432,7 @@ export function JobOutputPopoverContent(props: {
           <Button
             variant={armed ? 'destructive' : 'outline'}
             size="sm"
-            className="border-border font-mono text-xs"
+            className="font-mono text-xs"
             disabled={killing}
             onClick={() => {
               if (armed) void kill()

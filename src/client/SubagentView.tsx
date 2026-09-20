@@ -428,7 +428,7 @@ export function SubagentView(props: {
             : ''}
         </span>
         {countLabel !== undefined && (
-          <span className="flex-none font-mono text-[11px] tabular-nums text-muted-foreground">
+          <span className="flex-none font-mono text-xs tabular-nums text-muted-foreground">
             {countLabel}
           </span>
         )}
@@ -439,7 +439,7 @@ export function SubagentView(props: {
               <UiButton
                 variant="ghost"
                 size="icon"
-                className="size-7 flex-none"
+                className="flex-none"
                 aria-label={t('refresh')}
                 title={t('refresh')}
                 disabled={rootId === undefined}
@@ -451,7 +451,7 @@ export function SubagentView(props: {
                 <IconRefreshOutline14 size={13} />
               </UiButton>
             </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-[11px]">{t('refresh')}</TooltipContent>
+            <TooltipContent side="bottom" className="text-xs">{t('refresh')}</TooltipContent>
           </Tooltip>
         </TooltipProvider>
       </div>

@@ -5,11 +5,11 @@
  * task list scrolls inside a bounded height, so the canvas keeps its room.
  *
  * Visual language: shadcn/ui over the task page's Tailwind tokens
- * (src/client/ui/theme.css) — the strip is a flat Card (1px hairline, no
- * shadow), members are a ToggleGroup whose selected chip carries the accent,
- * and every task row ends in one DropdownMenu. Ink stays on the three token
- * levels (13px body / 11px mono meta, `font-mono tabular-nums`), and color is
- * state only: in progress = primary, done = success, blocked = warning.
+ * (src/client/ui/theme.css) — the strip is a stock Card (`rounded-xl border
+ * bg-card shadow-sm`), members are a ToggleGroup whose selected chip carries
+ * the accent, and every task row ends in one DropdownMenu. Ink stays on the
+ * three token levels (text-sm body / text-xs mono meta, `font-mono
+ * tabular-nums`), and status color is the stock Badge variant set only.
  *
  * Behaviour is unchanged, and deliberately so: the row and EVERY menu entry
  * open the shared task window, which is the ONE surface owning view / edit /
@@ -51,14 +51,14 @@ function taskStatusLabel(task: SidebarTeamTaskView): string {
 }
 
 /**
- * The status Badge's semantic tint. In progress takes the accent, done takes
- * success, blocked takes warning; pending stays neutral (secondary) because a
- * to-do list is not an alert.
+ * The status Badge: stock shadcn variants only — in progress takes `default`
+ * (the accent), a blocked task wears `outline` with warning ink, everything
+ * else settles on `secondary` (a to-do list is not an alert).
  */
-function taskBadgeClass(task: SidebarTeamTaskView): string | undefined {
-  if (task.status === 'completed') return 'text-success'
-  if (!task.ready) return 'text-warning'
-  return task.status === 'in_progress' ? 'text-primary' : undefined
+function taskBadge(task: SidebarTeamTaskView): { variant: 'default' | 'secondary' | 'outline'; className?: string } {
+  if (task.status === 'in_progress' && task.ready) return { variant: 'default' }
+  if (!task.ready) return { variant: 'outline', className: 'text-warning' }
+  return { variant: 'secondary' }
 }
 
 /** The StateDot semantic of one task row. */
@@ -83,12 +83,12 @@ const FILTER_ALL = '__all__'
 
 /** The shared slab: a filled rounded row whose only hover change is its background. */
 const ROW_CLASS =
-  'flex min-w-0 cursor-pointer items-center gap-2 rounded-md bg-transparent px-2 py-1 text-left transition-colors outline-none hover:bg-muted focus-visible:ring-[3px] focus-visible:ring-ring/50'
-/** The shared filter chip: sm toggle geometry on the 4px rhythm, accent when picked. */
+  'flex min-w-0 cursor-pointer items-center gap-2 rounded-md bg-transparent px-2 py-2 text-left transition-colors outline-none hover:bg-muted focus-visible:ring-[3px] focus-visible:ring-ring/50'
+/** The shared filter chip: sm toggle geometry, accent when picked (stock). */
 const CHIP_CLASS =
-  'h-6 w-auto min-w-0 gap-1 rounded-md px-2 text-[11px] font-normal text-muted-foreground data-[state=on]:bg-primary/10 data-[state=on]:text-primary'
+  'h-6 w-auto min-w-0 gap-1 px-2 text-xs font-normal text-muted-foreground data-[state=on]:text-foreground'
 /** The row menu's rows: body size, no icon column (the label is the affordance). */
-const ITEM_CLASS = 'text-[13px]'
+const ITEM_CLASS = 'text-sm'
 
 /**
  * One board row: state dot, subject, owner, status Badge, and the row menu.
@@ -114,7 +114,7 @@ function TeamTaskRow(props: {
   }
 
   return (
-    <div ref={rowRef} className="grid grid-cols-[1fr_auto] items-center gap-1">
+    <div ref={rowRef} className="group grid grid-cols-[1fr_auto] items-center gap-1">
       <button
         type="button"
         className={ROW_CLASS}
@@ -123,24 +123,26 @@ function TeamTaskRow(props: {
         onClick={(event) => { onOpenTask(task, event.currentTarget) }}
       >
         <StateDot size={6} state={taskDotState(task)} />
-        <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">{task.subject}</span>
+        <span className="min-w-0 flex-1 truncate text-sm text-foreground">{task.subject}</span>
         {task.ownerName !== undefined && (
-          <span className="max-w-[72px] flex-none truncate font-mono text-[11px] tabular-nums text-foreground-3">
+          <span className="max-w-[72px] flex-none truncate font-mono text-xs tabular-nums text-foreground-3">
             {task.ownerName}
           </span>
         )}
-        <Badge
-          variant={taskBadgeClass(task) === undefined ? 'secondary' : 'outline'}
-          className={cn('flex-none px-1.5 py-0 text-[11px] font-normal', taskBadgeClass(task))}
-        >
-          {taskStatusLabel(task)}
-        </Badge>
+        {(() => {
+          const badge = taskBadge(task)
+          return (
+            <Badge variant={badge.variant} className={cn('flex-none', badge.className)}>
+              {taskStatusLabel(task)}
+            </Badge>
+          )
+        })()}
       </button>
       <DropdownMenu>
         <DropdownMenuTrigger
           aria-label={t('teamTaskActions')}
           title={t('teamTaskActions')}
-          className="flex size-6 flex-none cursor-pointer items-center justify-center rounded-md bg-transparent text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="flex size-6 flex-none cursor-pointer items-center justify-center rounded-md bg-transparent text-muted-foreground opacity-0 outline-none transition-colors group-hover:opacity-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
           <IconChevronUpOutline14 size={12} className="rotate-90" />
         </DropdownMenuTrigger>
@@ -203,11 +205,10 @@ export function TeamBoard(props: TeamBoardProps): ReactNode {
   return (
     <Card
       // `gap-0` because the bands are separated by hairlines, not by the stock
-      // card rhythm; `py-0` because each band owns its own padding;
-      // `border-border` because the hairline takes the border token, never the
-      // inherited ink (this plugin ships no preflight to default it); the
+      // card rhythm; `py-0` because each band owns its own padding. The rest is
+      // the stock card surface (`rounded-xl border bg-card shadow-sm`); the
       // landmark role keeps the labelled region the old `<section>` provided.
-      className="mb-2 shrink-0 gap-0 overflow-hidden rounded-lg border-border py-0"
+      className="mb-2 shrink-0 gap-0 overflow-hidden rounded-xl py-0 shadow-sm"
       role="region"
       aria-label={t('teamBoard')}
     >
@@ -223,8 +224,8 @@ export function TeamBoard(props: TeamBoardProps): ReactNode {
           <span className="flex-none text-muted-foreground" aria-hidden="true">
             <IconChecklistOutline14 size={12} />
           </span>
-          <span className="min-w-0 truncate text-[13px] font-medium text-foreground">{t('teamBoard')}</span>
-          <span className="min-w-0 truncate font-mono text-[11px] tabular-nums text-foreground-3">
+          <span className="min-w-0 truncate text-sm font-medium text-foreground">{t('teamBoard')}</span>
+          <span className="min-w-0 truncate font-mono text-xs tabular-nums text-foreground-3">
             {t('teamChip', { members: members.length, tasks: live.length })}
           </span>
           <span
@@ -271,7 +272,7 @@ export function TeamBoard(props: TeamBoardProps): ReactNode {
             {shown.length === 0
               // `Empty` is the design language's empty state; the stock card
               // rhythm is overridden so an empty board stays a thin band.
-              ? <Empty className="gap-0 rounded-md p-2 text-[12px]">{t('teamTasksEmpty')}</Empty>
+              ? <Empty className="gap-0 rounded-md p-2 text-xs">{t('teamTasksEmpty')}</Empty>
               : shown.map(task => (
                 <TeamTaskRow key={task.id} task={task} teammates={teammates} onOpenTask={onOpenTask} />
               ))}
@@ -281,9 +282,6 @@ export function TeamBoard(props: TeamBoardProps): ReactNode {
             <Button
               variant="outline"
               size="sm"
-              // `bg-background`: the host's preflight is the only thing that
-              // would otherwise clear the UA's button face paint.
-              className="bg-background"
               icon={<IconPlusOutline16 size={13} />}
               onClick={(event) => { onOpenTask(undefined, event.currentTarget) }}
             >

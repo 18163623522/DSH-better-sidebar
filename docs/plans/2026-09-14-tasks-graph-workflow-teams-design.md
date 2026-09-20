@@ -331,6 +331,29 @@ npx -y shadcn@latest add button card badge separator input textarea tooltip popo
 
 新增的守护文件：`tests/ui-foundation.spec.ts`（入口 import 清单 / 令牌桥全表 / 级联层 / 作用域根类 / `@source`）、`tests/ui-bundle.spec.ts`（核心包与 chunk 的双向产物断言 + 体积预算）、`tests/ui-shadows.spec.ts`（静态面板零阴影）。`tests/theme.spec.ts` 追加「迁移后皮肤契约」一节：`src/client/ui/**` 与迁移文件的**颜色字面量**、**Tailwind 默认调色板类**与**未解析 `var()`** 三类回归。
 
+### 真机"完全没有 CSS"的根因：缺 preflight 导致表单控件保留 UA 样式（2026-09-20）
+
+真机反馈：任务页"看起来完全没有 CSS，边框非常模糊"。第一反应是 Tailwind 没下发或级联被宿主压过，**两个假设都被实验否掉**：
+
+- **样式确实下发**：chunk 里含注入代码与完整 CSS 文本，真机资源清单里 `/sidebar/bundle/tasks.js` 200；页面能看出我们的两行标题截断、Badge、ToggleGroup 等布局。
+- **级联不是根因**：用真实宿主样式表（`dsh-web-frontend` 的 index+vendor CSS）＋真实编译产物做受控样本，`padding/radius/border/background/font` 全部是我们的值胜出；宿主 CSS 模块是哈希类名（`button._cfgyt_4`）只命中宿主自己的元素，全局 `button{}` 只有元素级特异性（0,0,1）压不过工具类（0,1,0）。
+
+**真根因**：我们**刻意排除 preflight**（它会重绘整个宿主页面），但 preflight 同时负责**归零表单控件**。于是插件里的 `<button>` 全部保留浏览器 UA 外观 —— 在真实浏览器里对一个只写了 `size-7` 的图标按钮实测：`padding: 1px 6px`、`border: 2px outset`、`background: ButtonFace`(#efefef)、`font: 400 13.33px system-ui`。这正是"灰扑扑的立体小方块 + 发虚的双线边框 + 字号不搭"的来源；`<input>`/`<textarea>`/`<select>` 同理。
+
+**修法**（`src/client/ui/theme.css`）：在 `@layer base` 内补一份**限定 `.dsw-tasks` 作用域**的 preflight 子集（`margin/padding` 归零、`border-width/style` 归零、`background-color/-image` 归零、`color/letter-spacing: inherit`、`appearance: none`、`cursor: pointer`、`:disabled` 默认光标），全部写在 `:where()` 里保持 (0,1,0)，与工具类同特异性但在**更晚的 `utilities` 层**，所以只清掉"没人要的" UA 外观、不抢我们自己的类。同时**显式声明 `@layer theme, base, components, utilities;`**：层序按首次出现决定，否则 `@import ... layer(utilities)` 会把 utilities 注册在 `base` 之前，让 reset 反过来压住 `rounded-md`（实测按钮渲染成直角）。产物里已核对层序为 `properties → theme → base → components → utilities`。
+
+**为什么两层验证都漏了**：本地可视化 harness 的页面没有宿主样式、也没人量过 `getComputedStyle`，UA 外观被当成"我的极简风格"；挂载冒烟断言的是"不崩 + 无 console 错误"，样式正确性不在其内。**因此把"真实宿主样式表 + 真实编译产物 + 真实组件"的镜像页面加入视觉验证流程**（`index-host.html`），并补两条源码级守卫（`tests/ui-foundation.spec.ts`：作用域 reset 的声明必须存在；层序声明必须出现在 import 之前）。
+
+### shadcn/ui stock 风格回调（2026-09-20）
+
+用户的明确诉求是"**shadcn/ui 默认风格就行**"——此前那套"零阴影 + 1px 细线 + 11–13px 字"的极简取向被判定为"像没上样式"。回调原则：**stock 组件默认值优先，只保留画布必需的紧凑化**。改动（11 个文件）：
+
+- **阴影**：静态卡片/面板恢复 stock 轻阴影（按钮 `shadow-xs`、卡片/面板 `shadow-sm`）；浮层继续 `shadow-lg`。`tests/ui-shadows.spec.ts` 的规则从"静态面板零阴影"改为"静态面板只允许 `shadow-xs`/`shadow-sm`，禁用 `shadow-md` 及以上与裸 `box-shadow`"，浮层白名单不变且断言其非空转。
+- **字号**：正文 `text-sm`(14px)、meta `text-xs`(12px) 全面替换 `text-[13px]`/`text-[11px]`/`text-[10px]`；等宽只留 id/时长/工具参数。页面基准字号由 `.dsw-tasks` 的 `font-size: .875rem` 提供。
+- **组件**：状态一律用 vendored `Badge` 的 stock 变体（进行中 `default`、待办/完成 `secondary`、阻塞 `outline`+warning 墨色、错误 `destructive`）；控制条与非图标按钮回到 `Button variant="outline" size="sm"`；行内操作（任务行菜单、抽屉终止）改为 hover/focus 显现但仍可键盘触达；任务窗口/面板内边距回到 stock（`p-4`/`p-6`）。
+- **画布**：节点卡 `rounded-lg border bg-card p-2.5 shadow-xs`，`GRAPH_NODE_W` 150→176、`GRAPH_NODE_H` 60→68（字号变大后需要宽度）；相位框加 `bg-muted/40`。
+- **窄面板不再退化成单列**：`bandColsFor` 改为**按可读性下限预算列数**（`宽度/0.78` 而不是 1:1），360px 面板恢复两列（缩放 ~0.86）；同时把 `FIT_MIN_SCALE` 提升为布局模块导出的 `GRAPH_FIT_MIN_SCALE`，让 fit 与列预算共用同一个下限常量。
+
 ### 迁移返工记录（门禁与审查发现）
 
 **1. 体积 → 任务页整体下沉为懒加载 chunk。** 见上一节的返工说明：核心包从 988.5 KiB 降到 835.6 KiB（净减 153.0 KiB），shadcn/radix/Tailwind 产物（706.7 KiB）随 `lib/client-tasks.js` 按需加载。这次返工同时把 Tailwind 样式表挪进 chunk——它只服务任务页，没有理由占启动路径。

@@ -39,6 +39,7 @@ import { Button } from './ui/button.tsx'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from './ui/card.tsx'
 import { Input } from './ui/input.tsx'
 import { Separator } from './ui/separator.tsx'
+import { cn } from './ui/utils.ts'
 import { Textarea } from './ui/textarea.tsx'
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group.tsx'
 
@@ -56,13 +57,19 @@ function taskStatusKey(status: SidebarTeamTaskView['status']): CopyKey {
 }
 
 /**
- * The status badge's ink — hue carries meaning only: done = success, running =
- * accent, blocked = warning, everything else stays on quiet meta ink.
+ * The status badge's stock variant: in progress takes `default` (the accent),
+ * everything else settles on `secondary`; a BLOCKED task wears `outline` with
+ * warning ink — hue carries meaning only.
  */
+function statusVariant(task: SidebarTeamTaskView): 'default' | 'secondary' | 'outline' {
+  if (task.status === 'in_progress') return 'default'
+  if (task.ready) return 'secondary'
+  return 'outline'
+}
+
+/** The blocked badge's warning ink (the `outline` variant is otherwise neutral). */
 function statusTone(task: SidebarTeamTaskView): string {
-  if (task.status === 'completed') return 'border-success/40 text-success'
-  if (task.status === 'in_progress') return 'border-primary/40 text-primary'
-  return task.ready ? 'text-muted-foreground' : 'border-warning/40 text-warning'
+  return task.ready ? '' : 'text-warning'
 }
 
 /**
@@ -160,7 +167,10 @@ function TaskViewBody(props: {
           state={task.status === 'completed' ? 'done' : task.ready ? 'ongoing' : 'warning'}
         />
         <span className="min-w-0 flex-1 truncate font-medium" title={task.subject}>{task.subject}</span>
-        <Badge variant="outline" className={`h-5 px-2 text-[11px] ${statusTone(task)}`}>
+        <Badge
+          variant={statusVariant(task)}
+          className={cn('flex-none', statusTone(task))}
+        >
           {t(task.ready ? taskStatusKey(task.status) : 'teamTaskBlocked')}
         </Badge>
       </div>
@@ -184,7 +194,7 @@ function TaskViewBody(props: {
           )}
       </div>
       <div className="flex flex-col gap-1.5">
-        <span className="font-mono text-[11px] text-foreground-3">{t('teamTaskOwner')}</span>
+        <span className="text-xs text-muted-foreground">{t('teamTaskOwner')}</span>
         <OwnerPicker
           members={props.teammates}
           owner={task.ownerName}
@@ -206,7 +216,7 @@ function TaskEditBody(props: {
   return (
     <div className="flex flex-col gap-2.5" data-popover-no-drag>
       <label className="flex flex-col gap-1">
-        <span className="font-mono text-[11px] text-foreground-3">{t('teamTaskSubject')}</span>
+        <span className="text-xs text-muted-foreground">{t('teamTaskSubject')}</span>
         <Input
           className="h-8"
           value={props.subject}
@@ -216,7 +226,7 @@ function TaskEditBody(props: {
         />
       </label>
       <label className="flex flex-col gap-1">
-        <span className="font-mono text-[11px] text-foreground-3">{t('teamTaskDescription')}</span>
+        <span className="text-xs text-muted-foreground">{t('teamTaskDescription')}</span>
         <MultilineField
           value={props.description}
           label={t('teamTaskDescription')}
@@ -328,21 +338,17 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
 
   return (
     <Card
-      className="dsw-tasks box-border gap-0 rounded-lg border-0 bg-transparent py-0 text-[13px]"
+      className="dsw-tasks box-border gap-0 rounded-lg border-0 bg-transparent py-0 text-sm"
       data-popover-handle
     >
-      <CardHeader className="flex flex-row items-center justify-between gap-2 px-3 py-2">
-        <CardTitle className="min-w-0 flex-1 truncate font-mono text-[11px] font-medium text-foreground-3">
+      <CardHeader className="flex flex-row items-center justify-between gap-2 px-4 py-3">
+        <CardTitle className="min-w-0 flex-1 truncate text-sm font-medium text-muted-foreground">
           {creating ? t('teamTaskCreate') : editing ? t('teamTaskEdit') : t('teamTaskDetail')}
         </CardTitle>
         <div className="flex flex-none items-center gap-1" data-popover-no-drag>
           <Button
             variant="ghost"
             size="icon"
-            // Load-bearing reset: the plugin ships no preflight, so a control
-            // whose variant declares no paint keeps the UA's `buttonface` fill
-            // and 2px `outset` border. A ghost icon button must be chrome-free.
-            className="size-7 border-0 bg-transparent"
             aria-label={t('teamTaskCancel')}
             title={t('teamTaskCancel')}
             onClick={onClose}
@@ -353,7 +359,7 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
       </CardHeader>
       <Separator />
 
-      <CardContent className="px-3 py-2.5">
+      <CardContent className="px-4 py-3">
         {editing || task === undefined
           ? (
             <TaskEditBody
@@ -375,15 +381,12 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
       </CardContent>
 
       <Separator />
-      <CardFooter className="flex-wrap justify-end gap-1.5 px-3 py-2" data-popover-no-drag>
+      <CardFooter className="flex-wrap justify-end gap-1.5 px-4 py-3" data-popover-no-drag>
         {editing
           ? (
             <>
               <Button
                 size="sm"
-                // Same preflight reset as the ghost button: `default` declares no
-                // border, so the UA's 2px `outset` edge would frame the fill.
-                className="border-0"
                 disabled={busy || subject.trim() === ''}
                 onClick={save}
               >

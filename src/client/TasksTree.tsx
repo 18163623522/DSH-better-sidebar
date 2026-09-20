@@ -1,15 +1,15 @@
 /**
  * The tree mode of the Tasks page: the SAME unified model rendered as the
  * classic indentation tree — nested children with a hairline connector, rows on
- * the shadcn base (a 13px/500 title, an 11px mono meta line, a 2px accent bar
- * on the current session, dashed fold cards), and the shared bottom-right
+ * the shadcn base (a text-sm/500 title, a text-xs mono meta line, a 2px accent
+ * bar on the current session, dashed fold cards), and the shared bottom-right
  * control cluster (view toggle + fold toggle) so switching back is always
  * possible.
  *
  * Visual language: Tailwind utilities over the shadcn tokens
  * (src/client/ui/theme.css). Hierarchy is one 1px `border-border` hairline plus
- * the surface ladder and `hover:bg-muted` — the row carries no shadow (shadows
- * belong to floating layers only). Every color is a semantic token: no palette
+ * the surface ladder and `hover:bg-muted` — the row is a list line, not a
+ * card, so it paints no shadow. Every color is a semantic token: no palette
  * class and no literal. Controls come from the vendored shadcn set
  * (`ScrollArea`, `Collapsible`, `Spinner`) and glyphs from the host
  * `IconXxx` primitives, so the page owns no artwork of its own.
@@ -38,20 +38,20 @@ import { Spinner } from './ui/spinner.tsx'
 import { t } from './locales.ts'
 
 /** The row slab: one shared box, so every row kind lines up on the same grid. */
-const ROW = 'flex w-full cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[1.35] text-foreground focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-ring'
+const ROW = 'flex w-full cursor-pointer items-start gap-2 rounded-md px-2 py-2 text-left text-sm leading-[1.45] text-foreground focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-ring'
 /** Hover is a background change only, per the design language. */
 const ROW_HOVER = 'hover:bg-muted'
 /** The current session: the same muted surface plus the 2px accent bar. */
 const ROW_CURRENT = 'bg-muted'
-/** Settled (done / error) rows recede by INK — the row's 13px title drops
+/** Settled (done / error) rows recede by INK — the row's title drops
  *  from the foreground to the secondary ink — never by opacity or hue. */
 const ROW_SETTLED = 'text-muted-foreground'
 /** The fold aggregate is a dashed inline card, not a filled row. */
 const ROW_FOLD = 'border border-dashed border-border text-muted-foreground'
 /** One text line of a row body. */
 const LINE = 'truncate'
-/** The mono meta line: 11px, tabular figures, secondary ink. */
-const META = 'truncate font-mono text-[11px] tabular-nums text-muted-foreground'
+/** The mono meta line: `text-xs`, tabular figures, secondary ink. */
+const META = 'truncate font-mono text-xs tabular-nums text-muted-foreground'
 /** The glyph/state-dot gutter (row level 0). */
 const GLYPH = 'mt-0.5 flex-none text-foreground-3'
 /** The current-session accent bar; the slot is reserved on EVERY agent row so

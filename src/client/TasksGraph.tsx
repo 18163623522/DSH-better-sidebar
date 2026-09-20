@@ -13,15 +13,16 @@
  * on both axes and scaling UP to {@link FIT_MAX_SCALE} so a small tree fills
  * the narrow panel instead of hugging the top-left corner.
  *
- * Visual language: every node is a shadcn `Card` — a single 1px `border-border`
- * hairline over the surface ladder, `hover:bg-muted` as the only hover change,
- * no shadow (nothing here floats) and no card tint (the old double/dashed
- * borders and the filled workflow cards are gone; "current" is a 2px accent
+ * Visual language: every node is a shadcn `Card` — the compact stock recipe
+ * (`rounded-lg border bg-card p-2.5 shadow-xs`) with `hover:bg-muted` as the
+ * only hover change and no card tint (the old double/dashed borders and the
+ * filled workflow cards are gone; "current" is a 2px accent
  * bar, running is the host `StateDot` plus the live line). Statuses ride the
  * mono meta line, team membership is a `Badge`, a truncated line carries its
  * full text in a shadcn `Tooltip`, and the control cluster is the vendored
- * `Button` recipe (`ghost` / `sm`) with a tooltip per control. The phase frames
- * are 1px dashed `border-border` boxes and the relations are hairline strokes
+ * `Button` recipe (`outline` / `sm`) with a tooltip per control. The phase
+ * frames are dashed `border-border` boxes on `bg-muted/40` and the relations
+ * are hairline strokes
  * in the border ink (see tasks-canvas.module.css for the canvas-only pieces:
  * the dotted grid, the transformed layer and the edge strokes).
  *
@@ -44,14 +45,19 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TasksAgentNode, TasksFoldNode, TasksNode, TasksWorkflowNode } from './tasks-model.ts'
 import { tasksEdges } from './tasks-model.ts'
-import { GRAPH_NODE_W, layoutTasksGraphForWidth, type GraphBox } from './tasks-graph-layout.ts'
+import {
+  GRAPH_FIT_MIN_SCALE,
+  GRAPH_NODE_W,
+  layoutTasksGraphForWidth,
+  type GraphBox,
+} from './tasks-graph-layout.ts'
 import {
   AgentGlyph, agentMeta, FoldGlyph, foldPreviews, LiveLine, nodeDotState, TaskLine,
   WorkflowGlyph, workflowMeta,
 } from './tasks-shared.tsx'
 import { t } from './locales.ts'
 import { Badge } from './ui/badge.tsx'
-import { buttonVariants } from './ui/button.tsx'
+import { Button } from './ui/button.tsx'
 import { Card } from './ui/card.tsx'
 import { Spinner } from './ui/spinner.tsx'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip.tsx'
@@ -65,28 +71,27 @@ const ZOOM_MAX = 1.5
 const FIT_MAX_SCALE = 1.15
 /** Lower bound of the auto-fit scale: below this the cards stop being
  *  readable, so the canvas overflows and pans instead of shrinking further. */
-const FIT_MIN_SCALE = 0.78
 /** Drag-vs-click separation: pointer travel below this stays a click. */
 const CLICK_TOLERANCE_PX = 4
 
 /**
  * The shared shell of every node card: absolute (the layout owns left/top),
- * one 1px hairline, the card surface, and `hover:bg-muted` as the only hover
- * change. No shadow — a node never floats — and no tint.
+ * the compact stock node recipe — `rounded-lg border bg-card p-2.5 shadow-xs`
+ * — with `hover:bg-muted` as the only hover change. No tint.
  */
-const NODE_CARD = 'absolute cursor-pointer gap-0 overflow-hidden rounded-lg border-border bg-card px-2 py-1.5 transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-ring'
-/** The on-screen session: a 2px accent bar, never a tinted or shadowed card. */
+const NODE_CARD = 'absolute cursor-pointer gap-0 overflow-hidden rounded-lg border border-border bg-card p-2.5 shadow-xs transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-ring'
+/** The on-screen session: a 2px accent bar, never a tinted card. */
 const NODE_ACCENT = 'border-l-2 border-l-primary'
 /** Settled nodes recede by INK, not by opacity: the whole card drops to the
  *  secondary ink (the title inherits it) and the meta line goes one level
  *  further down (`text-foreground-3`, appended over NODE_META). */
 const NODE_SETTLED = 'text-muted-foreground'
-/** Card line 1: 12px medium, clamped to TWO lines — at 150px a single
- *  ellipsized line left ~7 CJK characters, which is what made a dense graph
+/** Card line 1: `text-sm` medium, clamped to TWO lines — a single ellipsized
+ *  line left too few CJK characters, which is what made a dense graph
  *  unreadable. The tooltip still carries the full name. */
-const NODE_TITLE = 'min-w-0 flex-1 line-clamp-2 text-xs leading-[1.3] font-medium [overflow-wrap:anywhere]'
-/** The mono meta line: 11px, tabular figures, secondary ink. */
-const NODE_META = 'mt-0.5 truncate font-mono text-[11px] leading-[1.3] tabular-nums text-muted-foreground'
+const NODE_TITLE = 'min-w-0 flex-1 line-clamp-2 text-sm leading-snug font-medium [overflow-wrap:anywhere]'
+/** The mono meta line: `text-xs`, tabular figures, secondary ink. */
+const NODE_META = 'mt-0.5 truncate font-mono text-xs leading-[1.3] tabular-nums text-muted-foreground'
 
 /** One phase frame of a run node (the dashed box behind its members). */
 interface PhaseFrame {
@@ -116,16 +121,10 @@ export interface TasksGraphProps {
 }
 
 /**
- * One button of the control cluster: the vendored `Button`'s own `ghost` / `sm`
- * recipe on a real `<button>`, with a shadcn tooltip carrying the same copy as
- * the aria-label (`title` used to carry it; the bubble replaces it).
- *
- * The recipe comes from `buttonVariants` rather than the `Button` component for
- * one concrete reason: Radix's `TooltipTrigger` has to attach its ref to the
- * anchor, and the vendored `Button` is a plain function component (not a
- * `forwardRef` one), so on React 18 the cloned ref is dropped with a warning
- * and the tooltip would measure nothing. The rendered element is exactly what
- * `<Button variant="ghost" size="sm">` renders.
+ * One button of the control cluster: the vendored `Button`'s stock
+ * `outline` / `sm` recipe, with a shadcn tooltip carrying the same copy as
+ * the aria-label (`title` used to carry it; the bubble replaces it). The
+ * pressed state rides the outline variant's own accent surface.
  */
 function ControlButton(props: {
   label: string
@@ -137,21 +136,19 @@ function ControlButton(props: {
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <button
+          <Button
             type="button"
-            className={cn(
-              buttonVariants({ variant: 'ghost', size: 'sm' }),
-              'flex-none px-2 text-[13px]',
-              props.pressed === true && 'bg-muted text-foreground',
-            )}
+            variant="outline"
+            size="sm"
+            className={cn('flex-none', props.pressed === true && 'bg-accent text-accent-foreground')}
             aria-label={props.label}
             aria-pressed={props.pressed}
             onClick={props.onClick}
           >
             {props.children}
-          </button>
+          </Button>
         </TooltipTrigger>
-        <TooltipContent side="top" className="text-[11px]">{props.label}</TooltipContent>
+        <TooltipContent side="top" className="text-xs">{props.label}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   )
@@ -168,7 +165,7 @@ function CardLine(props: { className: string; label: string; children?: ReactNod
       <TooltipTrigger asChild>
         <span className={props.className}>{props.children ?? props.label}</span>
       </TooltipTrigger>
-      <TooltipContent side="bottom" className="max-w-[260px] text-[11px]">{props.label}</TooltipContent>
+      <TooltipContent side="bottom" className="max-w-[260px] text-xs">{props.label}</TooltipContent>
     </Tooltip>
   )
 }
@@ -221,7 +218,7 @@ export function TasksGraph(props: TasksGraphProps): ReactNode {
   /** Container width drives the sibling-band wrap (see bandColsFor). */
   const [width, setWidth] = useState(0)
   const layout = useMemo(
-    () => layoutTasksGraphForWidth(nodes, width, FIT_MIN_SCALE),
+    () => layoutTasksGraphForWidth(nodes, width, GRAPH_FIT_MIN_SCALE),
     [nodes, width],
   )
   const edges = useMemo(() => tasksEdges(nodes), [nodes])
@@ -235,7 +232,7 @@ export function TasksGraph(props: TasksGraphProps): ReactNode {
     const ch = container.clientHeight
     if (cw === 0 || ch === 0) return
     const k = Math.max(
-      FIT_MIN_SCALE,
+      GRAPH_FIT_MIN_SCALE,
       Math.min((cw - 24) / layout.width, (ch - 24) / layout.height, FIT_MAX_SCALE),
     )
     setTf({
@@ -431,10 +428,10 @@ export function TasksGraph(props: TasksGraphProps): ReactNode {
             {phaseFrames.map(frame => (
               <div
                 key={frame.key}
-                className="pointer-events-none absolute rounded-md border border-dashed border-border"
+                className="pointer-events-none absolute rounded-md bg-muted/40 border border-dashed border-border"
                 style={{ left: frame.x, top: frame.y, width: frame.w, height: frame.h }}
               >
-                <span className="absolute -top-[7px] left-2 bg-background px-1 font-mono text-[11px] leading-[1.3] tracking-wide text-foreground-3 uppercase">
+                <span className="absolute -top-[7px] left-2 bg-background px-1 font-mono text-xs leading-[1.3] tracking-wide text-foreground-3 uppercase">
                   {frame.title ?? t('workflowPhaseUnnamed')}
                 </span>
               </div>
@@ -466,7 +463,7 @@ export function TasksGraph(props: TasksGraphProps): ReactNode {
           <FoldToggleButton folded={folded} onToggleFold={onToggleFold} />
           <ControlButton label={t('tasksZoomOut')} onClick={() => { zoomBy(1 / 1.2) }}>−</ControlButton>
           <span
-            className="flex-none px-1.5 font-mono text-[11px] tabular-nums text-muted-foreground"
+            className="flex-none px-1.5 font-mono text-xs tabular-nums text-muted-foreground"
             aria-hidden="true"
           >
             {Math.round(tf.k * 100)}%
@@ -517,7 +514,7 @@ function renderAgentNode(
         {node.team?.role === 'teammate' && node.team.name !== '' && (
           <Badge
             variant="outline"
-            className="h-4 max-w-[48px] flex-none truncate px-1.5 py-0 text-[11px] font-normal text-muted-foreground"
+            className="h-5 max-w-[56px] flex-none truncate font-normal text-muted-foreground"
           >
             {node.team.name}
           </Badge>

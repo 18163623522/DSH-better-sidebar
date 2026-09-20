@@ -18,6 +18,15 @@
  * without it Tailwind would glob the project root and pick class-like strings
  * out of `lib/`, `tests/`, `node_modules/` and the docs.
  */
+/*
+ * Layer order is declared FIRST and explicitly: the compiler orders layers by
+ * first appearance, and the `@import`s below would otherwise register
+ * `utilities` before the `base` block at the bottom of this file — which would
+ * make the scoped reset beat the utilities (a `rounded-md` button rendering
+ * square, exactly the kind of "no CSS" artifact this file exists to prevent).
+ */
+@layer theme, base, components, utilities;
+
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
 
@@ -124,10 +133,52 @@
 @layer base {
   .dsw-tasks {
     color: var(--dsw-alias-label-primary);
+    /* The page's own density: stock shadcn body text, not the host's 16px. */
+    font-size: 0.875rem;
+    line-height: 1.45;
   }
 
   .dsw-tasks :where(button, input, textarea, select) {
     font: inherit;
+  }
+
+  /*
+   * THE SCOPED PREFLIGHT SUBSET — without it the page wears the browser's
+   * defaults. Preflight itself cannot be imported (it would repaint the host
+   * page), but preflight is also what normalizes FORM CONTROLS: measured in a
+   * real browser on a plugin icon button that sets only `size-7`, the UA chrome
+   * survived as `padding: 1px 6px`, `border: 2px outset`, `background:
+   * ButtonFace` (#efefef) and `font: 400 13.33px system-ui` — gray beveled
+   * buttons and a soft double border, i.e. "the page has no CSS". Text inputs
+   * and selects are affected the same way.
+   *
+   * `:where()` keeps these at the ancestor's (0,1,0); utilities sit in the
+   * later `utilities` layer at the same specificity, so they still win — this
+   * only removes what nobody asked for.
+   */
+  .dsw-tasks :where(button, input, select, textarea) {
+    margin: 0;
+    padding: 0;
+    /* Split rather than the `border: 0 solid` shorthand: the theme guard
+     * (tests/theme.spec.ts) requires every `border` declaration to name a
+     * colour token or be inert, and `0 solid` is neither. */
+    border-width: 0;
+    border-style: none;
+    border-radius: 0;
+    background-color: transparent;
+    background-image: none;
+    color: inherit;
+    letter-spacing: inherit;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  .dsw-tasks :where(button, [role='button']) {
+    cursor: pointer;
+  }
+
+  .dsw-tasks :where(button:disabled, input:disabled, select:disabled, textarea:disabled) {
+    cursor: default;
   }
 
   .dsw-tasks :where(*, *::before, *::after) {

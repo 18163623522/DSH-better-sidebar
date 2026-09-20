@@ -15,13 +15,20 @@ import { tasksEdges } from './tasks-model.ts'
 /** Geometry constants of the canvas (px, pre-scale). Metrics follow the
  *  approved Variant-D mockup, whose design target is the NARROW native right
  *  sidebar (~360px): a 132px card fits two per row plus the gutter. */
-export const GRAPH_NODE_W = 150
+export const GRAPH_NODE_W = 176
 /** Two title lines plus the mono meta line: the card clamps long agent names
  *  to two lines instead of ellipsizing them to a couple of characters, so the
  *  reserved height covers that (see NODE_TITLE in TasksGraph.tsx). */
-export const GRAPH_NODE_H = 60
+export const GRAPH_NODE_H = 68
 /** Extra height of an agent node carrying a live line. */
 export const GRAPH_LIVE_H = 14
+
+/**
+ * The readability floor the fit honours: the canvas may shrink to this scale
+ * before the layout starts wrapping (TasksGraph's fit and {@link bandColsFor}'s
+ * column budget must agree, so the constant lives here, next to the geometry).
+ */
+export const GRAPH_FIT_MIN_SCALE = 0.78
 export const GRAPH_GAP_X = 28
 export const GRAPH_GAP_Y = 53
 export const GRAPH_PAD = 16
@@ -161,8 +168,13 @@ export function layoutTasksGraph(nodes: readonly TasksNode[], options: LayoutOpt
  * canvas keeps its readability floor instead of shrinking: at 360px two cards
  * per row, at 720px four.
  */
-export function bandColsFor(containerWidth: number): number {
-  const usable = containerWidth - GRAPH_PAD * 2
+export function bandColsFor(containerWidth: number, minScale = GRAPH_FIT_MIN_SCALE): number {
+  // Columns are budgeted at the readability floor, not at 1:1: the fit may
+  // scale the canvas DOWN to `minScale` and still be readable, so a narrow
+  // panel keeps two columns (scaled ~0.86 at 360px) instead of degenerating
+  // into a one-card-per-row ladder. `layoutTasksGraphForWidth` re-checks the
+  // real width against the same budget, so a too-wide pick is still narrowed.
+  const usable = (containerWidth <= 0 ? 360 : containerWidth) / minScale - GRAPH_PAD * 2
   const cols = Math.floor((usable + GRAPH_GAP_X) / (GRAPH_NODE_W + GRAPH_GAP_X))
   return Math.min(4, Math.max(1, cols))
 }

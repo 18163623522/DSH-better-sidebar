@@ -5,8 +5,8 @@
  * line, and the iconified live activity row ("tool icon + tool + args").
  *
  * Card content contract (the page's answer to "everything is ellipsized"):
- *   line 1  state dot + agent icon + name   (11px semibold, one line)
- *   line 2  mode/model · activity           (9px mono, one line)
+ *   line 1  state dot + agent icon + name   (text-sm semibold, one line)
+ *   line 2  mode/model · activity           (text-xs mono, one line)
  *   line 3  live tool line                  (running nodes only)
  *   line 4  owned shared task               (team members only)
  * Everything else lives in the popovers.

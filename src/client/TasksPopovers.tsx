@@ -44,16 +44,14 @@ function stateKey(state: TasksAgentNode['state']): CopyKey {
 }
 
 /**
- * The semantic ink of one status word: settled = success, in progress = the
- * accent, blocked = warning, failed = destructive. The hue rides the text
- * only — the badge keeps a neutral outline, so a popover never turns into a
- * block of color.
+ * The stock Badge variant of one status word: running / in progress =
+ * `default` (the accent), failed / cancelled = `destructive`, everything
+ * settled = `secondary` (pending included — a to-do list is not an alert).
  */
-function statusTone(status: WorkflowStatus | 'pending' | 'in_progress' | 'completed'): string {
-  if (status === 'completed') return 'text-success'
-  if (status === 'running' || status === 'in_progress') return 'text-primary'
-  if (status === 'pending') return 'text-muted-foreground'
-  return 'text-destructive'
+function statusVariant(status: WorkflowStatus | 'pending' | 'in_progress' | 'completed'): 'default' | 'secondary' | 'destructive' {
+  if (status === 'running' || status === 'in_progress') return 'default'
+  if (status === 'failed' || status === 'cancelled') return 'destructive'
+  return 'secondary'
 }
 
 /** The popover's key/value grid (label left, value right, mono on request).
@@ -84,15 +82,15 @@ function PopRow(props: { label: string; mono?: boolean; children: ReactNode }): 
 /** The mono kicker above a popover list ("任务" / a phase title). */
 function GroupLabel(props: { children: ReactNode }): ReactNode {
   return (
-    <div className="px-1 pt-0.5 font-mono text-[11px] tracking-wide text-foreground-3 uppercase">
+    <div className="px-1 pt-0.5 font-mono text-xs tracking-wide text-foreground-3 uppercase">
       {props.children}
     </div>
   )
 }
 
-/** One outlined status badge (neutral chrome, semantic ink only). */
-function StatusBadge(props: { tone: string; children: ReactNode }): ReactNode {
-  return <Badge variant="outline" className={`h-4 px-1.5 text-[11px] ${props.tone}`}>{props.children}</Badge>
+/** One status badge on its stock variant (neutral chrome). */
+function StatusBadge(props: { variant: 'default' | 'secondary' | 'destructive'; children: ReactNode }): ReactNode {
+  return <Badge variant={props.variant}>{props.children}</Badge>
 }
 
 /** The agent node detail popover. */
@@ -114,7 +112,7 @@ export function AgentNodePopover(props: {
     // root class to pick up the scoped base reset the plugin ships instead of
     // preflight (see TaskWindow.tsx for the same pattern).
     <Card className="dsw-tasks gap-2 rounded-lg border-border bg-popover p-0 py-2.5">
-      <div className="px-3 font-mono text-[11px] text-foreground-3">{t('tasksNodeDetail')}</div>
+      <div className="px-3 font-mono text-xs text-foreground-3">{t('tasksNodeDetail')}</div>
       <Separator />
       <div className="flex flex-col gap-1.5 px-3">
         <span className="truncate text-sm font-medium" title={node.label}>{node.label}</span>
@@ -161,7 +159,7 @@ export function AgentNodePopover(props: {
                 >
                   <StateDot state={taskDotState(task)} size={6} />
                   <span className="min-w-0 flex-1 truncate text-xs font-medium">{task.subject}</span>
-                  <StatusBadge tone={statusTone(task.status)}>{t(taskStatusKey(task.status))}</StatusBadge>
+                  <StatusBadge variant={statusVariant(task.status)}>{t(taskStatusKey(task.status))}</StatusBadge>
                 </UiButton>
               ))}
             </div>
@@ -198,7 +196,7 @@ export function WorkflowNodePopover(props: {
   return (
     // `dsw-tasks`: same portal-scope reset as AgentNodePopover above.
     <Card className="dsw-tasks gap-2 rounded-lg border-border bg-popover p-0 py-2.5">
-      <div className="px-3 font-mono text-[11px] text-foreground-3">{t('workflowRun')}</div>
+      <div className="px-3 font-mono text-xs text-foreground-3">{t('workflowRun')}</div>
       <Separator />
       <div className="flex flex-col gap-1.5 px-3">
         <div className="flex min-w-0 items-center gap-1.5" title={run.name}>
@@ -209,7 +207,7 @@ export function WorkflowNodePopover(props: {
         </div>
         <PopRows>
           <PopRow label={t('tasksNodeState')}>
-            <StatusBadge tone={statusTone(run.status)}>{t(workflowStatusKey(run.status))}</StatusBadge>
+            <StatusBadge variant={statusVariant(run.status)}>{t(workflowStatusKey(run.status))}</StatusBadge>
           </PopRow>
         </PopRows>
       </div>

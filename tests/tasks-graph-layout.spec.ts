@@ -100,6 +100,11 @@ describe('layoutTasksGraph', () => {
 
 describe('bandColsFor / layoutTasksGraphForWidth', () => {
   it('derives the column count from the container width', () => {
+    // The budget is measured at the READABILITY FLOOR, not at 1:1: the fit may
+    // scale the canvas down to 0.78 and stay readable, so a 360px panel keeps
+    // two 176px cards per row (scaled ~0.86) instead of collapsing into a
+    // one-card-per-row ladder. 720px fits four at the floor (the cap), and a
+    // panel too narrow for even two columns falls back to one.
     expect(bandColsFor(360)).toBe(2)
     expect(bandColsFor(720)).toBe(4)
     expect(bandColsFor(120)).toBe(1)
@@ -109,12 +114,17 @@ describe('bandColsFor / layoutTasksGraphForWidth', () => {
     const nodes: TasksNode[] = [agent('root')]
     for (let index = 0; index < 4; index += 1) nodes.push(agent(`c${index}`, 'root'))
     const wide = layoutTasksGraphForWidth(nodes, 720)
+    // Four 176px cards fit one band inside the floor budget at 720px, so the
+    // whole sibling set stays on one row.
     expect(['c0', 'c1', 'c2', 'c3'].map(id => layoutRow(wide, id))).toEqual([1, 1, 1, 1])
+    expect(wide.width).toBeLessThanOrEqual(720 / 0.78)
   })
 
   it('wraps instead of overflowing wildly when the container is narrow', () => {
     const nodes: TasksNode[] = [agent('root')]
     for (let index = 0; index < 6; index += 1) nodes.push(agent(`c${index}`, 'root'))
+    // 360px (the narrowest native-sidebar panel) is where the anti-ladder
+    // rule matters most: two cards per band, scaled to fit.
     const narrow = layoutTasksGraphForWidth(nodes, 360)
     // Never wider than the tolerant budget (a small pan is allowed, a 3x
     // overflow is not), and never a one-child-per-row ladder.

@@ -119,6 +119,31 @@ describe('tailwind entry: theme + utilities only', () => {
     expect(shell).toContain('createPortal')
   })
 
+  it('restores the scoped preflight subset that form controls need', () => {
+    // Regression pin for a real-device report: "the Tasks page looks like it
+    // has no CSS". The plugin cannot import preflight (it would repaint the
+    // host page), but preflight is what normalizes form controls — without it
+    // every plugin `<button>` kept the UA chrome measured in the real shell:
+    // `padding: 1px 6px`, `border: 2px outset`, `background: ButtonFace`,
+    // `font: 400 13.33px system-ui`. The scoped subset below removes exactly
+    // that, at (0,1,0) so utilities in the later `utilities` layer still win.
+    const reset = /\.dsw-tasks\s+:where\(button, input, select, textarea\)\s*\{([^}]*)\}/
+      .exec(theme)?.[1] ?? ''
+    for (const declaration of ['margin: 0', 'padding: 0', 'border: 0 solid', 'appearance: none']) {
+      expect(reset, declaration).toContain(declaration)
+    }
+  })
+
+  it('declares the layer order before the imports that register the layers', () => {
+    // The compiler orders layers by first appearance. Without the explicit
+    // statement the `@import ... layer(utilities)` lines would register
+    // `utilities` BEFORE the `base` block, making the scoped reset beat the
+    // utilities (measured: a `rounded-md` button rendering square).
+    expect(theme).toMatch(/@layer theme, base, components, utilities;/)
+    expect(theme.indexOf('@layer theme, base, components, utilities;'))
+      .toBeLessThan(theme.indexOf('@import "tailwindcss/theme.css"'))
+  })
+
   it('holds the skin contract: no color literal anywhere in the entry', () => {
     // Comments carry prose, not values — strip them before looking.
     const withoutComments = theme.replace(/\/\*[\s\S]*?\*\//g, '')
