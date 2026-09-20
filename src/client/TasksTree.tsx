@@ -35,6 +35,7 @@ import { FoldToggleButton, ViewModeToggle } from './TasksGraph.tsx'
 import { Collapsible, CollapsibleContent } from './ui/collapsible.tsx'
 import { ScrollArea } from './ui/scroll-area.tsx'
 import { Spinner } from './ui/spinner.tsx'
+import { cn } from './ui/utils.ts'
 import { t } from './locales.ts'
 
 /** The row slab: one shared box, so every row kind lines up on the same grid. */
@@ -136,13 +137,13 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
           tabIndex={0}
           aria-level={depth + 1}
           aria-label={`${t('tasksFoldCompleted', { count: node.count })} · ${t('tasksFoldExpand')}`}
-          className={`${ROW} ${ROW_FOLD} ${ROW_HOVER}`}
+          className={cn(ROW, ROW_FOLD, ROW_HOVER)}
           onClick={onToggleFold}
           onKeyDown={(event) => { activateOnKey(event, onToggleFold) }}
         >
           <span className={GLYPH} aria-hidden="true"><FoldGlyph /></span>
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className={`flex items-center gap-1.5 font-medium ${LINE}`}>
+            <span className={cn('flex items-center gap-1.5 font-medium', LINE)}>
               {t('tasksFoldCompleted', { count: node.count })}
               <span className={META}>
                 {t(folded ? 'tasksFoldExpand' : 'tasksFoldCollapse')}
@@ -162,7 +163,7 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
             aria-level={depth + 1}
             aria-expanded="true"
             aria-label={`${node.run.name} ${workflowMeta(node)}`}
-            className={`${ROW} ${ROW_HOVER} ${node.run.status !== 'running' ? ROW_SETTLED : ''}`}
+            className={cn(ROW, ROW_HOVER, node.run.status !== 'running' && ROW_SETTLED)}
             onClick={(event) => { onWorkflowInfo(node, event.currentTarget) }}
             onKeyDown={(event) => {
               activateOnKey(event, () => { onWorkflowInfo(node, event.currentTarget as HTMLElement) })
@@ -173,7 +174,7 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
             </span>
             <span className={GLYPH} aria-hidden="true"><WorkflowGlyph /></span>
             <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className={`font-medium ${LINE}`}>{node.run.name}</span>
+              <span className={cn('font-medium', LINE)}>{node.run.name}</span>
               <span className={META}>{workflowMeta(node)}</span>
             </span>
           </div>
@@ -187,12 +188,12 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
             aria-level={depth + 1}
             aria-label={`${node.label} ${agentMeta(node)}`}
             aria-current={node.current ? 'true' : undefined}
-            className={[
+            className={cn(
               ROW,
               ROW_HOVER,
-              node.current ? ROW_CURRENT : '',
-              (node.state === 'done' || node.state === 'error') && !node.current ? ROW_SETTLED : '',
-            ].join(' ')}
+              node.current && ROW_CURRENT,
+              (node.state === 'done' || node.state === 'error') && !node.current && ROW_SETTLED,
+            )}
             onClick={(event) => { onNodeInfo(node, event.currentTarget) }}
             onKeyDown={(event) => {
               activateOnKey(event, () => { onNodeInfo(node, event.currentTarget as HTMLElement) })
@@ -207,7 +208,7 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
             </span>
             <span className={GLYPH} aria-hidden="true"><AgentGlyph node={node} /></span>
             <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className={`font-medium ${LINE}`}>{node.label}</span>
+              <span className={cn('font-medium', LINE)}>{node.label}</span>
               <span className={META}>{agentMeta(node)}</span>
               {node.state === 'running' && <LiveLine live={node.live} />}
               <TaskLine tasks={node.tasks} onOpenTask={onOpenTask} />
@@ -243,7 +244,7 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
               <div className="flex items-center justify-center gap-1.5 px-6 py-3 text-xs text-muted-foreground">
                 {/* The visible line carries the copy; the glyph is decoration. */}
                 <span aria-hidden="true" className="flex flex-none items-center">
-                  <Spinner size={12} />
+                  <Spinner className="size-3" />
                 </span>
                 {t('loading')}
               </div>
@@ -252,7 +253,7 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
           </div>
         </div>
       </ScrollArea>
-      <div className="absolute right-2.5 bottom-2.5 z-[6] flex flex-row items-center" data-graph-controls>
+      <div className="absolute right-2.5 bottom-2.5 z-10 flex flex-row items-center" data-graph-controls>
         <ViewModeToggle mode={mode} onModeChange={onModeChange} />
         <FoldToggleButton folded={folded} onToggleFold={onToggleFold} />
       </div>

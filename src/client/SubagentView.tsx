@@ -21,11 +21,17 @@
  * ⓘ button opens the detail popover. Completed leaf agents fold into one
  * aggregate node per parent (click it or the control-cluster toggle to
  * expand/collapse).
+ *
+ * The shell itself is the vendored shadcn set: the header is a toolbar closed
+ * by a `Separator`, the catalog-failure banner is an `Item` (media / content /
+ * actions), the empty state is the stock `Empty` composition, and the page's
+ * only controls are the vendored `Button` + `Tooltip` — `className` carries
+ * layout only, and every glyph is a host `IconXxx` primitive.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSyncExternalStore } from 'react'
 import {
-  IconAgentPresetOutline16, IconRefreshOutline14,
+  IconAgentPresetOutline16, IconRefreshOutline14, IconWarningOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   Context,
@@ -54,6 +60,8 @@ import type { SidebarStore } from './state.ts'
 import type { WorkflowRunView } from '../workflow-runs.ts'
 import { Button as UiButton } from './ui/button.tsx'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from './ui/empty.tsx'
+import { Item, ItemActions, ItemContent, ItemMedia, ItemTitle } from './ui/item.tsx'
+import { Separator } from './ui/separator.tsx'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip.tsx'
 import legacy from './SubagentView.module.css'
 
@@ -416,11 +424,11 @@ export function SubagentView(props: {
   return (
     <div className={`dsw-tasks ${legacy.subagent} relative`}>
       {/*
-        Page header: title + mono descendant count + refresh, closed by a 1px
-        hairline. The control cluster (view toggle / fold / zoom) stays on the
-        canvas itself, so it is visible in BOTH modes.
+        Page header: title + mono descendant count + refresh, closed by the
+        stock hairline `Separator`. The control cluster (view toggle / fold /
+        zoom) stays on the canvas itself, so it is visible in BOTH modes.
       */}
-      <div className="flex flex-none items-center gap-2 border-b border-border px-3 py-2">
+      <div className="flex flex-none items-center gap-2 px-3 py-2">
         <span className="min-w-0 flex-1 truncate text-sm font-medium">
           {t('subagent')}
           {rootSummary?.displayTitle !== undefined && rootSummary.displayTitle !== ''
@@ -448,13 +456,14 @@ export function SubagentView(props: {
                   team.refresh()
                 }}
               >
-                <IconRefreshOutline14 size={13} />
+                <IconRefreshOutline14 />
               </UiButton>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">{t('refresh')}</TooltipContent>
           </Tooltip>
         </TooltipProvider>
       </div>
+      <Separator />
       {rootId !== undefined && teamView?.available === true && teamView.team !== null && (
         <TeamBoard
           rootId={rootId}
@@ -466,27 +475,44 @@ export function SubagentView(props: {
         />
       )}
       {failedParents.length > 0 && (
-        <div className="flex flex-none items-center justify-between gap-2 px-3 py-2 text-xs text-destructive">
-          <span>{t('catalogLoadFailed', { count: failedParents.length })}</span>
-          <UiButton
-            variant="ghost"
-            size="sm"
-            className="flex-none"
-            onClick={() => { for (const parent of failedParents) refresh(parent) }}
-          >
-            <IconRefreshOutline14 size={12} />
-            {t('retry')}
-          </UiButton>
-        </div>
+        <Item
+          variant="outline"
+          size="sm"
+          className="mx-3 my-2 min-w-0 flex-nowrap gap-2 rounded-md px-2 py-1.5"
+        >
+          <ItemMedia variant="icon" className="text-destructive">
+            <IconWarningOutline16 />
+          </ItemMedia>
+          <ItemContent className="min-w-0 gap-0">
+            <ItemTitle className="text-destructive">
+              {t('catalogLoadFailed', { count: failedParents.length })}
+            </ItemTitle>
+          </ItemContent>
+          <ItemActions>
+            <UiButton
+              variant="outline"
+              size="xs"
+              className="flex-none"
+              onClick={() => { for (const parent of failedParents) refresh(parent) }}
+            >
+              <IconRefreshOutline14 />
+              {t('retry')}
+            </UiButton>
+          </ItemActions>
+        </Item>
       )}
       {readyEmpty && (
-        <Empty className="flex-1 gap-4 border-0 p-4">
-          <EmptyHeader className="gap-2">
-            <EmptyMedia variant="icon" className="size-8 rounded-md">
-              <IconAgentPresetOutline16 size={16} />
+        // `border-0` is the no-preflight fix, not a style override: the stock
+        // `Empty` declares only `border-dashed`, and with preflight never
+        // shipped (see ui/theme.css) a bare `border-style: dashed` keeps the
+        // UA's 3px medium width — a thick dashed frame around the page.
+        <Empty className="flex-1 border-0">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <IconAgentPresetOutline16 />
             </EmptyMedia>
-            <EmptyTitle className="text-sm font-medium">{t('subagentEmpty')}</EmptyTitle>
-            <EmptyDescription className="text-xs">{t('subagentEmptyDesc')}</EmptyDescription>
+            <EmptyTitle>{t('subagentEmpty')}</EmptyTitle>
+            <EmptyDescription>{t('subagentEmptyDesc')}</EmptyDescription>
           </EmptyHeader>
         </Empty>
       )}

@@ -11,17 +11,21 @@
  * cursor), with a copy action, a follow-latest switch, the two-click kill,
  * and a terminal-style tail while the job runs.
  *
- * Visual language: Tailwind utilities over the shadcn tokens
- * (src/client/ui/theme.css) with the vendored Collapsible / ScrollArea /
- * Button for the interactive shells. Hierarchy comes from a 1px `border-border`
- *  hairline plus the surface ladder (`bg-background` → `bg-muted` on hover) —
+ * Composition: the vendored shadcn set carries every surface. The drawer is a
+ * `Collapsible` whose rows are `Item`s (`ItemGroup` → `Item` + `ItemActions`,
+ * the row whose output is open taking the `muted` variant); the popover's
+ * identity block is an `Item` (media / content / actions) and its footer an
+ * `Item` holding the host `Switch` and the kill `Button`; hairlines are
+ * `Separator`s, status ink rides the stock `Badge` variants, and the loading
+ * line is the vendored `Spinner`. Hierarchy comes from the 1px `border-border`
+ * hairline plus the surface ladder (`bg-background` → `bg-muted` on hover) —
  * the static drawer carries no shadow; the only float is the popover card,
  * whose surface/shadow belong to AnchoredPopover. Body copy is text-sm, meta
  * text-xs, identifiers/durations `font-mono tabular-nums`.
  *
- * Every non-shadcn control is a host primitive (Switch / StateDot), and every
- * icon is a host `IconXxx` glyph — the badges are the vendored shadcn `Badge`
- * on its stock variants.
+ * `className` is used for layout only (the components own their color and
+ * type), every icon is a host `IconXxx` glyph, and every other control is a
+ * host primitive (`Switch` / `StateDot`).
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
@@ -40,7 +44,10 @@ import { t } from './locales.ts'
 import { Badge } from './ui/badge.tsx'
 import { Button } from './ui/button.tsx'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible.tsx'
+import { Item, ItemActions, ItemContent, ItemGroup, ItemMedia, ItemTitle } from './ui/item.tsx'
 import { ScrollArea } from './ui/scroll-area.tsx'
+import { Separator } from './ui/separator.tsx'
+import { Spinner } from './ui/spinner.tsx'
 import { cn } from './ui/utils.ts'
 
 /** Refresh cadence of an open job-output popover while its job runs. */
@@ -58,6 +65,15 @@ function statusVariant(job: SidebarJobView): 'default' | 'secondary' | 'destruct
   if (job.status === 'running') return 'default'
   if (job.status === 'failed') return 'destructive'
   return 'secondary'
+}
+
+/** The meta chip of one job kind: the stock `outline` variant, mono figures. */
+function KindBadge(props: { kind: string }): ReactNode {
+  return (
+    <Badge variant="outline" className="flex-none font-mono font-normal text-muted-foreground">
+      {props.kind}
+    </Badge>
+  )
 }
 
 export interface JobsDrawerProps {
@@ -129,8 +145,11 @@ export function JobsDrawer(props: JobsDrawerProps): ReactNode {
       onOpenChange={(next: boolean) => { setManualOpen(next) }}
       role="region"
       aria-label={t('jobs')}
-      className="z-[5] flex-none border-t border-border bg-background"
+      className="z-[5] flex-none bg-background"
     >
+      {/* The drawer's top edge: the stock hairline (the bar itself carries the
+          surface, the rows own their own rhythm). */}
+      <Separator />
       {/* The bar keeps the drawer's whole toggle affordance (title, running
           tally, count line) and Radix owns aria-expanded / aria-controls. */}
       <CollapsibleTrigger
@@ -155,13 +174,14 @@ export function JobsDrawer(props: JobsDrawerProps): ReactNode {
         <div className="px-3 pb-2 font-mono text-xs text-foreground-3">{t('jobsAutoCollapsed')}</div>
       )}
       <CollapsibleContent>
-        {/* Bounded log surface: one row per job, hairline-separated by the
+        <Separator />
+        {/* Bounded log surface: one `Item` row per job, separated by the
             rows' own 4px rhythm rather than per-row borders. The height is
             definite (not `max-h`) because ScrollArea's viewport is `size-full`:
             a bare max-height leaves the viewport content-sized, so the rows
             would spill out of the drawer instead of scrolling. */}
-        <ScrollArea className="h-[156px] w-full min-w-0 border-t border-dashed border-border">
-          <div className="flex min-w-0 flex-col gap-0.5 px-2 pt-1 pb-2">
+        <ScrollArea className="h-[156px] w-full min-w-0">
+          <ItemGroup className="min-w-0 gap-0.5 px-2 pt-1 pb-2">
             {rows.map((row) => {
               const { job } = row
               const live = isJobLive(job)
@@ -181,23 +201,25 @@ export function JobsDrawer(props: JobsDrawerProps): ReactNode {
               ].join(' · ')
               const secondary = [context, duration].filter(Boolean).join(' · ')
               return (
-                <div
+                <Item
                   key={job.id}
+                  size="sm"
+                  // The row whose output is open wears the muted surface (the
+                  // stock Item variant) instead of a one-off background class.
+                  variant={openJobId === job.id ? 'muted' : 'default'}
+                  data-settled={live ? 'false' : 'true'}
+                  data-open={openJobId === job.id ? 'true' : 'false'}
                   className={cn(
-                    'group flex items-center gap-[7px] rounded-md px-1.5 py-1 transition-colors',
-                    'hover:bg-muted',
-                    openJobId === job.id && 'bg-muted',
+                    'min-w-0 flex-nowrap gap-2 rounded-md px-1.5 py-1 transition-colors hover:bg-muted',
                     // A settled job recedes by ink (the label line drops to the
                     // secondary level), not by opacity.
                     !live && 'text-muted-foreground',
                   )}
-                  data-settled={live ? 'false' : 'true'}
-                  data-open={openJobId === job.id ? 'true' : 'false'}
                 >
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-auto min-w-0 flex-1 justify-start gap-[7px] px-0 py-0 text-left text-sm font-normal tracking-normal normal-case"
+                    className="h-auto min-w-0 flex-1 justify-start gap-2 px-0 py-0 text-left"
                     aria-label={`${job.label} ${jobStatusLabel(job.status, t)} ${secondary}`}
                     title={t('jobViewOutput')}
                     onClick={(event) => { onOpenOutput(row, event.currentTarget) }}
@@ -207,9 +229,7 @@ export function JobsDrawer(props: JobsDrawerProps): ReactNode {
                         running state draws an svg, the others a span), so the
                         indicator keeps its 6px. */}
                     <StateDot state={jobDotState(job.status)} size={6} className="size-1.5" />
-                    <Badge variant="outline" className="flex-none font-mono font-normal text-muted-foreground">
-                      {job.kind}
-                    </Badge>
+                    <KindBadge kind={job.kind} />
                     <span
                       className={cn(
                         'min-w-0 flex-1 truncate font-mono text-sm',
@@ -232,36 +252,36 @@ export function JobsDrawer(props: JobsDrawerProps): ReactNode {
                     </span>
                   </Button>
                   {job.status === 'running' && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      // Inline row action: quiet until the row is hovered, but
-                      // keyboard focus brings it back (focus-visible below).
-                      className={cn(
-                        'h-auto shrink-0 font-mono text-xs font-normal text-muted-foreground',
-                        'opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100',
-                        armed && 'border-destructive text-destructive',
-                      )}
-                      data-armed={armed ? 'true' : 'false'}
-                      aria-label={armed ? t('jobKillConfirm') : t('jobKill')}
-                      title={armed ? t('jobKillConfirm') : t('jobKill')}
-                      disabled={killing}
-                      onClick={() => {
-                        if (armed) void kill(row)
-                        else setArmedId(job.id)
-                      }}
-                    >
-                      <IconStopFill16 size={11} className="size-[11px]" />
-                      {armed ? t('jobKillConfirm') : undefined}
-                    </Button>
+                    <ItemActions className="gap-1">
+                      <Button
+                        // The armed confirm is the stock `destructive` variant;
+                        // unarmed stays a quiet outline chip.
+                        variant={armed ? 'destructive' : 'outline'}
+                        size="xs"
+                        // Inline row action: quiet until the row is hovered, but
+                        // keyboard focus brings it back (focus-visible below).
+                        className="opacity-0 transition-opacity group-hover/item:opacity-100 focus-visible:opacity-100"
+                        data-armed={armed ? 'true' : 'false'}
+                        aria-label={armed ? t('jobKillConfirm') : t('jobKill')}
+                        title={armed ? t('jobKillConfirm') : t('jobKill')}
+                        disabled={killing}
+                        onClick={() => {
+                          if (armed) void kill(row)
+                          else setArmedId(job.id)
+                        }}
+                      >
+                        <IconStopFill16 />
+                        {armed ? t('jobKillConfirm') : undefined}
+                      </Button>
+                    </ItemActions>
                   )}
                   {killFailed && (
                     <span className="shrink-0 font-mono text-xs text-destructive">{t('jobKillError')}</span>
                   )}
-                </div>
+                </Item>
               )
             })}
-          </div>
+          </ItemGroup>
         </ScrollArea>
       </CollapsibleContent>
     </Collapsible>
@@ -277,9 +297,9 @@ export function JobsDrawer(props: JobsDrawerProps): ReactNode {
  *
  * The card fills the AnchoredPopover surface (rounded-lg + border + shadow
  * live there, since that host owns the float) and only places its content
- * inside it: header, title line, meta line, the terminal tail, and the action
- * footer. `data-popover-handle` / `data-popover-no-drag` keep the drag
- * contract unchanged — the body drags, the controls do not.
+ * inside it: header, the `Item` identity block, the terminal tail, and the
+ * `Item` action footer. `data-popover-handle` / `data-popover-no-drag` keep
+ * the drag contract unchanged — the body drags, the controls do not.
  */
 export function JobOutputPopoverContent(props: {
   ownerSessionId: string
@@ -361,13 +381,13 @@ export function JobOutputPopoverContent(props: {
     // `dsw-tasks`: this card renders inside AnchoredPopover's portal at
     // document.body — OUTSIDE the page root — so it re-declares the page root
     // class for the scoped base reset (see TaskWindow.tsx).
-    <div className="dsw-tasks box-border flex flex-col gap-1 p-2.5 text-sm text-popover-foreground" data-popover-handle>
-      <div className="mb-1 flex items-baseline justify-between gap-2 font-mono text-xs tracking-[0.14em] text-foreground-3 uppercase">
-        <span>{t('jobs')}</span>
-        <span className="inline-flex items-center gap-0.5 tracking-normal normal-case" data-popover-no-drag>
+    <div className="dsw-tasks box-border flex flex-col gap-2 p-2.5 text-sm text-popover-foreground" data-popover-handle>
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-mono text-xs tracking-[0.14em] text-foreground-3 uppercase">{t('jobs')}</span>
+        <span className="inline-flex items-center" data-popover-no-drag>
           <Button
             variant="ghost"
-            size="icon"
+            size="icon-xs"
             aria-label={copied ? t('jobCopied') : t('jobCopyOutput')}
             title={copied ? t('jobCopied') : t('jobCopyOutput')}
             disabled={text === ''}
@@ -378,27 +398,41 @@ export function JobOutputPopoverContent(props: {
               })
             }}
           >
-            <IconCopyOutline16 size={12} className="size-3" />
+            <IconCopyOutline16 />
           </Button>
         </span>
       </div>
-      <div className="flex min-w-0 items-center gap-1.5">
-        <StateDot state={jobDotState(job.status)} size={6} />
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground" title={job.label}>
-          {job.label}
-        </span>
-        <Badge variant={statusVariant(job)} className="flex-none">
-          {jobStatusLabel(job.status, t)}
-        </Badge>
-      </div>
-      <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-        <Badge variant="outline" className="flex-none font-mono font-normal text-muted-foreground">
-          {job.kind}
-        </Badge>
-        {job.detail !== undefined && job.detail !== '' && <span>{job.detail}</span>}
-        <span className="font-mono text-xs text-foreground-3">{t('jobDragHint')}</span>
-      </div>
-      {state === 'loading' && <div className="text-xs text-foreground-3">{t('loading')}</div>}
+      {/* The job's identity: the stock `Item` composition (media / content /
+          actions) rather than a hand-rolled row. */}
+      <Item size="sm" variant="muted" className="min-w-0 flex-nowrap gap-2 rounded-md px-2 py-1.5">
+        <ItemMedia>
+          <StateDot state={jobDotState(job.status)} size={8} />
+        </ItemMedia>
+        <ItemContent className="min-w-0 gap-0.5">
+          <ItemTitle className="w-full min-w-0">
+            <span className="min-w-0 flex-1 truncate" title={job.label}>{job.label}</span>
+          </ItemTitle>
+          <span className="flex min-w-0 items-center gap-1.5 font-mono text-xs text-muted-foreground">
+            <KindBadge kind={job.kind} />
+            {job.detail !== undefined && job.detail !== '' && (
+              <span className="min-w-0 truncate">{job.detail}</span>
+            )}
+            <span className="flex-none text-foreground-3">{t('jobDragHint')}</span>
+          </span>
+        </ItemContent>
+        <ItemActions>
+          <Badge variant={statusVariant(job)}>{jobStatusLabel(job.status, t)}</Badge>
+        </ItemActions>
+      </Item>
+      {state === 'loading' && (
+        <div className="flex items-center gap-1.5 text-xs text-foreground-3">
+          {/* The visible line carries the copy; the glyph is decoration. */}
+          <span className="flex flex-none items-center" aria-hidden="true">
+            <Spinner className="size-3" />
+          </span>
+          {t('loading')}
+        </div>
+      )}
       {state === 'error' && <div className="text-xs text-destructive">{t('jobOutputError')}</div>}
       {typeof state === 'object' && (
         <>
@@ -406,7 +440,7 @@ export function JobOutputPopoverContent(props: {
             ? (
               <pre
                 ref={preRef}
-                className="mt-1.5 max-h-[168px] overflow-auto rounded-md border border-border bg-background p-2 font-mono text-xs leading-[1.55] break-words whitespace-pre-wrap text-muted-foreground"
+                className="max-h-[168px] overflow-auto rounded-md border border-border bg-background p-2 font-mono text-xs leading-[1.55] break-words whitespace-pre-wrap text-muted-foreground"
                 data-popover-no-drag
               >
                 {state.text}
@@ -418,8 +452,11 @@ export function JobOutputPopoverContent(props: {
           {state.truncated && <div className="text-xs text-foreground-3">{t('jobOutputTruncated')}</div>}
         </>
       )}
-      <div
-        className="mt-2 flex items-center justify-between gap-2 border-t border-border pt-2"
+      <Separator />
+      {/* The action footer: the follow-latest switch and the kill confirm. */}
+      <Item
+        size="sm"
+        className="min-w-0 flex-nowrap justify-between gap-2 rounded-md px-0 py-0"
         data-popover-no-drag
       >
         <Switch
@@ -432,18 +469,17 @@ export function JobOutputPopoverContent(props: {
           <Button
             variant={armed ? 'destructive' : 'outline'}
             size="sm"
-            className="font-mono text-xs"
             disabled={killing}
             onClick={() => {
               if (armed) void kill()
               else setArmed(true)
             }}
           >
-            <IconStopFill16 size={11} className="size-[11px]" />
+            <IconStopFill16 />
             {armed ? t('jobKillConfirm') : t('jobKill')}
           </Button>
         )}
-      </div>
+      </Item>
       {killFailed && <div className="text-xs text-destructive">{t('jobKillError')}</div>}
     </div>
   )

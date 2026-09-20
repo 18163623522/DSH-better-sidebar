@@ -364,17 +364,36 @@ npx -y shadcn@latest add button card badge separator input textarea tooltip popo
 
 **4. 模型去重（重复 React key 的根因）。** 可视化 harness 在压力 fixture 上抓到 `sub-live-011` 等三个重复 key：根因在 `tasks-model.ts` —— workflow member 的 `childId` 若**不在 run 发起者的 catalog 里**（但存在于树中别处），代码会走"合成节点"分支，生成一个与真实节点**同 id** 的第二张卡片。修法：先按整棵树收集 `knownAgentIds`，只对 catalog 完全不知道的 id 合成节点；并在返回前加一条"每个 session id 只出现一次"的兜底去重。新增两条单测（已知 member 不重复 / 未知 member 仍合成）。
 
-### 升级路径（未来用 shadcn CLI `--diff` 跟进上游）
+### 升级路径与本地适配清单（stock 优先）
 
-`components.json` 已把 CLI 上下文钉在这个仓库上，`npx -y shadcn@latest info` 能正确列出 16 个已装组件（`base: radix`、`tailwindVersion: v4`、`tailwindCss: src/client/ui/theme.css`），所以**不要手动从 GitHub 抄文件**，走 CLI：
+**政策（2026-09-20 起）：与上游 stock 保持一致优先，本地改动只保留"不这样就得坏"的那几条。** 早先那版"裁剪变体、去阴影、压字号"的本地取向已被真机反馈否掉（用户要求"改为 shadcn/ui 最新的默认样式对齐"），因此 `src/client/ui/**` 用 `npx shadcn@latest add … --overwrite` 整批刷成了最新 registry（new-york v4 / radix base），并**重新施加**下面这份最小适配清单：
 
-```bash
-npx -y shadcn@latest info                        # 当前上下文与已装组件清单
-npx -y shadcn@latest add <component> --dry-run   # 先看会动哪些文件
-npx -y shadcn@latest add <component> --diff      # 逐文件看上游 vs 本地差异
-npx -y shadcn@latest add <component>             # 确认后再落盘
-```
+| # | 本地适配 | 为什么必须 |
+|---|---|---|
+| 1 | `cn` 从 `./utils` 导入；跨组件 import 写显式 `./x.tsx` | registry 写的是虚拟别名 `cn` 与裸 `src/client/ui/...` 说明符，本项目没有那些解析规则 |
+| 2 | 图标一律用宿主 `@deepseek-ai/dsh-client-ui-primitives` 的 `IconXxx` | 皮肤契约禁 lucide；宿主图标随主题变色。`spinner.tsx` 的 `Loader2Icon` → `IconLoadingOutline16`（外层 span 承接 props），`dropdown-menu.tsx` 的勾/箭头 → `IconCheckOutline16`/`IconChevronRightOutline14`，单选圆点用 `span.bg-current` |
+| 3 | 删除所有 `dark:` 变体 | 令牌本身随宿主深浅主题翻转，`dark:` 是多余且会改写宿主主题语义（技能规则也禁手写 dark 覆盖） |
+| 4 | `text-white` → `text-destructive-foreground` | 无颜色字面量是皮肤契约的硬线 |
+| 5 | `Button` 保留 `React.forwardRef` | 宿主是 **React 18**，`asChild` 触发器要 ref 才能量到锚点（registry 面向 React 19，不写 forwardRef） |
+| 6 | 删除 `tw-animate-css` 的动画工具类（`animate-in`/`fade-in-*`/`zoom-in-*`/`slide-in-from-*`） | 该依赖未安装；装了它会向**我们不拥有的宿主页面**注入通用 `@keyframes` 名字，有与宿主动画撞名的风险。缺省即"立即出现"，与 reduced-motion 行为一致 |
 
-**实测**（`npx -y shadcn@latest add button --diff`，本次迁移后执行）：上游会把 `cn` 的 import 写回裸包名 `"cn"`、带回 `dark:bg-destructive/60` 与 `dark:focus-visible:ring-destructive/40`、把 `text-destructive-foreground` 换回 `text-white`、给 `outline` 加回 `shadow-xs`、并恢复被删的 `link` 变体与 `xs` / `lg` / `icon-xs` / `icon-sm` / `icon-lg` 五个尺寸——正是本文件记录的六类统一改动。所以升级的流程是**逐文件判断**：没有本地改动的文件可被覆盖，有本地改动的（几乎全部）读 diff 后**只取上游的结构性更新，重新施加本仓库的六类改动**——尤其 `input.tsx` 的 `file:` 类一旦回来，`tests/ui-bundle.spec.ts` 的 preflight 守卫会开始误报。落盘后必须复跑三个守卫 spec（`ui-foundation` / `ui-bundle` / `ui-shadows`）与 `pnpm build`（体积测量是 `ui-bundle` 的一部分），再跑 `pnpm vitest run tests/theme.spec.ts` 确认皮肤契约未被上游带回的颜色字面量破坏。
+**已恢复为 stock（此前被本地裁掉的）**：Button 的完整变体/尺寸集（`link`/`xs`/`lg`/`icon-xs|sm|lg`）、`outline` 的 `shadow-xs`、`transition-all`、Badge 的 `ghost`/`link` 变体。它们只是运行时字符串，未使用的工具类不会进 CSS。
 
-`--overwrite` 与本仓库不兼容：它会一次性抹掉上面全部改动。真要用，先 `git stash` 出可对比的基线。
+**升级流程**：`npx shadcn@latest add <component> --dry-run` → `--diff` 逐文件看上游改动 → 有本地改动的按上表重新施加（`--overwrite` 后必须重跑下面四条）。落盘后必跑：`pnpm typecheck`、`pnpm vitest run tests/theme.spec.ts tests/ui-shadows.spec.ts tests/ui-foundation.spec.ts tests/ui-bundle.spec.ts`、`pnpm build`（体积与产物断言），以及**镜像页视觉复核**（真实宿主样式表 + 真实组件，见上一节）。
+
+### 页面重组：用最新 stock 组件，而不是手搓 div（2026-09-20）
+
+按 shadcn 技能的硬规则把任务页的组成方式整体换成最新 registry 的构件（4 个并行代理按文件分区改，主线程统一验收）：
+
+- **团队任务板**：`Card` 全组合（`CardHeader`/`CardTitle` + `Separator` 分带 + `CardContent` + `CardFooter`），任务行 = `Item asChild`（`ItemMedia` StateDot / `ItemContent`/`ItemTitle`/`ItemActions`），筛选 = `ToggleGroup`（radix radiogroup + roving tabindex），行内菜单 = `DropdownMenuGroup` 包住每个 `DropdownMenuItem`，空态 = `Empty`。
+- **任务窗口**：`Card` 全组合 + `FieldGroup`/`Field`/`FieldLabel`/`FieldDescription`/`FieldError`；标题空值走 `Field data-invalid` + `Input aria-invalid`（不新增 i18n key）；负责人 = `ToggleGroup`（**default 变体**：实测 `outline` 变体的 hover 与 pressed 同色，选中态不可辨）；删除 armed 用 `Button variant="destructive"`，冲突提示用 `FieldError(role=alert)`。
+- **浮窗**：两张 portal 卡同样 `Card` 全组合（`CardTitle` 放身份、`CardDescription` 放种类、`CardAction` 放状态 Badge、`CardFooter` 放跳转），行 = `Item`（可点击行 `asChild` 真按钮）。
+- **抽屉/页头**：行 = `Item`（终止按钮在 `ItemActions`），分隔全用 `Separator`，加载 = `Spinner`，目录失败横幅 = `Item variant="outline"`，空态 = `Empty`。
+- **图/树**：节点卡配方 `rounded-lg border bg-card p-2.5 shadow-xs`（不再重复声明 stock `Card` 已有的墨色），控制条全部 stock `Button variant="outline" size="sm|icon"`，`z-[6]` → `z-10`；树行的条件类名改走 `cn()`。
+
+**本轮在真实浏览器里抓到的两个"无 preflight"陷阱**（都已修，且在测试/文档里留痕）：
+
+1. **stock `Empty` 只有 `border-dashed` 没有宽度** → 没有 preflight 时露出 UA 的 `3px medium` 虚线框，整页像套了个粗虚线相框；`Empty` 上加 `border-0` 修掉（截图证实）。
+2. **`<Spinner size={12} />` 类型合法但静默失效**：刷新后的 Spinner 变成 `React.ComponentProps<"span">`，`size` 是合法 HTML 属性 → typecheck 全绿而图标按默认 `size-4` 渲染。改用 `className="size-3"`。**教训：组件 API 变更中"仍然类型合法但语义丢失"的那类最危险，只有看渲染结果才能发现。**
+
+**已知未修（记录在案）**：抽屉行在 ~420px 以下的窄宽度里会横向溢出（Radix ScrollArea 的 table 视口按 min-content 计算 + 行内 `nowrap` 的 mono 标题），修复需要重新决定 ScrollArea/行的最小宽度策略；宽面板（用户实机）不受影响。

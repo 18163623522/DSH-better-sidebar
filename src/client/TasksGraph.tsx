@@ -78,8 +78,14 @@ const CLICK_TOLERANCE_PX = 4
  * The shared shell of every node card: absolute (the layout owns left/top),
  * the compact stock node recipe — `rounded-lg border bg-card p-2.5 shadow-xs`
  * — with `hover:bg-muted` as the only hover change. No tint.
+ *
+ * Every class here is stock: `Card` already carries `border` (hairline in
+ * `--border`) and `text-card-foreground`, so this only tightens the padding,
+ * drops the stock `gap-6` (the graph's three lines have their own `mt-0.5`)
+ * and sets the canvas elevation. The border ink is never re-declared — the
+ * lead node's stronger rung is the one exception, below.
  */
-const NODE_CARD = 'absolute cursor-pointer gap-0 overflow-hidden rounded-lg border border-border bg-card p-2.5 shadow-xs transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-ring'
+const NODE_CARD = 'absolute cursor-pointer gap-0 overflow-hidden rounded-lg bg-card p-2.5 shadow-xs transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-ring'
 /** The on-screen session: a 2px accent bar, never a tinted card. */
 const NODE_ACCENT = 'border-l-2 border-l-primary'
 /** Settled nodes recede by INK, not by opacity: the whole card drops to the
@@ -387,11 +393,11 @@ export function TasksGraph(props: TasksGraphProps): ReactNode {
               same `loading` copy key). `pointer-events-none` keeps the
               canvas's pan/zoom/node clicks fully live underneath. */}
           {loading === true && nodes.length === 0 && (
-            <div className="pointer-events-none absolute inset-0 z-[6] flex items-center justify-center">
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
               <span className="flex items-center gap-1.5 px-6 py-3 text-xs text-muted-foreground">
                 {/* The visible line carries the copy; the glyph is decoration. */}
                 <span aria-hidden="true" className="flex flex-none items-center">
-                  <Spinner size={12} />
+                  <Spinner className="size-3" />
                 </span>
                 {t('loading')}
               </span>
@@ -458,7 +464,7 @@ export function TasksGraph(props: TasksGraphProps): ReactNode {
             })}
           </div>
         </TooltipProvider>
-        <div className="absolute right-2.5 bottom-2.5 z-[6] flex flex-row items-center gap-0.5" data-graph-controls>
+        <div className="absolute right-2.5 bottom-2.5 z-10 flex flex-row items-center gap-0.5" data-graph-controls>
           <ViewModeToggle mode={mode} onModeChange={onModeChange} />
           <FoldToggleButton folded={folded} onToggleFold={onToggleFold} />
           <ControlButton label={t('tasksZoomOut')} onClick={() => { zoomBy(1 / 1.2) }}>−</ControlButton>

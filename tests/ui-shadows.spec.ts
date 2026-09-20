@@ -3,7 +3,7 @@
  *
  * Static panels (cards, rows, the drawer) may carry the stock LIGHT shadows
  * only — `shadow-xs` (button-like compact surfaces such as graph node cards)
- * and `shadow-sm` (cards / panels). Anything heavier (`shadow-md|lg|xl|2xl`,
+ * and `shadow-sm` (cards / panels); `shadow-none` (a reset) is fine. Anything heavier (`shadow-md|lg|xl|2xl`,
  * bare `shadow`, `shadow-inner`, arbitrary `shadow-[…]`) on a static panel is
  * the regression: elevation beyond the stock pair reads as a floating layer
  * that nothing anchors.
@@ -54,7 +54,10 @@ const FLOATING_FILES = [
 const SHADOW_UTILITY = /(?<![-\w])shadow(?:-(?:2xs|xs|sm|md|lg|xl|2xl|inner|none)|\[|\()?/g
 
 /** The stock pair a static panel may paint. */
-const STATIC_ALLOWED = new Set(['shadow-xs', 'shadow-sm'])
+// `shadow-none` is not an elevation at all (it clears the ring plumbing), so it
+// is allowed anywhere a light shadow is; upstream's input-group uses it to keep
+// nested controls flat inside the group's own surface.
+const STATIC_ALLOWED = new Set(['shadow-xs', 'shadow-sm', 'shadow-none'])
 
 /** Every non-allowed shadow utility in the source, for a readable failure. */
 function offendingShadows(source: string): string[] {
