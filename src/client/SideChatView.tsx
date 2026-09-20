@@ -73,6 +73,21 @@ import { api } from './api.ts'
 import { usePolling } from './use-polling.ts'
 import { t } from './locales.ts'
 import type { SessionScope } from './api.ts'
+import type { ComponentProps, ComponentType } from 'react'
+
+/**
+ * Cross-line compatibility shim for `ConnectionIndicator`.
+ *
+ * 0.1.6-alpha.2 REMOVED the `reconnectLabel` prop (the outage label already
+ * names the action), while the 0.1.5-rc line still REQUIRES it as the retry
+ * button's hover/focus action text. The plugin's peer range covers both, so
+ * the component type is widened once here and the prop is always passed: rc
+ * renders it, alpha.2 ignores the extra key. Delete this shim (and the prop)
+ * when the peer floor moves past the rc line.
+ */
+const ConnectionIndicatorCompat = ConnectionIndicator as unknown as ComponentType<
+  ComponentProps<typeof ConnectionIndicator> & { reconnectLabel?: string }
+>
 import type { SidebarTab } from './state.ts'
 import css from './SideChatView.module.css'
 
@@ -753,9 +768,10 @@ export function SideChatView(props: {
         </button>
       </div>
       {connectionState !== undefined && connectionState !== 'connected' && (
-        <ConnectionIndicator
+        <ConnectionIndicatorCompat
           state={connectionState}
           disconnectedLabel={t('sideChatConnDisconnected')}
+          reconnectLabel={t('sideChatConnReconnect')}
           connectingLabel={t('sideChatConnConnecting')}
           recoveredLabel={t('sideChatConnRecovered')}
           reconnectActionLabel={t('sideChatConnReconnectAction')}
