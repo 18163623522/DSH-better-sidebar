@@ -61,29 +61,32 @@
   fill: none;
   stroke: var(--dsw-alias-label-tertiary);
   stroke-width: 1;
-  opacity: 0.55;
+  opacity: 0.7;
 }
 
 .edgeTeam {
   stroke: var(--dsw-alias-state-business-primary);
   stroke-dasharray: 3 3;
-  opacity: 0.85;
+  opacity: 0.9;
 }
 
 .edgeWorkflow {
   stroke: var(--dsw-alias-state-business-primary);
-  opacity: 0.8;
+  opacity: 0.9;
 }
 
 .edgeFold {
   stroke-dasharray: 1 4;
-  opacity: 0.4;
+  opacity: 0.5;
 }
 
+/* A phase frame is a BACKDROP: it sits behind the cards under a dashed 1px
+   contour in the same tertiary ink as the edges, and its label is the part a
+   reader actually reads, so only the label climbs one ink rung. */
 .phaseFrame {
   position: absolute;
   border: 1px dashed var(--dsw-alias-label-tertiary);
-  border-radius: 3px;
+  border-radius: 4px;
   pointer-events: none;
 }
 
@@ -95,21 +98,27 @@
   background: var(--dsw-alias-bg-layer-1);
   font-family: var(--ds-font-family-code, monospace);
   font-size: 10px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
 }
 
 /* ── Nodes ─────────────────────────────────────────────────────────────── */
 
+/* The card. `border-box` is load-bearing: the layout reserves a height per
+   card shape (tasks-graph-layout.ts `nodeHeight`) and `box.h` positions the
+   edges and the phase frames, so the card must RENDER exactly the height its
+   box reserved — with the default content-box the 6px paddings and the edges
+   were added on top of every reserve. */
 .node {
   position: absolute;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   padding: 6px 8px;
   background: var(--dsw-alias-bg-layer-1);
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 3px;
+  border-radius: 4px;
   cursor: pointer;
   overflow: hidden;
 }
@@ -171,21 +180,6 @@
   flex: none;
 }
 
-/* The page-sheet twin of the canvas' clamped title (`tasks-canvas.nodeTitle`):
-   same type, only the truncation differs. */
-.nodeTitle {
-  font: var(--dsw-font-xxs-strong-12);
-  color: var(--dsw-alias-label-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.nodeTitlePlain {
-  font: var(--dsw-font-xxs-12);
-  color: var(--dsw-alias-label-secondary);
-}
-
 .nodeGlyph {
   display: inline-flex;
   flex: none;
@@ -199,6 +193,8 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* The mono meta line: one ink rung under the title, one above the task line's
+   status word (primary → secondary → tertiary is the page's whole ink scale). */
 .nodeMeta {
   margin-top: 2px;
   font: var(--dsw-font-xxxs-11);
@@ -210,21 +206,6 @@
 }
 
 /* ── Node shared-task line (team members only) ─────────────────────────── */
-
-/* The node's detail affordance: a small ghost button pinned to the corner. */
-.nodeInfo {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  min-width: 18px;
-  padding: 0 2px;
-  opacity: 0.55;
-}
-
-.node:hover .nodeInfo,
-.nodeInfo:focus-visible {
-  opacity: 1;
-}
 
 .taskLine {
   display: flex;
@@ -373,10 +354,20 @@
   color: var(--dsw-alias-state-business-primary);
 }
 
+/* The zoom readout is the cluster's one non-button cell: it keeps the same
+   28px height (the host `Button sm`) and a fixed width so the buttons beside
+   it never shift as the percentage changes width. */
 .controlZoomLevel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 36px;
+  height: 28px;
   padding: 0 5px;
   font-family: var(--ds-font-family-code, monospace);
   font-size: 10px;
+  font-variant-numeric: tabular-nums;
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -391,12 +382,15 @@
   user-select: none;
 }
 
+/* One tree row: title over mono meta, on a 32px content rhythm (18px title +
+   14px meta) with a 2px pad — the row pitch stays uniform whatever the row
+   carries, and the live / task lines extend it. */
 .treeRow {
   position: relative;
   display: flex;
   align-items: flex-start;
   gap: 7px;
-  padding: 4px 8px;
+  padding: 2px 8px;
   border-radius: 3px;
   cursor: pointer;
 }
@@ -411,7 +405,7 @@
 }
 
 /* The current session: the row keeps the native selected fill and gains the
-   2px accent bar the mockup asks for — a pseudo element, so the row stays
+   2px accent bar the design asks for — a pseudo element, so the row stays
    shadowless and its metrics never shift between rows. */
 .treeRowActive {
   background: var(--dsw-alias-interactive-bg-hover);
@@ -421,8 +415,8 @@
   content: '';
   position: absolute;
   left: 0;
-  top: 4px;
-  bottom: 4px;
+  top: 3px;
+  bottom: 3px;
   width: 2px;
   border-radius: 1px;
   background: var(--dsw-alias-state-business-primary);
@@ -444,7 +438,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  min-height: 32px;
 }
 
 .treeTitle {
@@ -474,45 +468,17 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-.treeInfo {
-  flex: none;
-  width: 16px;
-  height: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 3px;
-  background: none;
-  color: var(--dsw-alias-label-tertiary);
-  font-family: var(--ds-font-family-code, monospace);
-  font-size: 10px;
-  line-height: 1;
-  cursor: pointer;
-  opacity: 0.7;
-}
-
-.treeRow:hover .treeInfo,
-.node:hover .treeInfo,
-.treeInfo:focus-visible {
-  opacity: 1;
-  color: var(--dsw-alias-label-primary);
-}
-
-.treeInfo:hover {
-  border-color: var(--dsw-alias-label-primary);
-  color: var(--dsw-alias-label-primary);
-}
-
 /* ── Popover card ──────────────────────────────────────────────────────── */
 
 /* The floating card (node detail / task window / job output): a raised layer,
-   so it — and only it — carries the elevation shadow. */
+   so it — and only it — carries the elevation shadow. Three ink tiers inside:
+   the title (primary), the values (secondary), the keys and hints (tertiary). */
 .popCard {
   display: flex;
   flex-direction: column;
   gap: 4px;
   padding: 10px 12px;
+  max-width: 100%;
   background: var(--dsw-alias-bg-layer-1);
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 4px;
@@ -606,6 +572,7 @@
   text-align: right;
   font: var(--dsw-font-xxs-12);
   line-height: 1.45;
+  color: var(--dsw-alias-label-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -616,32 +583,13 @@
   font-size: 11px;
 }
 
-.popPrimary {
-  width: 100%;
-  margin-top: 8px;
-  padding: 5px;
-  border: 1px solid var(--dsw-alias-label-primary);
-  border-radius: 2px;
-  background: var(--dsw-alias-label-primary);
-  color: var(--dsw-alias-bg-layer-1);
-  font-family: var(--ds-font-family-code, monospace);
-  font-size: 12px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
-.popPrimary:hover {
-  background: var(--dsw-alias-state-business-primary);
-  border-color: var(--dsw-alias-state-business-primary);
-  color: var(--dsw-alias-label-primary-foreground);
-}
-
-/* An inset well: the hairline is definition, the fill is the surface. */
+/* An inset well: the hairline is definition, the fill is the surface. The
+   160px cap is the page's one scroll-well height (the member list, the task
+   list and the jobs drawer body share it). */
 .popPre {
   margin: 6px 0 0;
   padding: 8px;
-  max-height: 140px;
+  max-height: 160px;
   overflow: auto;
   background: var(--dsw-alias-bg-base);
   border: 1px solid var(--dsw-alias-border-l1);
@@ -665,7 +613,7 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
-  max-height: 180px;
+  max-height: 160px;
   overflow-y: auto;
   scrollbar-width: thin;
 }
@@ -679,12 +627,14 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* A list row is a press target: it keeps a 24px floor whatever it carries. */
 .popListRow {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-height: 24px;
   padding: 3px 4px;
-  border-radius: 2px;
+  border-radius: 3px;
   cursor: pointer;
 }
 
@@ -713,21 +663,78 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
-.popNote {
-  font-size: 10px;
-  color: var(--dsw-alias-state-warn-primary);
-}
-
 /* ── Task window: markdown view + multi-line edit ──────────────────────── */
 
+/* The description is a PAGE-TYPE preview, not the chat transcript: the host's
+   default markdown scale (14px body, 21/19/18px headings, 32px section margins)
+   is the conversation's, and this card is 430px wide on a 12px page.
+ *
+ * The containment is done at the TOKEN level — the host's own `.markdown` and
+ * heading rules read `var(--dsw-font-markdown-*)`, and a local re-declaration
+ * wins for every descendant, so no rule here has to out-specify the host. The
+ * margins are literals in the host sheet, so those few rules do need to
+ * out-specify `.MarkdownText_markdown h1` (0,1,1): the doubled container class
+ * makes them (0,2,1) DETERMINISTICALLY, because the plugin's global
+ * `<style data-plugin>` has no guaranteed order against the host's sheet and a
+ * specificity tie would be a coin flip. */
 .taskMarkdown {
-  max-height: 260px;
+  max-height: 240px;
   overflow-y: auto;
   padding: 2px 0;
   font: var(--dsw-font-xxs-12);
-  line-height: 1.55;
+  line-height: 1.5;
   color: var(--dsw-alias-label-primary);
   scrollbar-width: thin;
+  /* The page scale, re-declared for the host renderer's own tokens. */
+  --dsw-font-markdown-base: var(--dsw-font-xxs-12);
+  --dsw-font-markdown-base-strong: var(--dsw-font-xxs-strong-12);
+  --dsw-font-markdown-h1: 600 13px/20px var(--dsw-font-family);
+  --dsw-font-markdown-h2: 600 13px/20px var(--dsw-font-family);
+  --dsw-font-markdown-h3: var(--dsw-font-xxs-strong-12);
+  --dsw-font-markdown-h4: var(--dsw-font-xxs-strong-12);
+  --dsw-font-markdown-code: var(--dsw-font-xxxs-11);
+  --dsw-font-markdown-code-block: var(--dsw-font-markdown-code-block-small);
+  --dsw-font-markdown-table: var(--dsw-font-xxxs-11);
+  --dsw-font-markdown-table-head: var(--dsw-font-xxxs-strong-11);
+}
+
+/* Section rhythm: the host's 32px/16px margins collapse to the page's 8/4px
+   scale, and list indentation narrows from 18px to 16px. */
+.taskMarkdown.taskMarkdown :is(h1, h2, h3) {
+  margin: 10px 0 4px;
+}
+
+.taskMarkdown.taskMarkdown :is(h4, h5, h6) {
+  margin: 8px 0 4px;
+}
+
+.taskMarkdown.taskMarkdown :is(p, blockquote, pre) {
+  margin: 6px 0;
+}
+
+.taskMarkdown.taskMarkdown :is(ul, ol) {
+  margin: 6px 0;
+  padding-left: 16px;
+}
+
+.taskMarkdown.taskMarkdown li:not(:first-child) {
+  margin-top: 2px;
+}
+
+.taskMarkdown.taskMarkdown li > p {
+  margin: 4px 0;
+}
+
+.taskMarkdown.taskMarkdown li::marker {
+  line-height: 18px;
+}
+
+.taskMarkdown.taskMarkdown blockquote {
+  padding-left: 10px;
+}
+
+.taskMarkdown.taskMarkdown hr {
+  margin: 10px 0;
 }
 
 .taskTextarea {
@@ -821,6 +828,8 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* The team board's sections all hang off the same 12px gutter and a 6px
+   vertical beat, so the strip reads as one column of blocks. */
 .teamNote {
   padding: 0 12px 6px;
   font-size: 10px;
@@ -829,7 +838,9 @@
 }
 
 .teamActions {
+  flex: none;
   display: flex;
+  align-items: center;
   gap: 6px;
   padding: 0 12px 8px;
 }
@@ -841,48 +852,31 @@
   padding: 0 12px 6px;
 }
 
-.teamMember {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 1px 6px;
-  line-height: 1.35;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 2px;
-  font-family: var(--ds-font-family-code, monospace);
-  font-size: 10px;
-  color: var(--dsw-alias-label-secondary);
-  max-width: 100%;
-  overflow: hidden;
-}
-
-.teamMemberLead {
-  border-color: var(--dsw-alias-state-business-primary);
-  color: var(--dsw-alias-label-primary);
-}
-
 .teamMemberName {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* The board's task well: same max height as the popover wells, and the rows
+   keep a 24px press floor with the status Tag deliberately quiet. */
 .teamTasks {
-  max-height: 84px;
+  max-height: 160px;
   overflow-y: auto;
   padding: 0 8px 8px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   scrollbar-width: thin;
 }
 
 .teamTask {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   width: 100%;
-  padding: 3px 5px;
+  min-height: 24px;
+  padding: 2px 6px;
   border-radius: 3px;
   text-align: left;
 }
@@ -914,95 +908,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.teamTaskStatus {
-  flex: none;
-  padding: 0 4px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 2px;
-  font-family: var(--ds-font-family-code, monospace);
-  font-size: 10px;
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.teamTaskBlocked {
-  border-color: var(--dsw-alias-state-warn-primary);
-  color: var(--dsw-alias-state-warn-primary);
-}
-
-.teamActions {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.teamBtn {
-  min-width: 18px;
-  height: 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 3px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 2px;
-  background: none;
-  color: var(--dsw-alias-label-tertiary);
-  font-family: var(--ds-font-family-code, monospace);
-  font-size: 10px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.teamBtn:hover {
-  border-color: var(--dsw-alias-label-primary);
-  color: var(--dsw-alias-label-primary);
-}
-
-.teamBtnDanger {
-  border-color: var(--dsw-alias-state-error-primary);
-  color: var(--dsw-alias-state-error-primary);
-}
-
-.teamOwnerSelect {
-  flex: none;
-  max-width: 76px;
-  padding: 1px 2px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 2px;
-  background: var(--dsw-alias-bg-base);
-  color: var(--dsw-alias-label-secondary);
-  font-family: var(--ds-font-family-code, monospace);
-  font-size: 10px;
-}
-
-.teamForm {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 2px 12px 6px;
-}
-
-.teamInput {
-  width: 100%;
-  padding: 4px 6px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 2px;
-  background: var(--dsw-alias-bg-base);
-  color: var(--dsw-alias-label-primary);
-  font-size: 12px;
-  box-sizing: border-box;
-}
-
-.teamInput:focus {
-  outline: none;
-  border-color: var(--dsw-alias-state-business-primary);
-}
-
-.teamFormActions {
-  display: flex;
-  gap: 6px;
 }
 
 .teamEmpty {
