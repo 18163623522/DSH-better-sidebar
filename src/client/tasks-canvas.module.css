@@ -1,69 +1,63 @@
 /**
- * Canvas-only styles of the workflow graph (TasksGraph.tsx): the dotted grid,
- * the transformed node layer, the SVG relation layer and the edge stroke
- * recipe. These are the four pieces Tailwind utilities cannot express in the
- * markup (a radial-gradient background image, `transform-origin: 0 0` on the
- * scaled layer, an overflow-visible SVG stage, and SVG stroke/dash painting) —
- * everything else in the graph is a utility class over the shadcn tokens.
+ * Graph-only styles of the workflow graph (TasksGraph.tsx) — the two pieces
+ * the page sheet (tasks-graph.module.css) does not carry:
  *
- * Skin contract: every color is a `--dsw-*` token (no literal, no palette
- * class), so the canvas follows the host light/dark theme like the rest of the
- * page. Relations are 1px hairlines in the border ink — the KIND of a relation
- * is its dash pattern and opacity, never a second hue.
+ *  - the card title, clamped to TWO lines (the 68px card reserve in
+ *    tasks-graph-layout.ts is sized for that second line: a single ellipsized
+ *    line left too few CJK characters to tell two siblings apart), and
+ *  - the hydration hint drawn over an empty canvas.
+ *
+ * Everything else the graph wears (the dotted canvas, the bezier edges, the
+ * node cards, the control cluster) stays in the page sheet — one source of
+ * truth per rule.
+ *
+ * Skin contract: colors resolve to `--dsw-alias-*`, type to `--dsw-font-*` —
+ * tokens only, no literal, no palette class, no shadow on a static panel.
  */
 
-.canvas {
+/* Card line 1 of an agent / run node. `-webkit-box` + `-webkit-line-clamp` is
+ * the only way to cap WRAPPED text with an ellipsis, and `overflow-wrap:
+ * anywhere` keeps an unbroken run id from forcing one wide line. The recipe
+ * mirrors the page sheet's node title (12px strong) so only the truncation
+ * differs; the untruncated text stays in the element's `title`. */
+.nodeTitle {
+  flex: 1;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font: var(--dsw-font-xxs-strong-12);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The fold aggregate carries a count, not a name: it recedes one rung in both
+ * weight and ink (the page sheet's plain title). */
+.nodeTitlePlain {
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* The graph twin of the tree's loading row: centred over the canvas and
+ * click-transparent, so pan / zoom / node clicks stay live underneath. It sits
+ * above the transformed node layer (z-index auto) and below the control
+ * cluster (z-index 6). */
+.loading {
   position: absolute;
   inset: 0;
-  cursor: grab;
-  /* Panning must never turn into a text selection or a native scroll. */
-  touch-action: none;
-  user-select: none;
-  /* Graph paper: the dotted grid is part of the language. */
-  background-image: radial-gradient(circle, var(--dsw-alias-border-l1) 0.6px, transparent 0.6px);
-  background-size: 16px 16px;
-  background-position: 0 0;
-}
-
-.canvasDragging {
-  cursor: grabbing;
-}
-
-.canvasInner {
-  position: absolute;
-  top: 0;
-  left: 0;
-  transform-origin: 0 0;
-}
-
-.edges {
-  position: absolute;
-  top: 0;
-  left: 0;
-  overflow: visible;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   pointer-events: none;
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-tertiary);
 }
 
-.edge {
-  fill: none;
-  stroke: var(--dsw-alias-border-l4);
-  stroke-width: 1;
-  opacity: 0.5;
-}
-
-/* Team membership: dashed. */
-.edgeTeam {
-  stroke-dasharray: 3 3;
-  opacity: 0.8;
-}
-
-/* Workflow member: solid, one notch stronger than a plain lineage edge. */
-.edgeWorkflow {
-  opacity: 0.75;
-}
-
-/* Collapsed aggregate: dotted and faint — it stands for many rows. */
-.edgeFold {
-  stroke-dasharray: 1 4;
-  opacity: 0.4;
+/* The hint's glyph is decoration: the copy line carries the message. */
+.loadingGlyph {
+  display: inline-flex;
+  flex: none;
 }

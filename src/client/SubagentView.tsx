@@ -22,16 +22,15 @@
  * aggregate node per parent (click it or the control-cluster toggle to
  * expand/collapse).
  *
- * The shell itself is the vendored shadcn set: the header is a toolbar closed
- * by a `Separator`, the catalog-failure banner is an `Item` (media / content /
- * actions), the empty state is the stock `Empty` composition, and the page's
- * only controls are the vendored `Button` + `Tooltip` — `className` carries
- * layout only, and every glyph is a host `IconXxx` primitive.
+ * The shell itself is the page's own module stylesheet plus host primitives:
+ * the header's refresh and the failure banner's retry are host `Button`s, the
+ * descendant count is mono micro-type, and the canvas / tree / board / drawer
+ * own their own chrome.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSyncExternalStore } from 'react'
 import {
-  IconAgentPresetOutline16, IconRefreshOutline14, IconWarningOutline16,
+  Button, IconRefreshOutline14,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   Context,
@@ -58,11 +57,6 @@ import { TeamBoard } from './TeamBoard.tsx'
 import { TaskPopover } from './TaskWindow.tsx'
 import type { SidebarStore } from './state.ts'
 import type { WorkflowRunView } from '../workflow-runs.ts'
-import { Button as UiButton } from './ui/button.tsx'
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from './ui/empty.tsx'
-import { Item, ItemActions, ItemContent, ItemMedia, ItemTitle } from './ui/item.tsx'
-import { Separator } from './ui/separator.tsx'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip.tsx'
 import legacy from './SubagentView.module.css'
 
 /** Refresh cadence of the live "last text + tool call" lines while a child runs. */
@@ -422,48 +416,35 @@ export function SubagentView(props: {
   })()
 
   return (
-    <div className={`dsw-tasks ${legacy.subagent} relative`}>
-      {/*
-        Page header: title + mono descendant count + refresh, closed by the
-        stock hairline `Separator`. The control cluster (view toggle / fold /
-        zoom) stays on the canvas itself, so it is visible in BOTH modes.
-      */}
-      <div className="flex flex-none items-center gap-2 px-3 py-2">
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+    <div className={legacy.subagent} style={{ position: 'relative' }}>
+      <div className={legacy.subagentHeader}>
+        <span className={legacy.subagentTitle}>
           {t('subagent')}
           {rootSummary?.displayTitle !== undefined && rootSummary.displayTitle !== ''
             ? ` · ${rootSummary.displayTitle}`
             : ''}
         </span>
-        {countLabel !== undefined && (
-          <span className="flex-none font-mono text-xs tabular-nums text-muted-foreground">
-            {countLabel}
-          </span>
-        )}
-        {/* Delay so the label never flashes while the pointer crosses the row. */}
-        <TooltipProvider delayDuration={300}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <UiButton
-                variant="ghost"
-                size="icon"
-                className="flex-none"
-                aria-label={t('refresh')}
-                title={t('refresh')}
-                disabled={rootId === undefined}
-                onClick={() => {
-                  if (rootId !== undefined) refresh(rootId)
-                  team.refresh()
-                }}
-              >
-                <IconRefreshOutline14 />
-              </UiButton>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">{t('refresh')}</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        {countLabel !== undefined && <span className={legacy.subagentCount}>{countLabel}</span>}
+        {/*
+          The refresh control is the host ghost Button (28px) and carries the
+          plugin's control chrome; the module class only recenters it on the
+          baseline-aligned header row. Plain `title` rather than the host
+          Tooltip: the Tooltip anchors by ref and the host Button forwards none.
+        */}
+        <Button
+          variant="ghost"
+          size="sm"
+          className={legacy.subagentRefresh}
+          icon={<IconRefreshOutline14 />}
+          aria-label={t('refresh')}
+          title={t('refresh')}
+          disabled={rootId === undefined}
+          onClick={() => {
+            if (rootId !== undefined) refresh(rootId)
+            team.refresh()
+          }}
+        />
       </div>
-      <Separator />
       {rootId !== undefined && teamView?.available === true && teamView.team !== null && (
         <TeamBoard
           rootId={rootId}
@@ -475,46 +456,26 @@ export function SubagentView(props: {
         />
       )}
       {failedParents.length > 0 && (
-        <Item
-          variant="outline"
-          size="sm"
-          className="mx-3 my-2 min-w-0 flex-nowrap gap-2 rounded-md px-2 py-1.5"
-        >
-          <ItemMedia variant="icon" className="text-destructive">
-            <IconWarningOutline16 />
-          </ItemMedia>
-          <ItemContent className="min-w-0 gap-0">
-            <ItemTitle className="text-destructive">
-              {t('catalogLoadFailed', { count: failedParents.length })}
-            </ItemTitle>
-          </ItemContent>
-          <ItemActions>
-            <UiButton
-              variant="outline"
-              size="xs"
-              className="flex-none"
-              onClick={() => { for (const parent of failedParents) refresh(parent) }}
-            >
-              <IconRefreshOutline14 />
-              {t('retry')}
-            </UiButton>
-          </ItemActions>
-        </Item>
+        <div className={legacy.subagentError}>
+          <span>{t('catalogLoadFailed', { count: failedParents.length })}</span>
+          {/* Host outline Button (28px); the module class keeps the retry from
+              being squeezed by the banner's message. */}
+          <Button
+            variant="outline"
+            size="sm"
+            className={legacy.subagentErrorRetry}
+            icon={<IconRefreshOutline14 />}
+            onClick={() => { for (const parent of failedParents) refresh(parent) }}
+          >
+            {t('retry')}
+          </Button>
+        </div>
       )}
       {readyEmpty && (
-        // `border-0` is the no-preflight fix, not a style override: the stock
-        // `Empty` declares only `border-dashed`, and with preflight never
-        // shipped (see ui/theme.css) a bare `border-style: dashed` keeps the
-        // UA's 3px medium width — a thick dashed frame around the page.
-        <Empty className="flex-1 border-0">
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <IconAgentPresetOutline16 />
-            </EmptyMedia>
-            <EmptyTitle>{t('subagentEmpty')}</EmptyTitle>
-            <EmptyDescription>{t('subagentEmptyDesc')}</EmptyDescription>
-          </EmptyHeader>
-        </Empty>
+        <div className={legacy.subagentEmpty}>
+          <div>{t('subagentEmpty')}</div>
+          <div className={legacy.subagentEmptyHint}>{t('subagentEmptyDesc')}</div>
+        </div>
       )}
       {!readyEmpty && rootId !== undefined && (
         mode === 'graph'
@@ -523,13 +484,13 @@ export function SubagentView(props: {
               nodes={model}
               folded={folded}
               rootId={rootId}
+              loading={summaryBackedLoading}
               onNodeInfo={(node, anchor) => { setPopover({ kind: 'node', nodeId: node.id, anchor }) }}
               onWorkflowInfo={(node, anchor) => { setPopover({ kind: 'workflow', nodeId: node.id, anchor }) }}
               onOpenTask={openTaskById}
               onToggleFold={() => { setFolded(current => !current) }}
               mode={mode}
               onModeChange={setModeOverride}
-              loading={summaryBackedLoading}
             />
           )
           : (

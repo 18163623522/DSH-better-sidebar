@@ -155,10 +155,11 @@ export function AnchoredPopover(props: AnchoredPopoverProps): ReactNode {
       ref={cardRef}
       role="dialog"
       // Presentation only: geometry stays inline (the drag math owns
-      // `left`/`top`/`width`), the surface takes the shadcn popover tokens, and
-      // `box-border` keeps the declared width the measured width so the drag
-      // clamp above stays exact.
-      className="box-border rounded-lg border border-border bg-popover text-popover-foreground shadow-lg"
+      // `left`/`top`/`width`). The wrapper is a bare positioning box — the
+      // surface the reader sees is the card the caller renders inside it
+      // (`popCard`): fill, 1px `border-l2` edge and the floating shadow. With
+      // no padding or border of its own, the declared width is the measured
+      // width, so the drag clamp above stays exact.
       style={{
         position: 'fixed',
         left: pos?.left ?? -9999,

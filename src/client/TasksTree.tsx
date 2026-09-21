@@ -1,64 +1,26 @@
 /**
  * The tree mode of the Tasks page: the SAME unified model rendered as the
- * classic indentation tree — nested children with a hairline connector, rows on
- * the shadcn base (a text-sm/500 title, a text-xs mono meta line, a 2px accent
- * bar on the current session, dashed fold cards), and the shared bottom-right
- * control cluster (view toggle + fold toggle) so switching back is always
- * possible.
+ * classic indentation tree — nested children on a hairline thread, the plugin's
+ * row metrics (12px title / 11px mono meta), the left accent bar on the current
+ * session, dashed fold rows, and the shared bottom-right control cluster (view
+ * toggle + fold toggle) so switching back is always possible.
  *
- * Visual language: Tailwind utilities over the shadcn tokens
- * (src/client/ui/theme.css). Hierarchy is one 1px `border-border` hairline plus
- * the surface ladder and `hover:bg-muted` — the row is a list line, not a
- * card, so it paints no shadow. Every color is a semantic token: no palette
- * class and no literal. Controls come from the vendored shadcn set
- * (`ScrollArea`, `Collapsible`, `Spinner`) and glyphs from the host
- * `IconXxx` primitives, so the page owns no artwork of its own.
- *
- * Behaviour is unchanged: the same `data-tasks-row` focus order, the same
- * `role="tree"` / `role="treeitem"` + `aria-level` semantics, the same
- * ArrowUp / ArrowDown / Home / End / Enter / Space handling, and the same
- * global fold aggregate (a fold row toggles the whole page's fold state).
- *
- * `Collapsible` is structural only: no row gains a collapse toggle, because
- * subtree visibility is owned by the page-wide fold state (`folded`). It is
- * rendered open + `forceMount`, so a subtree container is always mounted and
- * `[data-tasks-row]` focus order is exactly the pre-migration one.
+ * Behaviour contract: `role="tree"` / `role="treeitem"` + `aria-level`, a
+ * `[data-tasks-row]` focus order, ArrowUp / ArrowDown / Home / End focus moves,
+ * Enter / Space activation, and the global fold aggregate (a fold row toggles
+ * the whole page's fold state).
  */
 import { useCallback, useMemo, useRef, type KeyboardEvent, type ReactNode } from 'react'
-import { StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import clsx from 'clsx'
+import { IconLoadingOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TasksAgentNode, TasksNode, TasksWorkflowNode } from './tasks-model.ts'
 import {
   AgentGlyph, agentMeta, FoldGlyph, foldPreviews, LiveLine, nodeDotState, TaskLine,
   WorkflowGlyph, workflowMeta,
 } from './tasks-shared.tsx'
 import { FoldToggleButton, ViewModeToggle } from './TasksGraph.tsx'
-import { Collapsible, CollapsibleContent } from './ui/collapsible.tsx'
-import { ScrollArea } from './ui/scroll-area.tsx'
-import { Spinner } from './ui/spinner.tsx'
-import { cn } from './ui/utils.ts'
 import { t } from './locales.ts'
-
-/** The row slab: one shared box, so every row kind lines up on the same grid. */
-const ROW = 'flex w-full cursor-pointer items-start gap-2 rounded-md px-2 py-2 text-left text-sm leading-[1.45] text-foreground focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-ring'
-/** Hover is a background change only, per the design language. */
-const ROW_HOVER = 'hover:bg-muted'
-/** The current session: the same muted surface plus the 2px accent bar. */
-const ROW_CURRENT = 'bg-muted'
-/** Settled (done / error) rows recede by INK — the row's title drops
- *  from the foreground to the secondary ink — never by opacity or hue. */
-const ROW_SETTLED = 'text-muted-foreground'
-/** The fold aggregate is a dashed inline card, not a filled row. */
-const ROW_FOLD = 'border border-dashed border-border text-muted-foreground'
-/** One text line of a row body. */
-const LINE = 'truncate'
-/** The mono meta line: `text-xs`, tabular figures, secondary ink. */
-const META = 'truncate font-mono text-xs tabular-nums text-muted-foreground'
-/** The glyph/state-dot gutter (row level 0). */
-const GLYPH = 'mt-0.5 flex-none text-foreground-3'
-/** The current-session accent bar; the slot is reserved on EVERY agent row so
- *  the dot and glyphs stay on one vertical line down the whole tree. */
-const ACCENT_SLOT = 'mt-0.5 h-4 w-0.5 flex-none rounded-full'
-const ACCENT_BAR = `${ACCENT_SLOT} bg-primary`
+import css from './tasks-graph.module.css'
 
 export interface TasksTreeProps {
   nodes: readonly TasksNode[]
@@ -125,7 +87,7 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
     }
   }
 
-  /** One row plus its nested children (hairline connector per the mockup). */
+  /** One row plus its nested children (connector line per the mockup). */
   const renderNode = (node: TasksNode, depth: number): ReactNode => {
     const children = childrenOf.get(node.id) ?? []
     const row = node.kind === 'fold'
@@ -137,19 +99,19 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
           tabIndex={0}
           aria-level={depth + 1}
           aria-label={`${t('tasksFoldCompleted', { count: node.count })} · ${t('tasksFoldExpand')}`}
-          className={cn(ROW, ROW_FOLD, ROW_HOVER)}
+          className={clsx(css.treeRow, css.treeFoldRow)}
           onClick={onToggleFold}
           onKeyDown={(event) => { activateOnKey(event, onToggleFold) }}
         >
-          <span className={GLYPH} aria-hidden="true"><FoldGlyph /></span>
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className={cn('flex items-center gap-1.5 font-medium', LINE)}>
+          <span className={css.treeGlyph} aria-hidden="true"><FoldGlyph /></span>
+          <span className={css.treeContent}>
+            <span className={css.treeTitle}>
               {t('tasksFoldCompleted', { count: node.count })}
-              <span className={META}>
+              <span className={css.treeMeta}>
                 {t(folded ? 'tasksFoldExpand' : 'tasksFoldCollapse')}
               </span>
             </span>
-            <span className={META}>{foldPreviews(node.previews)}</span>
+            <span className={css.treeMeta}>{foldPreviews(node.previews)}</span>
           </span>
         </div>
       )
@@ -163,19 +125,17 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
             aria-level={depth + 1}
             aria-expanded="true"
             aria-label={`${node.run.name} ${workflowMeta(node)}`}
-            className={cn(ROW, ROW_HOVER, node.run.status !== 'running' && ROW_SETTLED)}
+            className={clsx(css.treeRow, node.run.status !== 'running' && css.treeRowSettled)}
             onClick={(event) => { onWorkflowInfo(node, event.currentTarget) }}
             onKeyDown={(event) => {
               activateOnKey(event, () => { onWorkflowInfo(node, event.currentTarget as HTMLElement) })
             }}
           >
-            <span className="mt-0.5 flex flex-none items-center">
-              <StateDot state={node.run.status === 'running' ? 'ongoing' : 'done'} size={6} />
-            </span>
-            <span className={GLYPH} aria-hidden="true"><WorkflowGlyph /></span>
-            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className={cn('font-medium', LINE)}>{node.run.name}</span>
-              <span className={META}>{workflowMeta(node)}</span>
+            <StateDot state={node.run.status === 'running' ? 'ongoing' : 'done'} size={6} />
+            <span className={css.treeGlyph} aria-hidden="true"><WorkflowGlyph /></span>
+            <span className={css.treeContent}>
+              <span className={css.treeTitle}>{node.run.name}</span>
+              <span className={css.treeMeta}>{workflowMeta(node)}</span>
             </span>
           </div>
         )
@@ -188,28 +148,21 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
             aria-level={depth + 1}
             aria-label={`${node.label} ${agentMeta(node)}`}
             aria-current={node.current ? 'true' : undefined}
-            className={cn(
-              ROW,
-              ROW_HOVER,
-              node.current && ROW_CURRENT,
-              (node.state === 'done' || node.state === 'error') && !node.current && ROW_SETTLED,
+            className={clsx(
+              css.treeRow,
+              node.current && css.treeRowActive,
+              (node.state === 'done' || node.state === 'error') && !node.current && css.treeRowSettled,
             )}
             onClick={(event) => { onNodeInfo(node, event.currentTarget) }}
             onKeyDown={(event) => {
               activateOnKey(event, () => { onNodeInfo(node, event.currentTarget as HTMLElement) })
             }}
           >
-            <span
-              className={node.current ? ACCENT_BAR : ACCENT_SLOT}
-              aria-hidden="true"
-            />
-            <span className="mt-0.5 flex flex-none items-center">
-              <StateDot state={nodeDotState(node.state)} size={6} />
-            </span>
-            <span className={GLYPH} aria-hidden="true"><AgentGlyph node={node} /></span>
-            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className={cn('font-medium', LINE)}>{node.label}</span>
-              <span className={META}>{agentMeta(node)}</span>
+            <StateDot state={nodeDotState(node.state)} size={6} />
+            <span className={css.treeGlyph} aria-hidden="true"><AgentGlyph node={node} /></span>
+            <span className={css.treeContent}>
+              <span className={css.treeTitle}>{node.label}</span>
+              <span className={css.treeMeta}>{agentMeta(node)}</span>
               {node.state === 'running' && <LiveLine live={node.live} />}
               <TaskLine tasks={node.tasks} onOpenTask={onOpenTask} />
             </span>
@@ -217,43 +170,35 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
         )
     if (children.length === 0) return <div key={node.id}>{row}</div>
     return (
-      <Collapsible key={node.id} open>
+      <div key={node.id}>
         {row}
-        <CollapsibleContent
-          forceMount
-          className="ml-3 border-l border-border pl-2.5"
-        >
+        <div className={css.treeKids}>
           {children.map(child => renderNode(child, depth + 1))}
-        </CollapsibleContent>
-      </Collapsible>
+        </div>
+      </div>
     )
   }
 
   const roots = childrenOf.get('') ?? []
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      <ScrollArea className="min-h-0 flex-1">
-        <div ref={bodyRef} className="px-2.5 pt-2 pb-11">
-          <div
-            role="tree"
-            aria-label={t('subagent')}
-            onKeyDown={onTreeKeyDown}
-          >
-            {loading === true && roots.length === 0 && (
-              <div className="flex items-center justify-center gap-1.5 px-6 py-3 text-xs text-muted-foreground">
-                {/* The visible line carries the copy; the glyph is decoration. */}
-                <span aria-hidden="true" className="flex flex-none items-center">
-                  <Spinner className="size-3" />
-                </span>
-                {t('loading')}
-              </div>
-            )}
-            {roots.map(root => renderNode(root, 0))}
+    <div className={css.graphView}>
+      <div
+        ref={bodyRef}
+        className={css.treeView}
+        role="tree"
+        aria-label={t('subagent')}
+        onKeyDown={onTreeKeyDown}
+      >
+        {loading === true && roots.length === 0 && (
+          <div className={css.viewEmptyHint}>
+            <span className={css.treeGlyph} aria-hidden="true"><IconLoadingOutline16 size={12} /></span>
+            {t('loading')}
           </div>
-        </div>
-      </ScrollArea>
-      <div className="absolute right-2.5 bottom-2.5 z-10 flex flex-row items-center" data-graph-controls>
+        )}
+        {roots.map(root => renderNode(root, 0))}
+      </div>
+      <div className={css.controls} data-graph-controls>
         <ViewModeToggle mode={mode} onModeChange={onModeChange} />
         <FoldToggleButton folded={folded} onToggleFold={onToggleFold} />
       </div>

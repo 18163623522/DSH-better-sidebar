@@ -147,7 +147,9 @@ PR：[#680](https://github.com/omdsh-dev/DSH-better-sidebar/pull/680)（分支 `
 
 未在本机自动化验证、留给用户实机确认的一项：3384 桌面应用**重启后**的 UI 级复看（新 bundle 已装进 `~/.dsh/profiles/web`，与仓库构建产物 SHA-256 一致）。
 
-## shadcn/ui 迁移（2026-09-17，视觉基座替换）
+## shadcn/ui 迁移（2026-09-17，视觉基座替换）—— 已废弃
+
+> **已废弃（2026-09-21 整体回退）**：本节及其后全部子节（依赖与实际版本 / Tailwind 接入方式 / 令牌映射表 / vendored 组件清单 / 阴影策略 / 体积与 mount 结果 / 真机排障 / stock 风格回调 / 升级路径与本地适配清单 / 页面重组）记录的是 2026-09-17–09-21 期间任务页的 shadcn/ui 视觉基座。该基座已整体回退到插件自有体系，回退根因见文末「回退：任务页回到插件自有体系（2026-09-21，shadcn 层废弃）」。保留全文只为留下排障现场与决策证据——**其中描述的接入方式不再是本仓库或消费插件的建议做法**。
 
 三轮返工把**行为**收敛到位（统一的详情窗口、常驻任务板、可拖动浮窗），但**视觉基座**仍是自建：
 
@@ -397,3 +399,45 @@ npx -y shadcn@latest add button card badge separator input textarea tooltip popo
 2. **`<Spinner size={12} />` 类型合法但静默失效**：刷新后的 Spinner 变成 `React.ComponentProps<"span">`，`size` 是合法 HTML 属性 → typecheck 全绿而图标按默认 `size-4` 渲染。改用 `className="size-3"`。**教训：组件 API 变更中"仍然类型合法但语义丢失"的那类最危险，只有看渲染结果才能发现。**
 
 **已知未修（记录在案）**：抽屉行在 ~420px 以下的窄宽度里会横向溢出（Radix ScrollArea 的 table 视口按 min-content 计算 + 行内 `nowrap` 的 mono 标题），修复需要重新决定 ScrollArea/行的最小宽度策略；宽面板（用户实机）不受影响。
+
+---
+
+## 回退：任务页回到插件自有体系（2026-09-21，shadcn 层废弃）
+
+任务页 2026-09-17 换成 shadcn/ui + Tailwind v4 视觉基座，09-20 又按「对齐上游 stock」回调一轮；09-21 判定该基座与本插件的体系不可调和，整体回退。
+
+**改动面**：8 个页面文件（`TasksGraph` / `TasksTree` / `TaskWindow` / `TeamBoard` / `JobsDrawer` / `TasksPopovers` / `SubagentView` / `tasks-shared`）以 `12b4716` 的原生实现（CSS Modules + 宿主 `@deepseek-ai/dsh-client-ui-primitives`）为基线重建，`src/client/ui/**`（23 个文件）、`components.json`、`scripts/ui-css.mjs` 与其 `ui:css` 脚本删除；`radix-ui` / `class-variance-authority` / `tailwind-merge` / `tailwindcss` / `@tailwindcss/postcss` / `postcss` 六个依赖下线；`tasks` 懒加载 chunk 与 `CHUNK_NAMES` 的 `tasks` 项一并取消（回到 `terminal` / `editor` / `mermaid` / `locale` 四项）。**回退只换视觉基座：09-17–09-21 期间的行为修复逐条重新落地**（见下「保留的行为修复」）。
+
+### 回退根因
+
+1. **默认尺度与插件体系冲突（最直接的一条）**：stock shadcn 的正文是 `text-sm`(14px)、meta `text-xs`(12px)、控件按 `h-9`(36px) 起；本插件的语言是正文 12px / meta 11px / 微标 10px、控件 28px（`sidebar.module.css` 的图标按钮即为 28px 方）。要贴合就得把 stock 的每个尺寸逐处改回去——那等于不用 shadcn，只是多背一层工具类。09-20 的「stock 回调」正是这条冲突的产物：字号一放开，`GRAPH_NODE_W` 132px 的图节点标题只剩约 7 个汉字（“图形重布重写”被截成“图…”），两轮下来只能把宽度 132→150→176 并改两行标题救场。
+2. **层级语义冲突**：shadcn 给静态组件默认带投影（card `shadow-sm`，input / textarea / toggle / button-outline `shadow-xs`）；本插件的语言是**静态面板无阴影**（层级 = 1px `--dsw-alias-border-l2` + hairline `--dsw-alias-border-l1` + 表面阶梯 + 墨色三档），只有浮层用 `--dsw-shadow-lv2/3`。第一轮把静态阴影全删了，stock 回调又把它们恢复成 stock——两次改的都是同一份 vendored 源码，每次跟上游 `--diff` 都要重新施加。
+3. **彩色语义是第二套词汇表**：shadcn 的 `primary` / `secondary` / `muted` / `accent` / `destructive` 与 DSH 的 `--dsw-alias-state-*` / `--dsw-alias-interactive-bg-hover` 并非一一对应，任务状态（进行中 / 阻塞 / 完成 / 错误）还要再自造 `--success` / `--warning` 两个非 stock 令牌，整张映射表 22 条必须逐条维护：`--border` 先桥到 `--dsw-alias-border-l4`、09-20 又改成 `l2`，只因为 shadcn 的 1px 边框语义变了——而 `l2`（1px 边框）/ `l1`（hairline）的分工本来就是本插件自己的契约，不必经过第三层命名。
+4. **不引 preflight 就得自己补一套**：插件注入的是全局 `<style data-plugin>`（无 shadow DOM），引 Tailwind 完整入口会重置整张宿主页面，所以只能引 `theme` + `utilities`；表单控件因此保留 UA 外观，真机反馈「任务页看起来完全没有 CSS，边框非常模糊」的根因即在此。补救是在 `theme.css` 写限定 `.dsw-tasks` 作用域的 preflight 子集 + 显式 `@layer theme, base, components, utilities;` 层序声明 + 页面根类。**这整套补偿只为承载 Tailwind 而存在**，原生 CSS Modules 不需要。
+5. **架构代价**：radix 浮层栈 + `tailwind-merge` 把核心包撑到 1452623 bytes（+457.6 KiB，超 +250 KiB 预算），处置是把任务页整体下沉为懒加载 chunk（`lib/client-tasks.js` 706.7 KiB，`CHUNK_NAMES` 加 `tasks`、`package.json#files` 补 glob）。原生实现下这些负载不存在，`tasks` chunk 随回退下线。
+6. **vendored 源码的持续负担**：每个 vendored 组件的本地适配（`cn` 改 `./utils`、图标换宿主 `IconXxx`、删 `dark:` 覆写、`text-white` → 令牌、React 18 的 `forwardRef`）都要跟着上游逐次重放；`popover.tsx` / `skeleton.tsx` 自始至终没有消费者。
+
+### 结论（写给消费插件）
+
+**嵌入式插件沿用宿主体系**：样式用 CSS Modules + `--dsw-*` 令牌（参考 `src/client/sidebar.module.css` / `src/client/changes/changes.module.css` / `src/client/SideChatView.module.css`），控件与图标用宿主 `@deepseek-ai/dsh-client-ui-primitives` 的 `Button` / `Menu` / `Modal` / `Pill` / `Tag` / `Switch` / `Input` / `Tooltip` / `StateDot` / `MarkdownText` / `DisclosureRow` 与 `IconXxx`；不引 Tailwind / radix / CVA / lucide，不自绘 svg（连线几何除外）。插件样式表是**全局作用域**的，任何自带 reset 或工具类的方案都要额外处理与宿主无层级样式表的优先级关系——这是本插件选择自有体系的直接原因。
+
+### 保留的行为修复（与视觉基座无关，已在原生实现上重新落地）
+
+| 修复 | 位置 | 守护 |
+|---|---|---|
+| 节点 id 去重：workflow member 的 `childId` 不在 run 发起者 catalog 里、但存在于树中别处时不再合成同 id 的第二张卡片；返回前兜底去重 | `src/client/tasks-model.ts` | `tests/tasks-model.spec.ts` |
+| 任务窗口 CAS：编辑 / 改派携带 `expectedRevision`，冲突不吞 | `src/client/TaskWindow.tsx` | `tests/tasks-page.spec.tsx` |
+| 后台任务终止两击确认（首击 arm、二击才发 `jobs.kill`） | `src/client/JobsDrawer.tsx` | `tests/subagent-jobs-view.spec.tsx` |
+| 后台任务抽屉 ≥8 代理自动折叠，条形按钮 `aria-expanded` 可展开 | `src/client/JobsDrawer.tsx` | `tests/tasks-page.spec.tsx` |
+| 输出浮窗可拖动；稳定 `data-*` 钩子（`data-graph-node` / `data-graph-controls`）不变 | `AnchoredPopover.tsx` / `TasksGraph.tsx` | `tests/tasks-page.spec.tsx` |
+
+### 测试与文档清扫
+
+- 删除三个守 shadcn 层的 spec：`tests/ui-foundation.spec.ts`（Tailwind 入口 / 令牌桥 / 层序 / 作用域 reset）、`tests/ui-bundle.spec.ts`（核心包与 chunk 的体积与产物断言）、`tests/ui-shadows.spec.ts`（静态面板阴影白名单）。
+- `tests/theme.spec.ts` 去掉指向 `src/client/ui/**` 与令牌桥的一节，保留「图标模块零颜色字面量」与「每条 `color:` 解析到主题令牌」，后者从 tab 图标单表扩展到 `src/client/**/*.module.css` 全量（`color-mix()` / `var()` 链同样按令牌逐个校验，`inherit` / `currentcolor` / `transparent` 视为「不自己上色」）。
+- `tests/bundle-route.spec.ts` 的 `CHUNK_NAMES` 期望回到 4 项；`tests/manifest-consistency.spec.ts` 的「每个 chunk 都被 `package.json#files` 覆盖」断言保留，列表继续从 `CHUNK_NAMES` 派生（不手抄）。
+- `README.md` 两处「视觉基座为 shadcn/ui + Tailwind v4」描述删除；`docs/external-plugin-guide.md` 删除 §12.3「在插件里用 Tailwind / shadcn/ui」整节（含 preflight 规避、令牌桥、静态面板零阴影三条）。
+
+### 验收（回退后，2026-09-21）
+
+`pnpm typecheck` ✅ 0 错误；`pnpm lint` ✅ 0 错误；`pnpm vitest run` **133 文件通过 / 1410 用例通过 / 9 skipped / 0 失败**（回退前：4 个文件失败，其中 `theme.spec.ts`、`ui-foundation.spec.ts` 在收集期就因 `src/client/ui/theme.css` 缺失报 ENOENT，`ui-shadows.spec.ts` 2 例、`bundle-route.spec.ts` 1 例断言失败）。

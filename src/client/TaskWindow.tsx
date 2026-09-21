@@ -7,50 +7,24 @@
  * Shape: a non-fullscreen, DRAGGABLE card (never a modal dialog). Details
  * render as multi-line MARKDOWN by default; 编辑 switches the same card into
  * multi-line editing, so reading and writing never jump between surfaces.
- * Actions: owner reassignment (CAS-immediate), edit/save, reopen or complete,
- * and a two-step delete.
+ * Actions: owner reassignment (Pills, CAS-immediate), edit/save, reopen or
+ * complete, and a two-step delete.
  *
- * Visual base: the vendored shadcn/ui set, composed the way the registry
- * intends — the full `Card` (header + title + action slot + content + footer),
- * the task itself as an `Item` slab, the editable half as a `FieldGroup` of
- * `Field` rows (`FieldLabel` + control + `FieldDescription`), the owner picker
- * as a `ToggleGroup`, status as a stock `Badge` variant and every action a
- * stock `Button` variant (the armed delete takes the `destructive` variant
- * instead of a hand-painted red outline). Colours and type therefore come from
- * the components and the semantic tokens; `className` stays layout.
- *
- * Three resets ride the card root on purpose: the window paints NO surface of
- * its own. It is portaled to `document.body`, where `AnchoredPopover` owns the
- * floating border/radius/shadow, so `border-0 bg-transparent shadow-none` let
- * that shell's surface show through instead of nesting a second, shadowed card
- * inside it (the page's "static panels cast no shadow" rule).
- *
- * That portal also sits OUTSIDE the task page root, so the card re-declares
- * the page root class (`dsw-tasks`) to pick up the scoped base reset the
- * plugin ships instead of preflight — box-sizing and form-control font
- * inheritance; without preflight a bare `<button>`/`<textarea>` would render
- * in the UA's own font.
+ * Host primitives everywhere (Button / Input / Pill / Tag / StateDot) plus
+ * the plugin's own `MultilineField` (the host set ships no multi-line input)
+ * and the shared `MarkdownText` renderer with the plugin's copy labels.
  */
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import {
-  IconCheckOutline14, IconCloseOutline16, IconEditOutline16, IconPlusOutline16,
-  IconRefreshOutline14, IconTrashOutline16, MarkdownText, StateDot,
+  Button, IconCheckOutline14, IconCloseOutline16, IconEditOutline16, IconPlusOutline16,
+  IconRefreshOutline14, IconTrashOutline16, Input, MarkdownText, Pill, StateDot, Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SidebarTeamMemberView, SidebarTeamTaskView } from '../context-types.ts'
 import { api } from './api.ts'
 import { markdownTextProps } from './markdown-labels.tsx'
 import { AnchoredPopover } from './AnchoredPopover.tsx'
 import { t, type CopyKey } from './locales.ts'
-import { Badge } from './ui/badge.tsx'
-import { Button } from './ui/button.tsx'
-import { Card, CardAction, CardContent, CardFooter, CardHeader, CardTitle } from './ui/card.tsx'
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldTitle } from './ui/field.tsx'
-import { Input } from './ui/input.tsx'
-import { Item, ItemActions, ItemContent, ItemMedia, ItemTitle } from './ui/item.tsx'
-import { Separator } from './ui/separator.tsx'
-import { Textarea } from './ui/textarea.tsx'
-import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group.tsx'
-import { cn } from './ui/utils.ts'
+import css from './tasks-graph.module.css'
 
 /** One mutation outcome (the host route's own union). */
 type MutationResult = { ok: true } | { ok: false; error: { code: string; message: string } }
@@ -66,28 +40,9 @@ function taskStatusKey(status: SidebarTeamTaskView['status']): CopyKey {
 }
 
 /**
- * The status badge's stock variant: in progress takes `default` (the accent),
- * everything else settles on `secondary`; a BLOCKED task wears `outline` with
- * warning ink — hue carries meaning only, and readiness outranks the status
- * word (the board row maps it the same way).
- */
-function statusVariant(task: SidebarTeamTaskView): 'default' | 'secondary' | 'outline' {
-  if (task.status === 'in_progress' && task.ready) return 'default'
-  if (!task.ready) return 'outline'
-  return 'secondary'
-}
-
-/** The blocked badge's warning ink (the `outline` variant is otherwise neutral). */
-function statusTone(task: SidebarTeamTaskView): string {
-  return task.ready ? '' : 'text-warning'
-}
-
-/**
  * The plugin's own multi-line input: the host primitive set ships no
  * textarea, so this is OUR component (token-styled, drag-exempt) and every
- * multi-line edit in the page goes through it. The surface is the vendored
- * shadcn `Textarea`; `rows` keeps the caller's height contract and the
- * content-driven growth is capped so a long body cannot outgrow the viewport.
+ * multi-line edit in the page goes through it.
  */
 export function MultilineField(props: {
   value: string
@@ -97,8 +52,8 @@ export function MultilineField(props: {
   onChange?(next: string): void
 }): ReactNode {
   return (
-    <Textarea
-      className="max-h-[45vh] min-h-[120px] resize-y"
+    <textarea
+      className={css.taskTextarea}
       value={props.value}
       rows={props.rows ?? 7}
       placeholder={props.placeholder}
@@ -109,56 +64,37 @@ export function MultilineField(props: {
   )
 }
 
-/**
- * The unowned option's sentinel value: Radix reads an EMPTY string as "nothing
- * is selected" (`value ? [value] : []`), so `''` could never render pressed —
- * and the unowned chip must be visibly the active one on an unowned task.
- */
-const UNOWNED = '__unowned__'
-
-/**
- * The owner picker (single-select toggles; CAS-immediate, so never a draft
- * field). The chips are the toggle's DEFAULT variant, the same one the board's
- * owner filter uses: its own state pair separates hover (accent tint, meta ink)
- * from pressed (accent tint, full ink) without help. That is not true of the
- * `outline` variant — its hover rules outrank the base ones, so hover and
- * pressed would look exactly alike and the picked owner would be invisible.
- */
-export function OwnerPicker(props: {
+/** The owner picker (Pills; CAS-immediate, so it is never a draft field). */
+function OwnerPicker(props: {
   members: readonly SidebarTeamMemberView[]
   owner: string | undefined
   disabled: boolean
   onPick(owner: string): void
 }): ReactNode {
   return (
-    <ToggleGroup
-      type="single"
-      value={props.owner ?? UNOWNED}
-      disabled={props.disabled}
-      spacing={1}
-      aria-label={t('teamTaskOwner')}
-      className="flex-wrap"
-      onValueChange={(next) => {
-        // '' is Radix's deselect of the pressed chip (the reader re-clicked the
-        // current owner): the old pill row re-sent the same owner, i.e. no
-        // mutation — the window never unassigns behind a re-click.
-        if (next === '') return
-        props.onPick(next === UNOWNED ? '' : next)
-      }}
-    >
-      <ToggleGroupItem value={UNOWNED} size="sm">
+    <div className={css.taskOwnerRow} role="group" aria-label={t('teamTaskOwner')}>
+      <Pill
+        active={props.owner === undefined}
+        disabled={props.disabled}
+        onClick={() => { props.onPick('') }}
+      >
         {t('teamTaskUnowned')}
-      </ToggleGroupItem>
+      </Pill>
       {props.members.map(member => (
-        <ToggleGroupItem key={member.id} value={member.name} size="sm">
+        <Pill
+          key={member.id}
+          active={props.owner === member.name}
+          disabled={props.disabled}
+          onClick={() => { props.onPick(member.name) }}
+        >
           {member.name}
-        </ToggleGroupItem>
+        </Pill>
       ))}
-    </ToggleGroup>
+    </div>
   )
 }
 
-/** The read-only body: the task slab, the markdown description, the owner picker. */
+/** The read-only body: markdown description, meta, owner picker. */
 function TaskViewBody(props: {
   task: SidebarTeamTaskView
   teammates: readonly SidebarTeamMemberView[]
@@ -168,79 +104,58 @@ function TaskViewBody(props: {
   const { task } = props
   const body = task.description.trim()
   return (
-    <FieldGroup className="gap-4">
-      {/* The task's own slab: an `Item` is the registry's row primitive, so the
-          subject leads, the owner / blocker meta follows as its description and
-          the status rides the trailing action slot. */}
-      <Item variant="muted" size="sm" className="min-w-0 flex-nowrap gap-2 px-2 py-1.5">
-        <ItemMedia>
-          <StateDot
-            size={6}
-            state={task.status === 'completed' ? 'done' : task.ready ? 'ongoing' : 'warning'}
-          />
-        </ItemMedia>
-        <ItemContent className="min-w-0 gap-0.5">
-          <ItemTitle className="w-full min-w-0">
-            <span className="min-w-0 flex-1 truncate" title={task.subject}>{task.subject}</span>
-          </ItemTitle>
-          {/* The meta line keeps the page's three ink levels: the labels are a
-              step quieter than the values, and ids stay mono. */}
-          <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-            <span className="text-foreground-3">{t('teamTaskOwner')}</span>
-            <span>{task.ownerName ?? t('teamTaskUnowned')}</span>
-            {task.blockedBy.length > 0 && (
-              <>
-                <span className="text-foreground-3">{t('teamTaskBlockedBy')}</span>
-                <span className="font-mono tabular-nums">{task.blockedBy.join(' · ')}</span>
-              </>
-            )}
-          </span>
-        </ItemContent>
-        <ItemActions>
-          <Badge variant={statusVariant(task)} className={cn('flex-none', statusTone(task))}>
-            {t(task.ready ? taskStatusKey(task.status) : 'teamTaskBlocked')}
-          </Badge>
-        </ItemActions>
-      </Item>
-
-      {/* The description is READ-ONLY here (the markdown preview is the point of
-          the view mode); 编辑 is what turns it into the multi-line editor. */}
-      <Field>
-        <FieldTitle>{t('teamTaskDescription')}</FieldTitle>
+    <>
+      <div className={css.jobPopTitle}>
+        <StateDot
+          size={6}
+          state={task.status === 'completed' ? 'done' : task.ready ? 'ongoing' : 'warning'}
+        />
+        <span className={css.popTitle} title={task.subject}>{task.subject}</span>
+        <Tag tone={task.status === 'completed' ? 'success' : task.ready ? 'info' : 'warning'}>
+          {t(task.ready ? taskStatusKey(task.status) : 'teamTaskBlocked')}
+        </Tag>
+      </div>
+      <div className={css.jobPopMeta}>
+        <span className={css.popKey}>{t('teamTaskOwner')}</span>
+        <span>{task.ownerName ?? t('teamTaskUnowned')}</span>
+        {task.blockedBy.length > 0 && (
+          <>
+            <span className={css.popKey}>{t('teamTaskBlockedBy')}</span>
+            <span>{task.blockedBy.join(' · ')}</span>
+          </>
+        )}
+      </div>
+      <div className={css.taskMarkdown}>
         {body === ''
-          ? <FieldDescription>{t('teamTaskNoDescription')}</FieldDescription>
+          ? <div className={css.popHint}>{t('teamTaskNoDescription')}</div>
           : (
-            <div className="max-h-[260px] overflow-y-auto">
-              <MarkdownText
-                {...markdownTextProps(body, { copyLabel: t('copy'), copiedLabel: t('copied') })}
-              />
-            </div>
+            <MarkdownText
+              {...markdownTextProps(body, { copyLabel: t('copy'), copiedLabel: t('copied') })}
+            />
           )}
-      </Field>
-
-      <Field data-disabled={props.busy ? true : undefined}>
-        <FieldLabel>{t('teamTaskOwner')}</FieldLabel>
+      </div>
+      <div className={css.taskField}>
+        <span className={css.taskLabel}>{t('teamTaskOwner')}</span>
         <OwnerPicker
           members={props.teammates}
           owner={task.ownerName}
           disabled={props.busy}
           onPick={props.onReassign}
         />
-      </Field>
-    </FieldGroup>
+      </div>
+    </>
   )
 }
 
 /**
- * The editing body: subject (a stock `Input`) and description (our multi-line
- * field) as two `Field` rows. A BLANK subject is the form's only invalid state
- * — it is reported on the `Field` (`data-invalid`) and the control
- * (`aria-invalid`) once the reader has been in the field, and Save stays
- * disabled until it is filled.
+ * The editing body: subject (host Input) + description (our multi-line field).
  *
- * The one-line input carries its hint as a `FieldDescription` (a placeholder
- * would vanish the moment the reader focuses it); the tall textarea keeps its
- * hint inside the field, where there is room for it.
+ * A BLANK subject is the form's only invalid state. Save stays disabled until
+ * it is filled, so the state must also be REPORTED — otherwise clearing the
+ * field greys the button with no reason given. The input carries
+ * `aria-invalid` and points at the hint below it, which reuses the subject's
+ * own placeholder copy (no new i18n key): it reads as the field's rule, and it
+ * appears only once the reader has been in the field.
  */
 function TaskEditBody(props: {
   subject: string
@@ -249,32 +164,35 @@ function TaskEditBody(props: {
   onSubject(next: string): void
   onDescription(next: string): void
 }): ReactNode {
-  const subjectId = useId()
   const subjectHintId = useId()
   return (
-    <FieldGroup className="gap-4" data-popover-no-drag>
-      <Field data-invalid={props.invalid ? true : undefined}>
-        <FieldLabel htmlFor={subjectId}>{t('teamTaskSubject')}</FieldLabel>
+    <div className={css.taskForm} data-popover-no-drag>
+      <label className={css.taskField}>
+        <span className={css.taskLabel}>{t('teamTaskSubject')}</span>
         <Input
-          id={subjectId}
           value={props.subject}
+          placeholder={t('teamTaskSubjectPlaceholder')}
           aria-label={t('teamTaskSubject')}
           aria-invalid={props.invalid ? true : undefined}
-          aria-describedby={subjectHintId}
+          aria-describedby={props.invalid ? subjectHintId : undefined}
           onChange={(event) => { props.onSubject(event.target.value) }}
         />
-        <FieldDescription id={subjectHintId}>{t('teamTaskSubjectPlaceholder')}</FieldDescription>
-      </Field>
-      <Field>
-        <FieldLabel>{t('teamTaskDescription')}</FieldLabel>
+        {props.invalid && (
+          <span id={subjectHintId} className={css.popHint}>
+            {t('teamTaskSubjectPlaceholder')}
+          </span>
+        )}
+      </label>
+      <label className={css.taskField}>
+        <span className={css.taskLabel}>{t('teamTaskDescription')}</span>
         <MultilineField
           value={props.description}
           label={t('teamTaskDescription')}
           placeholder={t('teamTaskDescriptionPlaceholder')}
           onChange={props.onDescription}
         />
-      </Field>
-    </FieldGroup>
+      </label>
+    </div>
   )
 }
 
@@ -380,63 +298,53 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
   }
 
   return (
-    <Card
-      className="dsw-tasks box-border gap-0 rounded-lg border-0 bg-transparent py-0 shadow-none"
-      data-popover-handle
-    >
-      <CardHeader className="items-center px-4 py-3">
-        <CardTitle className="min-w-0 truncate">
-          {creating ? t('teamTaskCreate') : editing ? t('teamTaskEdit') : t('teamTaskDetail')}
-        </CardTitle>
-        <CardAction data-popover-no-drag>
+    <div className={css.popCard} data-popover-handle>
+      <div className={css.popHead}>
+        <span>{creating ? t('teamTaskCreate') : editing ? t('teamTaskEdit') : t('teamTaskDetail')}</span>
+        <span className={css.popHeadActions} data-popover-no-drag>
           <Button
             variant="ghost"
-            size="icon"
+            size="sm"
+            icon={<IconCloseOutline16 size={12} />}
             aria-label={t('teamTaskCancel')}
             title={t('teamTaskCancel')}
             onClick={onClose}
-          >
-            <IconCloseOutline16 />
-          </Button>
-        </CardAction>
-      </CardHeader>
-      <Separator />
+          />
+        </span>
+      </div>
 
-      <CardContent className="px-4 py-3">
-        {editing || task === undefined
-          ? (
-            <TaskEditBody
-              subject={subject}
-              description={description}
-              invalid={subjectTouched && subject.trim() === ''}
-              onSubject={(next) => { setSubjectTouched(true); setSubject(next) }}
-              onDescription={setDescription}
-            />
-          )
-          : (
-            <TaskViewBody
-              task={task}
-              teammates={teammates}
-              busy={busy}
-              onReassign={reassign}
-            />
-          )}
-        {/* The mutation outcome (CAS conflict / failure) is the form's own
-            alert: FieldError carries the role and the destructive ink. */}
-        {note !== undefined && <FieldError className="mt-2">{note}</FieldError>}
-      </CardContent>
+      {editing || task === undefined
+        ? (
+          <TaskEditBody
+            subject={subject}
+            description={description}
+            invalid={subjectTouched && subject.trim() === ''}
+            onSubject={(next) => { setSubjectTouched(true); setSubject(next) }}
+            onDescription={setDescription}
+          />
+        )
+        : (
+          <TaskViewBody
+            task={task}
+            teammates={teammates}
+            busy={busy}
+            onReassign={reassign}
+          />
+        )}
 
-      <Separator />
-      <CardFooter className="flex-wrap justify-end gap-1.5 px-4 py-3" data-popover-no-drag>
+      {note !== undefined && <div className={css.teamNote}>{note}</div>}
+
+      <div className={css.jobPopActions} data-popover-no-drag>
         {editing
           ? (
             <>
               <Button
+                variant="primary"
                 size="sm"
+                icon={<IconCheckOutline14 size={12} />}
                 disabled={busy || subject.trim() === ''}
                 onClick={save}
               >
-                <IconCheckOutline14 />
                 {creating ? t('teamTaskCreate') : t('teamTaskSave')}
               </Button>
               <Button
@@ -459,8 +367,12 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
           )
           : task === undefined ? null : (
             <>
-              <Button variant="outline" size="sm" onClick={() => { setEditing(true) }}>
-                <IconEditOutline16 />
+              <Button
+                variant="outline"
+                size="sm"
+                icon={<IconEditOutline16 size={12} />}
+                onClick={() => { setEditing(true) }}
+              >
                 {t('teamTaskEdit')}
               </Button>
               {task.status === 'completed'
@@ -468,12 +380,12 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
                   <Button
                     variant="outline"
                     size="sm"
+                    icon={<IconRefreshOutline14 size={12} />}
                     disabled={busy}
                     onClick={() => void mutate(() => api.teamsTaskUpdate(rootId, {
                       taskId: task.id, expectedRevision: task.revision, action: 'reopen',
                     }))}
                   >
-                    <IconRefreshOutline14 />
                     {t('teamTaskReopen')}
                   </Button>
                 )
@@ -481,22 +393,20 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
                   <Button
                     variant="outline"
                     size="sm"
+                    icon={<IconCheckOutline14 size={12} />}
                     disabled={busy}
                     onClick={() => void mutate(() => api.teamsTaskUpdate(rootId, {
                       taskId: task.id, expectedRevision: task.revision, action: 'complete',
                     }))}
                   >
-                    <IconCheckOutline14 />
                     {t('teamTaskComplete')}
                   </Button>
                 )}
               <Button
-                // Two-step confirm: the ARMED click takes the `destructive`
-                // variant (its copy already says 确认删除) — danger is a
-                // component variant, never a permanently red button and never a
-                // hand-painted outline.
-                variant={armedDelete ? 'destructive' : 'outline'}
+                variant="outline"
                 size="sm"
+                className={armedDelete ? css.jobPopKillArmed : undefined}
+                icon={<IconTrashOutline16 size={12} />}
                 disabled={busy}
                 onClick={() => {
                   if (!armedDelete) { setArmedDelete(true); return }
@@ -506,13 +416,12 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
                   }), { close: true })
                 }}
               >
-                <IconTrashOutline16 />
                 {armedDelete ? t('teamTaskDeleteConfirm') : t('teamTaskDelete')}
               </Button>
             </>
           )}
-      </CardFooter>
-    </Card>
+      </div>
+    </div>
   )
 }
 
@@ -538,10 +447,10 @@ export function TaskCreateButton(props: {
     <Button
       variant="outline"
       size="sm"
+      icon={<IconPlusOutline16 size={13} />}
       disabled={props.disabled}
       onClick={(event) => { props.onClick(event.currentTarget) }}
     >
-      <IconPlusOutline16 />
       {t('teamTaskCreate')}
     </Button>
   )

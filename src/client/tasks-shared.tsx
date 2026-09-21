@@ -5,16 +5,11 @@
  * line, and the iconified live activity row ("tool icon + tool + args").
  *
  * Card content contract (the page's answer to "everything is ellipsized"):
- *   line 1  state dot + agent icon + name   (text-sm semibold, one line)
- *   line 2  mode/model · activity           (text-xs mono, one line)
+ *   line 1  state dot + agent icon + name   (11px semibold, one line)
+ *   line 2  mode/model · activity           (9px mono, one line)
  *   line 3  live tool line                  (running nodes only)
  *   line 4  owned shared task               (team members only)
  * Everything else lives in the popovers.
- *
- * Visual language: Tailwind utilities over the shadcn tokens
- * (src/client/ui/theme.css) — mono meta is `font-mono tabular-nums`, ink stays
- * on the three token levels, and color is semantic only (running = primary,
- * done = success, blocked = warning; errors only exist on nodes).
  */
 import type { ReactNode } from 'react'
 import {
@@ -25,6 +20,7 @@ import type { LastActivity } from '../subagent-activity.ts'
 import type { TasksAgentNode, TasksNodeState, TasksNodeTask, TasksWorkflowNode } from './tasks-model.ts'
 import { toolGlyph } from './tool-icons.tsx'
 import { t, type CopyKey } from './locales.ts'
+import css from './tasks-graph.module.css'
 
 /** Preview cap of one tool-call argument line. */
 const ARGS_PREVIEW = 48
@@ -143,24 +139,9 @@ export function primaryTask(tasks: readonly TasksNodeTask[]): TasksNodeTask | un
 }
 
 /**
- * The status word's semantic ink: done = success, in progress = primary,
- * blocked = warning, anything else stays a plain meta token. No hue is used
- * as decoration — the card stays quiet when many nodes are on screen.
- */
-function taskTone(task: TasksNodeTask): string {
-  if (task.status === 'completed') return 'text-success'
-  if (task.status === 'in_progress') return 'text-primary'
-  return task.ready ? 'text-muted-foreground' : 'text-warning'
-}
-
-/**
  * The node's shared-task line: an icon, the primary task's subject, its
  * status word, and a `+N` tail when the agent owns more. Renders nothing
  * without tasks, so non-team nodes keep the three-line shape.
- *
- * The whole line is one inline hover slab (`hover:bg-muted`) that opens the
- * task window; it stops the click from reaching the node behind it, which is
- * the node's own detail affordance, not this one.
  */
 export function TaskLine(props: {
   tasks: readonly TasksNodeTask[] | undefined
@@ -173,7 +154,7 @@ export function TaskLine(props: {
     <span
       role="button"
       tabIndex={0}
-      className="group -mx-1 mt-1 flex min-w-0 cursor-pointer items-center gap-1 rounded-sm px-1 text-xs text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-ring"
+      className={css.taskLine}
       title={tasks.map(task => `${task.subject}（${t(taskStatusKey(task.status))}）`).join('\n')}
       onClick={(event) => {
         event.stopPropagation()
@@ -186,12 +167,10 @@ export function TaskLine(props: {
         props.onOpenTask(primary.id, event.currentTarget)
       }}
     >
-      <span className="flex-none" aria-hidden="true"><IconChecklistOutline14 size={11} /></span>
-      <span className="min-w-0 flex-1 truncate group-hover:text-foreground">{primary.subject}</span>
-      <span className={`flex-none font-mono tabular-nums ${taskTone(primary)}`}>{t(taskStatusKey(primary.status))}</span>
-      {tasks.length > 1 && (
-        <span className="flex-none rounded-sm border border-border px-1 font-mono tabular-nums text-foreground-3">{`+${tasks.length - 1}`}</span>
-      )}
+      <span className={css.taskGlyph} aria-hidden="true"><IconChecklistOutline14 size={9} /></span>
+      <span className={css.taskSubject}>{primary.subject}</span>
+      <span className={css.taskState}>{t(taskStatusKey(primary.status))}</span>
+      {tasks.length > 1 && <span className={css.taskMore}>{`+${tasks.length - 1}`}</span>}
     </span>
   )
 }
@@ -199,35 +178,24 @@ export function TaskLine(props: {
 /**
  * The live activity row of a RUNNING agent: the tool's own icon + tool name +
  * args (the approved format), plus the flattened last text line underneath.
- * A running node with neither reads as thinking. Running ink is the accent
- * (primary); the args/text tails drop to the secondary token.
+ * A running node with neither reads as thinking.
  */
 export function LiveLine(props: { live: LastActivity | undefined }): ReactNode {
   const { live } = props
   if (live?.text === undefined && live?.tool === undefined) {
-    return (
-      <span className="mt-0.5 truncate font-mono text-xs tabular-nums text-muted-foreground">
-        {t('subagentThinking')}
-      </span>
-    )
+    return <span className={css.nodeMeta}>{t('subagentThinking')}</span>
   }
   return (
     <>
       {live.tool !== undefined && (
-        <span className="mt-0.5 flex min-w-0 items-center gap-1 truncate font-mono text-xs tabular-nums text-primary">
-          <span className="flex size-3 flex-none items-center justify-center rounded-sm border border-current" aria-hidden="true">
-            {toolGlyph(live.tool.name)(9)}
-          </span>
-          <span className="flex-none">{live.tool.name}</span>
-          {live.tool.args !== '' && (
-            <span className="min-w-0 truncate text-muted-foreground">{preview(live.tool.args)}</span>
-          )}
+        <span className={css.live}>
+          <span className={css.liveGlyph} aria-hidden="true">{toolGlyph(live.tool.name)(9)}</span>
+          <span className={css.liveTool}>{live.tool.name}</span>
+          {live.tool.args !== '' && <span className={css.liveArgs}>{preview(live.tool.args)}</span>}
         </span>
       )}
       {live.text !== undefined && (
-        <span className="mt-0.5 truncate font-mono text-xs tabular-nums text-muted-foreground">
-          {preview(flatten(live.text), TEXT_PREVIEW)}
-        </span>
+        <span className={css.liveText}>{preview(flatten(live.text), TEXT_PREVIEW)}</span>
       )}
     </>
   )

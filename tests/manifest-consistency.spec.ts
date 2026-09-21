@@ -83,10 +83,9 @@ function bundleId(file: string): string {
 
 /**
  * The lazy chunk bundles, DERIVED from the host route's registry (never
- * hand-mirrored: the hand-written list drifted twice — `locale` was missing
- * from both this list and a later `package.json#files` cleanup, and `tasks`
- * shipped without being listed at all, which would have made the Tasks page
- * fail to load from a published tarball).
+ * hand-mirrored: the hand-written list drifted once — `locale` was missing
+ * from both this list and a later `package.json#files` cleanup, so a
+ * published tarball could not serve it).
  */
 const CHUNK_FILES = CHUNK_NAMES.map(name => `lib/client-${name}.js`)
 
