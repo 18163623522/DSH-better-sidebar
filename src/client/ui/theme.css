@@ -44,6 +44,40 @@
  * host skin that re-paints a token is picked up live.
  */
 @theme inline {
+  /*
+   * TYPE SCALE = THE PLUGIN'S OWN, not Tailwind's default (14/12px). Every
+   * other surface of this plugin (files, changes, side chat, settings) is set
+   * at 12px body / 11px meta / 10px micro with 16-20px line heights, so the
+   * vendored components inherit that scale through the ordinary `text-sm` /
+   * `text-xs` classes instead of every page re-overriding them.
+   */
+  --text-xs: 0.6875rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.75rem;
+  --text-sm--line-height: 1.125rem;
+  --text-base: 0.8125rem;
+  --text-base--line-height: 1.25rem;
+  --text-lg: 0.875rem;
+  --text-lg--line-height: 1.375rem;
+
+  /*
+   * ELEVATION = TOKENS, AND ONLY WHERE THE PLUGIN USES IT. Static panels in
+   * this plugin are flat with a hairline border and a hover fill; only floating
+   * layers take the host's own elevation tokens (`--dsw-shadow-lv2/3`, the same
+   * ones the plugin's settings modal and popovers already wear).
+   */
+  --shadow-2xs: none;
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow-md: var(--dsw-shadow-lv2);
+  --shadow-lg: var(--dsw-shadow-lv3);
+  --shadow-xl: var(--dsw-shadow-lv3);
+
+  --color-border-subtle: var(--border-subtle);
+  --color-state-business-tertiary: var(--dsw-alias-state-business-tertiary);
+  --color-state-success-tertiary: var(--dsw-alias-state-success-tertiary);
+  --color-state-warn-tertiary: var(--dsw-alias-state-warn-tertiary);
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -110,8 +144,11 @@
   --accent-foreground: var(--dsw-alias-label-primary);
   --destructive: var(--dsw-alias-state-error-primary);
   --destructive-foreground: var(--dsw-alias-label-primary-foreground);
-  --border: var(--dsw-alias-border-l4);
-  --input: var(--dsw-alias-border-l4);
+  /* The plugin's own vocabulary: 1px borders are `border-l2` (10%), hairlines
+   * `border-l1` (4%). `l4` (16%) is noticeably darker than every other tab. */
+  --border: var(--dsw-alias-border-l2);
+  --border-subtle: var(--dsw-alias-border-l1);
+  --input: var(--dsw-alias-border-l2);
   --ring: var(--dsw-alias-state-business-primary);
   --success: var(--dsw-alias-state-success-primary);
   --warning: var(--dsw-alias-state-warn-primary);

@@ -4,11 +4,14 @@ import { cn } from "./utils"
 import { Slot } from "radix-ui"
 
 const badgeVariants = cva(
- "inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-full border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 [&>svg]:pointer-events-none [&>svg]:size-3",
+ "inline-flex h-[18px] w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-sm border border-transparent px-1.5 py-0 text-[11px] leading-none font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 [&>svg]:pointer-events-none [&>svg]:size-3",
  {
  variants: {
  variant: {
- default: "bg-primary text-primary-foreground [a&]:hover:bg-primary/90",
+ // LOCAL ADAPTATION: the plugin's own status chips are a FLAT TINT with the
+    // state ink (see sidebar.module.css `.explorerRowRevealed`), not a solid
+    // primary fill — a solid badge is the loudest thing on every row here.
+    default: "bg-state-business-tertiary text-state-business-primary [a&]:hover:bg-state-business-tertiary",
  secondary:
  "bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90",
  destructive:

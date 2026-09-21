@@ -47,8 +47,10 @@ const TOKEN_BRIDGE: Array<[shadcn: string, dsw: string]> = [
   ['--accent-foreground', '--dsw-alias-label-primary'],
   ['--destructive', '--dsw-alias-state-error-primary'],
   ['--destructive-foreground', '--dsw-alias-label-primary-foreground'],
-  ['--border', '--dsw-alias-border-l4'],
-  ['--input', '--dsw-alias-border-l4'],
+  // The plugin's own vocabulary: 1px borders are border-l2 (10%), hairlines
+  // border-l1 (4%). l4 is noticeably darker than every other tab's chrome.
+  ['--border', '--dsw-alias-border-l2'],
+  ['--input', '--dsw-alias-border-l2'],
   ['--ring', '--dsw-alias-state-business-primary'],
   ['--success', '--dsw-alias-state-success-primary'],
   ['--warning', '--dsw-alias-state-warn-primary'],
@@ -154,6 +156,9 @@ describe('tailwind entry: theme + utilities only', () => {
     // scale — never a paint value of its own.
     const definedElsewhere = new Set([
       ...TOKEN_BRIDGE.map(([name]) => name.slice(2)),
+      // Non-bridged locals the bridge forwards to (e.g. `--border-subtle`),
+      // read straight out of the file so they cannot drift out of the set.
+      ...[...withoutComments.matchAll(/^\s*--([a-z0-9-]+)\s*:/gm)].map(m => m[1]),
       'radius', 'radius-sm', 'radius-md', 'radius-lg', 'radius-xl',
     ])
     for (const declaration of withoutComments.matchAll(/^\s*(--[a-z0-9-]+):\s*([^;]+);/gm)) {
@@ -163,6 +168,9 @@ describe('tailwind entry: theme + utilities only', () => {
       const refName = reference?.[1]
       const ok = (refName !== undefined && (refName.startsWith('dsw-') || definedElsewhere.has(refName)))
         || /^[0-9.]+(?:px|rem|em|%)$/.test(value)
+        // `none` is how the plugin says "flat": static panels take no elevation
+        // (the floating layers map to the host's --dsw-shadow-lv* tokens).
+        || value === 'none'
       expect(ok, `${name}: ${value}`).toBe(true)
     }
   })
