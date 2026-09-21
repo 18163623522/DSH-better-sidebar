@@ -161,25 +161,33 @@ export function JobsDrawer(props: JobsDrawerProps): ReactNode {
                   <Tag tone={jobTone(job)}>{jobStatusLabel(job.status, t)}</Tag>
                   <span className={css.jobsMeta}>{secondary}</span>
                 </Button>
-                {job.status === 'running' && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className={css.jobsKill}
-                    data-armed={armed ? 'true' : 'false'}
-                    icon={<IconStopFill16 size={11} />}
-                    aria-label={armed ? t('jobKillConfirm') : t('jobKill')}
-                    title={armed ? t('jobKillConfirm') : t('jobKill')}
-                    disabled={killing}
-                    onClick={() => {
-                      if (armed) void kill(row)
-                      else setArmedId(job.id)
-                    }}
-                  >
-                    {armed ? t('jobKillConfirm') : undefined}
-                  </Button>
-                )}
-                {killFailed && <span className={css.jobsKillError}>{t('jobKillError')}</span>}
+                {/*
+                  The terminate column is reserved by EVERY row (settled ones
+                  included): the button lives inside a fixed 28px box, so
+                  revealing it on hover/focus or arming the confirm never
+                  re-flows the row's text.
+                */}
+                <span className={css.jobsKillSlot}>
+                  {job.status === 'running' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={css.jobsKill}
+                      data-armed={armed ? 'true' : 'false'}
+                      icon={<IconStopFill16 size={11} />}
+                      aria-label={armed ? t('jobKillConfirm') : t('jobKill')}
+                      title={armed ? t('jobKillConfirm') : t('jobKill')}
+                      disabled={killing}
+                      onClick={() => {
+                        if (armed) void kill(row)
+                        else setArmedId(job.id)
+                      }}
+                    >
+                      {armed ? t('jobKillConfirm') : undefined}
+                    </Button>
+                  )}
+                  {killFailed && <span className={css.jobsKillError}>{t('jobKillError')}</span>}
+                </span>
               </div>
             )
           })}
@@ -308,7 +316,7 @@ export function JobOutputPopoverContent(props: {
       {typeof state === 'object' && (
         <>
           {state.text.length > 0
-            ? <pre ref={preRef} className={css.popPre} data-popover-no-drag>{state.text}</pre>
+            ? <pre ref={preRef} className={`${css.popPre} ${css.jobPopPre}`} data-popover-no-drag>{state.text}</pre>
             : state.read
               ? <div className={css.popHint}>{t('jobNoOutput')}</div>
               : <div className={css.popHint}>{t('jobNotReadYet')}</div>}
@@ -316,15 +324,23 @@ export function JobOutputPopoverContent(props: {
         </>
       )}
       <div className={css.jobPopActions} data-popover-no-drag>
-        <Switch
-          checked={follow}
-          onChange={setFollow}
-          label={t('jobFollowTail')}
-          disabled={!live}
-        />
+        {/*
+          The host Switch draws a bare track, so its wording rides beside it —
+          the same `jobFollowTail` copy the switch already carries as its
+          accessible name.
+        */}
+        <span className={css.jobPopFollow}>
+          <Switch
+            checked={follow}
+            onChange={setFollow}
+            label={t('jobFollowTail')}
+            disabled={!live}
+          />
+          <span className={css.jobPopFollowLabel}>{t('jobFollowTail')}</span>
+        </span>
         {live && (
           <Button
-            variant={armed ? 'primary' : 'outline'}
+            variant="outline"
             size="sm"
             className={armed ? css.jobPopKillArmed : undefined}
             icon={<IconStopFill16 size={11} />}

@@ -418,17 +418,27 @@ export function SubagentView(props: {
   return (
     <div className={legacy.subagent} style={{ position: 'relative' }}>
       <div className={legacy.subagentHeader}>
-        <span className={legacy.subagentTitle}>
-          {t('subagent')}
-          {rootSummary?.displayTitle !== undefined && rootSummary.displayTitle !== ''
-            ? ` · ${rootSummary.displayTitle}`
-            : ''}
+        <span className={legacy.subagentHeading}>
+          <span className={legacy.subagentTitle}>{t('subagent')}</span>
+          {rootSummary?.displayTitle !== undefined && rootSummary.displayTitle !== '' && (
+            <>
+              <span className={legacy.subagentSep} aria-hidden="true">·</span>
+              {/*
+                The session the tree is rooted at: the header's subject, not the
+                page name. It yields first when the row runs out of room, and
+                carries the full title as a tooltip so a clipped one stays readable.
+              */}
+              <span className={legacy.subagentSubject} title={rootSummary.displayTitle}>
+                {rootSummary.displayTitle}
+              </span>
+            </>
+          )}
         </span>
         {countLabel !== undefined && <span className={legacy.subagentCount}>{countLabel}</span>}
         {/*
           The refresh control is the host ghost Button (28px) and carries the
-          plugin's control chrome; the module class only recenters it on the
-          baseline-aligned header row. Plain `title` rather than the host
+          plugin's control chrome; the module class only keeps it from being
+          squeezed by a long session title. Plain `title` rather than the host
           Tooltip: the Tooltip anchors by ref and the host Button forwards none.
         */}
         <Button

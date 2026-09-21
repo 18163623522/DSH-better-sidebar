@@ -12,16 +12,58 @@
 import type { TasksNode } from './tasks-model.ts'
 import { tasksEdges } from './tasks-model.ts'
 
-/** Geometry constants of the canvas (px, pre-scale). Metrics follow the
- *  approved Variant-D mockup, whose design target is the NARROW native right
- *  sidebar (~360px): a 132px card fits two per row plus the gutter. */
+/** Geometry constants of the canvas (px, pre-scale). The design target is the
+ *  NARROW native right sidebar (~360px): a 176px card fits two per row plus
+ *  the gutter. */
 export const GRAPH_NODE_W = 176
-/** Two title lines plus the mono meta line: the card clamps long agent names
- *  to two lines instead of ellipsizing them to a couple of characters, so the
- *  reserved height covers that (see NODE_TITLE in TasksGraph.tsx). */
-export const GRAPH_NODE_H = 68
-/** Extra height of an agent node carrying a live line. */
-export const GRAPH_LIVE_H = 14
+
+/**
+ * The card's heights are the SUM OF THE ROWS THE CARD RENDERS, in the real
+ * metrics of the page's type scale (the same numbers the rules in
+ * tasks-graph.module.css / tasks-canvas.module.css are written with). They are
+ * derived rather than hand-tuned because the card is a fixed-geometry box: its
+ * height is `auto` with `min-height: box.h`, so an under-reserved card does not
+ * stay inside the box the layout handed it — it RENDERS TALLER, and everything
+ * the layout derives from `box.h` (the row pitch, the phase frames, the canvas
+ * extent) then disagrees with the pixels on screen.
+ *
+ * Measured on the rendered page: a running teammate card carrying a two-line
+ * title, its meta, a live row and a task line renders 100px while the base
+ * reserve handed it 68 — `min-height` cannot hold it down, so the card ate
+ * 32px of the 53px gutter to the next row and poked out of its phase frame.
+ */
+const NODE_EDGE_H = 1
+const NODE_PAD_Y = 6
+/** Both edges' 1px outline plus the vertical padding (`.node` box-sizing). */
+const NODE_CHROME_H = 2 * (NODE_PAD_Y + NODE_EDGE_H)
+/** One title line — `--dsw-font-xxs-strong-12` (12px/18px). */
+const NODE_TITLE_LINE_H = 18
+/** Title lines the card reserves: the clamp in tasks-canvas.module.css. */
+const NODE_TITLE_LINES = 2
+/** The mono meta line — `--dsw-font-xxxs-11` (11px/14px) plus its 2px lead. */
+const NODE_META_H = 14 + 2
+/** One live row: LiveLine's 10px/1.3 tool row (or its meta-styled fallback)
+ *  plus the 3px lead. */
+const NODE_LIVE_H = 13 + 3
+/** LiveLine's flattened text row — a 10px line whose box measures 14px, plus
+ *  its 2px lead — which a tail carrying both a tool call and text renders
+ *  UNDER the tool row. */
+const NODE_LIVE_TAIL_H = 14 + 2
+/** The shared-task row: its 10px/1.3 line plus the 3px lead, sized for the
+ *  `+N` chip's own 1px outline (the tallest shape the row can take). */
+const NODE_TASK_H = 15 + 3
+
+/** TWO title lines plus the mono meta line: long agent names are clamped to
+ *  two lines instead of ellipsizing to a couple of characters (see NODE_TITLE
+ *  in TasksGraph.tsx), so the reserve covers that second line. */
+export const GRAPH_NODE_H = NODE_CHROME_H + NODE_TITLE_LINES * NODE_TITLE_LINE_H + NODE_META_H
+/** Extra height of a RUNNING agent node: the live row it always shows (a
+ *  running node without activity yet renders LiveLine's "thinking" fallback). */
+export const GRAPH_LIVE_H = NODE_LIVE_H
+/** Extra height of a running node whose tail carries text as well as a tool. */
+export const GRAPH_LIVE_TAIL_H = NODE_LIVE_TAIL_H
+/** Extra height of an agent node carrying a shared-task line (team members). */
+export const GRAPH_TASK_H = NODE_TASK_H
 
 /**
  * The readability floor the fit honours: the canvas may shrink to this scale
@@ -32,7 +74,8 @@ export const GRAPH_FIT_MIN_SCALE = 0.78
 export const GRAPH_GAP_X = 28
 export const GRAPH_GAP_Y = 53
 export const GRAPH_PAD = 16
-/** The row stride (one row of cards plus the vertical gutter). */
+/** The row stride (one row of cards plus the vertical gutter). Every card
+ *  shape must fit inside it — see {@link nodeHeight} for the tallest one. */
 export const GRAPH_ROW_STRIDE = GRAPH_NODE_H + GRAPH_LIVE_H + GRAPH_GAP_Y
 
 /** One laid-out node. */
@@ -58,13 +101,29 @@ export interface LayoutOptions {
 }
 
 /**
- * The display height of one node. Every RUNNING agent reserves the live-line
- * row: a running node without activity yet still renders the "thinking" line
- * (LiveLine's fallback), so reserving only when data arrived would clip it.
+ * The display height of one node: the base card plus one reserved row per
+ * line the card will actually render, so the pixels and the box agree (see
+ * the constants above for what a mismatch costs).
+ *
+ * - a RUNNING agent always reserves the live row: without activity yet it
+ *   still renders the "thinking" line (LiveLine's fallback), and a tail that
+ *   arrived with a tool call reserves its text row too;
+ * - an agent owning shared tasks (a team member) reserves the task row —
+ *   without it a two-line title, the meta and the task row render 16px below
+ *   the reserved box.
+ *
+ * The tallest shape therefore is base + live + live-tail + task, which stays
+ * inside {@link GRAPH_ROW_STRIDE} (rows can never overlap).
  */
 function nodeHeight(node: TasksNode): number {
-  if (node.kind === 'agent' && node.state === 'running') return GRAPH_NODE_H + GRAPH_LIVE_H
-  return GRAPH_NODE_H
+  if (node.kind !== 'agent') return GRAPH_NODE_H
+  let height = GRAPH_NODE_H
+  if (node.state === 'running') {
+    height += GRAPH_LIVE_H
+    if (node.live?.tool !== undefined && node.live.text !== undefined) height += GRAPH_LIVE_TAIL_H
+  }
+  if ((node.tasks?.length ?? 0) > 0) height += GRAPH_TASK_H
+  return height
 }
 
 /**

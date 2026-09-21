@@ -2,28 +2,44 @@
  * Unit tests for the layered graph layout: parent centering, depth rows, the
  * sibling-band WRAP that keeps a narrow sidebar readable (and the row
  * reservation that stops a wrapped band from landing on a sibling's
- * children), the live-line height, and the width-aware solver.
+ * children), the PER-SHAPE card height (the live rows and the shared-task row
+ * a card renders are reserved, so a card never renders outside its box), and
+ * the width-aware solver.
  */
 import { describe, expect, it } from 'vitest'
 import {
   GRAPH_GAP_Y,
   GRAPH_LIVE_H,
+  GRAPH_LIVE_TAIL_H,
   GRAPH_NODE_H,
   GRAPH_NODE_W,
   GRAPH_PAD,
   GRAPH_ROW_STRIDE,
+  GRAPH_TASK_H,
   bandColsFor,
   layoutTasksGraph,
   layoutTasksGraphForWidth,
 } from '../src/client/tasks-graph-layout.ts'
-import type { TasksAgentNode, TasksNode } from '../src/client/tasks-model.ts'
+import type { TasksAgentNode, TasksNode, TasksNodeTask } from '../src/client/tasks-model.ts'
 
-/** An agent node. */
-function agent(id: string, parentId?: string, live = false): TasksAgentNode {
+/** One shared task as the card's task line shows it. */
+function task(id: string): TasksNodeTask {
+  return { id, subject: id, status: 'in_progress', ready: true }
+}
+
+/** An agent node. `live` gives it a text-only tail; `extra` shapes the card
+ *  further (a settled state, a tool call, owned shared tasks). */
+function agent(
+  id: string,
+  parentId?: string,
+  live = false,
+  extra: Partial<TasksAgentNode> = {},
+): TasksAgentNode {
   return {
     kind: 'agent', id, ...(parentId === undefined ? {} : { parentId }),
     label: id, state: 'running', activity: 'running', current: false,
     ...(live ? { live: { text: 'x' } } : {}),
+    ...extra,
   }
 }
 
@@ -64,6 +80,50 @@ describe('layoutTasksGraph', () => {
     expect(layout.boxes.get('a')?.h).toBe(GRAPH_NODE_H + GRAPH_LIVE_H)
     expect(layout.width).toBeGreaterThan(3 * GRAPH_NODE_W)
     expect(layout.height).toBeGreaterThan(2 * (GRAPH_NODE_H + GRAPH_GAP_Y))
+  })
+
+  it('reserves the shared-task row a teammate card renders', () => {
+    // A non-running teammate with a task line renders two title lines + the
+    // meta line + the task row; the base card alone reserves 16px less, and
+    // the card (height auto) renders that much outside its own box — which is
+    // what the edges and the phase frames are placed from.
+    const nodes: TasksNode[] = [
+      agent('root'),
+      agent('mate', 'root', false, { state: 'idle', tasks: [task('t1')] }),
+    ]
+    const layout = layoutTasksGraph(nodes)
+    expect(layout.boxes.get('mate')?.h).toBe(GRAPH_NODE_H + GRAPH_TASK_H)
+    // Without tasks the card keeps the base shape.
+    const plain = layoutTasksGraph([agent('root'), agent('mate', 'root', false, { state: 'idle' })])
+    expect(plain.boxes.get('mate')?.h).toBe(GRAPH_NODE_H)
+  })
+
+  it('reserves the live tail row only when the tail carries a tool AND text', () => {
+    const nodes: TasksNode[] = [
+      agent('root'),
+      agent('tool-only', 'root', false, { live: { tool: { name: 'read', args: 'x' } } }),
+      agent('both', 'root', false, { live: { tool: { name: 'read', args: 'x' }, text: 'y' } }),
+    ]
+    const layout = layoutTasksGraph(nodes)
+    // One live row either way (the tool row, or the meta-styled thinking
+    // fallback); the flattened text row is the second one.
+    expect(layout.boxes.get('tool-only')?.h).toBe(GRAPH_NODE_H + GRAPH_LIVE_H)
+    expect(layout.boxes.get('both')?.h).toBe(GRAPH_NODE_H + GRAPH_LIVE_H + GRAPH_LIVE_TAIL_H)
+  })
+
+  it('keeps every card shape inside one row stride', () => {
+    // The stride is the row pitch: a card taller than it would overlap the
+    // next row (and its phase frame).
+    const tallest = GRAPH_NODE_H + GRAPH_LIVE_H + GRAPH_LIVE_TAIL_H + GRAPH_TASK_H
+    expect(GRAPH_ROW_STRIDE).toBeGreaterThanOrEqual(tallest)
+    const nodes: TasksNode[] = [
+      agent('root'),
+      agent('busiest', 'root', false, {
+        live: { tool: { name: 'read', args: 'x' }, text: 'y' }, tasks: [task('t1')],
+      }),
+    ]
+    const layout = layoutTasksGraph(nodes)
+    expect(layout.boxes.get('busiest')?.h).toBe(tallest)
   })
 
   it('gives every node a box even with a defensive orphan', () => {

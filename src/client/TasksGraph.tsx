@@ -1,11 +1,11 @@
 /**
- * The workflow-graph mode of the Tasks page (the approved Variant-D canvas):
- * layered agent/workflow nodes over bezier edges on a dotted grid, drag-pan
- * from the BACKGROUND only (never from a node — the mockup's rule; capturing
- * pointers on the container is what silently swallowed node clicks), wheel
- * zoom to the cursor, dashed phase frames, fold aggregate nodes, and the
- * bottom-right horizontal control cluster (view toggle / zoom out / level /
- * zoom in / fit) that stays reachable in BOTH modes.
+ * The workflow-graph mode of the Tasks page: layered agent / workflow nodes
+ * over bezier edges on a dotted grid, drag-pan from the BACKGROUND only
+ * (never from a node — capturing pointers on the container retargets the
+ * derived click and silently swallows node clicks), wheel zoom to the cursor,
+ * dashed phase frames, fold aggregate nodes, and the bottom-right horizontal
+ * control cluster (view toggle / fold / zoom out / level / zoom in / fit)
+ * that stays reachable in BOTH modes.
  *
  * Fitting: the canvas auto-fits while the reader has not touched the view,
  * re-running on container resize and layout growth (the sidebar mounts
@@ -13,8 +13,9 @@
  * on both axes and scaling UP to {@link FIT_MAX_SCALE} so a small tree fills
  * the narrow panel instead of hugging the top-left corner.
  *
- * Cards: the page sheet's node recipe with a TWO-line clamped title (the 68px
- * card reserve in tasks-graph-layout.ts is sized for that second line) and the
+ * Cards: the node card recipe of tasks-graph.module.css with a TWO-line
+ * clamped title (the card reserve in tasks-graph-layout.ts is sized for that
+ * second line, plus one row per live / task line the card renders) and the
  * full name in the `title` attribute. While the root catalog hydrates, an
  * empty canvas shows the same hint as the tree (`loading`).
  */
@@ -57,11 +58,12 @@ const FIT_MAX_SCALE = 1.15
 const CLICK_TOLERANCE_PX = 4
 
 /**
- * Card line 1 of an agent / run node: the page sheet's node title with the
+ * Card line 1 of an agent / run node: the canvas node title with the
  * truncation swapped for a TWO-line clamp — a single ellipsized line left too
- * few CJK characters to tell two siblings apart, and `GRAPH_NODE_H` in
- * tasks-graph-layout.ts reserves the card height for that second line. The
- * untruncated name stays in the `title` attribute.
+ * few CJK characters to tell two siblings apart, and `nodeHeight` in
+ * tasks-graph-layout.ts reserves the card height for that second line (plus
+ * one row per live / task line below it). The untruncated name stays in the
+ * `title` attribute.
  */
 const NODE_TITLE = canvasCss.nodeTitle
 /** The fold aggregate's title: the same clamp on the receding plain ink. */
@@ -95,7 +97,8 @@ export interface TasksGraphProps {
   loading?: boolean
 }
 
-/** The shared view-mode toggle (glyph + label, per the mockup). */
+/** The shared view-mode toggle (glyph + label) both modes render in their
+ *  bottom-right control cluster. */
 export function ViewModeToggle(props: {
   mode: 'graph' | 'tree'
   onModeChange(mode: 'graph' | 'tree'): void

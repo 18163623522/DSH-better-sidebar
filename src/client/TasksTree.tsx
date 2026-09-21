@@ -9,6 +9,11 @@
  * `[data-tasks-row]` focus order, ArrowUp / ArrowDown / Home / End focus moves,
  * Enter / Space activation, and the global fold aggregate (a fold row toggles
  * the whole page's fold state).
+ *
+ * Readability: rows sit on the page's 32px rhythm (a 2px accent bar marks the
+ * current session, hover is the native fill, settled rows recede), and every
+ * line that can be ellipsised carries its full text as `title` — the label, the
+ * workflow name and the fold previews.
  */
 import { useCallback, useMemo, useRef, type KeyboardEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
@@ -87,7 +92,8 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
     }
   }
 
-  /** One row plus its nested children (connector line per the mockup). */
+  /** One row plus its nested children (the connector line is drawn by
+   *  `.treeKids` in tasks-graph.module.css). */
   const renderNode = (node: TasksNode, depth: number): ReactNode => {
     const children = childrenOf.get(node.id) ?? []
     const row = node.kind === 'fold'
@@ -111,7 +117,9 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
                 {t(folded ? 'tasksFoldExpand' : 'tasksFoldCollapse')}
               </span>
             </span>
-            <span className={css.treeMeta}>{foldPreviews(node.previews)}</span>
+            <span className={css.treeMeta} title={foldPreviews(node.previews)}>
+              {foldPreviews(node.previews)}
+            </span>
           </span>
         </div>
       )
@@ -131,10 +139,10 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
               activateOnKey(event, () => { onWorkflowInfo(node, event.currentTarget as HTMLElement) })
             }}
           >
-            <StateDot state={node.run.status === 'running' ? 'ongoing' : 'done'} size={6} />
+            <StateDot className={css.treeDot} state={node.run.status === 'running' ? 'ongoing' : 'done'} size={6} />
             <span className={css.treeGlyph} aria-hidden="true"><WorkflowGlyph /></span>
             <span className={css.treeContent}>
-              <span className={css.treeTitle}>{node.run.name}</span>
+              <span className={css.treeTitle} title={node.run.name}>{node.run.name}</span>
               <span className={css.treeMeta}>{workflowMeta(node)}</span>
             </span>
           </div>
@@ -158,10 +166,10 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
               activateOnKey(event, () => { onNodeInfo(node, event.currentTarget as HTMLElement) })
             }}
           >
-            <StateDot state={nodeDotState(node.state)} size={6} />
+            <StateDot className={css.treeDot} state={nodeDotState(node.state)} size={6} />
             <span className={css.treeGlyph} aria-hidden="true"><AgentGlyph node={node} /></span>
             <span className={css.treeContent}>
-              <span className={css.treeTitle}>{node.label}</span>
+              <span className={css.treeTitle} title={node.label}>{node.label}</span>
               <span className={css.treeMeta}>{agentMeta(node)}</span>
               {node.state === 'running' && <LiveLine live={node.live} />}
               <TaskLine tasks={node.tasks} onOpenTask={onOpenTask} />

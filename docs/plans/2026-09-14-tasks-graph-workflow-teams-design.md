@@ -4,7 +4,7 @@
 
 ## 背景与目标
 
-DSH 0.1.5-rc.2 引入两个新的可观测面：**workflow**（`dsh-tool-workflow` 的 run/agent 生命周期事件）与 **Agent Teams**（实验层，`ctx.agentTeams` 的共享任务板）。任务管理页（原「子代理拓扑」）系统性地接纳两者，并按用户确认的「简洁后现代主义」方向重构为 **Variant D 工作流图**：分层节点 + 贝塞尔连线、拖拽平移、滚轮缩放、右下角控制条、已完成节点折叠聚合、点击浮窗取代页内 dock。
+DSH 0.1.5-rc.2 引入两个新的可观测面：**workflow**（`dsh-tool-workflow` 的 run/agent 生命周期事件）与 **Agent Teams**（实验层，`ctx.agentTeams` 的共享任务板）。任务管理页（原「子代理拓扑」）系统性地接纳两者，并按用户确认的「简洁后现代主义」方向重构为**工作流图**：分层节点 + 贝塞尔连线、拖拽平移、滚轮缩放、右下角控制条、已完成节点折叠聚合、点击浮窗取代页内 dock。
 
 用户确认的关键交互决策（问答摘要）：
 
@@ -12,7 +12,7 @@ DSH 0.1.5-rc.2 引入两个新的可观测面：**workflow**（`dsh-tool-workflo
 2. 节点点击 = 跳转转录；ⓘ = 详情浮窗。
 3. 后台任务输出 = 锚定浮窗（替换页内底部 dock）。
 4. 自动折叠**只**作用于后台任务抽屉，阈值 8 个代理；图节点的折叠是「已完成」语义的折叠聚合，点击展开、控制条可再折叠。
-5. 图/树切换按钮在**两种模式下都可用**（mockup 的 toggle 藏在画布容器内、树模式下无法切回——真实实现把控制条移出滚动面）。
+5. 图/树切换按钮在**两种模式下都可用**（早期设计稿把 toggle 藏在画布容器内、树模式下无法切回——真实实现把控制条移出滚动面）。
 6. 默认视图由设置 select 决定（默认工作流图），页内切换为临时态。
 7. 任务板 v1 只做基础操作（完成/重开/删除/改派/新建/编辑，CAS）。
 
@@ -69,7 +69,7 @@ client 半（src/client/）
 - **workflow 无事件 = 空列表不是错误**：旧会话/无 workflow 会话静默为空（jobs 镜像同款语义）。
 - **fold 规则**：per-parent 的「已完成/出错的**叶子** agent」折叠为一个聚合节点；当前会话、teammate、有子节点的、run 节点**永不折叠**（折叠父节点会藏住活跃分支）。
 - **树/图同一模型**：fold 状态、团队富化、run 重挂两种模式共享——不会视觉漂移。
-- **控制条移出滚动面**：图模式的缩放按钮与图/树切换都在视图容器级（绝对定位右下），树模式下缩放按钮不渲染但切换在（mockup bug 的教训，有测试守护）。
+- **控制条移出滚动面**：图模式的缩放按钮与图/树切换都在视图容器级（绝对定位右下），树模式下缩放按钮不渲染但切换在（早期实现把它放进滚动面、树模式下切不回去——有测试守护）。
 - **页内视图切换是临时态**，默认视图走 `tasksViewMode` pref（schemastery `z.union([z.const('graph'), z.const('tree')])`——schemastery 无 `z.enum`）。
 - **AnchoredPopover 不复用 primitives 的 HoverCard**：浮窗需要持久交互（任务板表单、输出滚动），HoverCard 是悬停语义；关闭契约（外部 mousedown / Escape / anchor 离屏的 IntersectionObserver）沿用 selection-popup 已验证的模式。
 - **主题硬阴影用 `color-mix(in srgb, var(--dsw-alias-border-l1) 55%, transparent)`**：后现代硬投影但颜色全部出自令牌（theme.spec 只守 `color:`，皮肤契约的精神照旧满足）。
@@ -90,17 +90,17 @@ client 半（src/client/）
 
 | 反馈 | 根因 | 修法 |
 |---|---|---|
-| 「按钮和文本的颜色不对，不够后现代」 | 新 CSS **17 处裸用 `var(--dsw-alias-accent)`——该令牌在 DSH 主题里不存在**（旧文件的用法都带 fallback 才没暴露），声明被浏览器整条丢弃；容器边框用的 `border-l1` 只有 4% 黑，几乎不可见 | accent → `--dsw-alias-state-business-primary`；容器边 → `--dsw-alias-border-l4`（16%）；整体改回 mockup 语言：ink 边框、3px 硬投影、mono 微型字 + 字距大写标签、点阵画布、横向缩放条 |
+| 「按钮和文本的颜色不对，不够后现代」 | 新 CSS **17 处裸用 `var(--dsw-alias-accent)`——该令牌在 DSH 主题里不存在**（旧文件的用法都带 fallback 才没暴露），声明被浏览器整条丢弃；容器边框用的 `border-l1` 只有 4% 黑，几乎不可见 | accent → `--dsw-alias-state-business-primary`；容器边 → `--dsw-alias-border-l4`（16%）；整体回到设计稿语言：ink 边框、3px 硬投影、mono 微型字 + 字距大写标签、点阵画布、横向缩放条 |
 | 「点 ⓘ 没反应 / 图里点不动（树能点）」 | 画布 `pointerdown` 里对容器 `setPointerCapture`，捕获把派生 click 重定向到容器，节点永远收不到点击（jsdom 不模拟捕获语义，所以单测全绿——**只有真实浏览器能暴露**） | 去掉 capture，pan 仅从背景起手（`closest('[data-graph-node]'/'[data-graph-controls]')` 直接返回），监听挂 window |
 | 「图很小 / 不在中间 / 任务板没显示」 | fit 在容器为 0 尺寸时静默放弃且不再重试；只居中横轴、上限 1.0；窄面板里 5 个兄弟节点挤成 770px 宽 → 缩到 35% | ResizeObserver + 首次非零尺寸补 fit、双轴居中、`FIT_MIN_SCALE=0.78` 可读性下限；**按容器宽度求解排布**（`layoutTasksGraphForWidth`：先取仍满足可读性预算的最宽排布，只有窄到 ≤1 列才允许 20% 横向溢出）；任务板改为**常驻可见条**（不再藏在 chip 后） |
 | 「卡片信息过多过杂，都被省略看不见」 | 卡片同时塞 displayTitle + 模式 + 状态 + 模型 + live 文本，132px 宽（窄面板的目标宽度）下全部省略号 | 卡片只留三层：标题（1 行）/ mono 元信息（模式或模型 · 状态）/ live 行（仅运行中）；其余（会话标题、team 角色、模型全名、最新文本、跳转）进 ⓘ 浮窗 |
-| 「非常窄，非常挤」 | 设计按宽画布做，未以原生右侧栏窄宽为目标 | 度量全部改按 mockup 的 360×660 基准（卡片 132×46、行距 112）；行高/间距/字号显式声明（宿主 body 行高曾把行撑高）；`user-select: none` 防拖拽选中文本 |
+| 「非常窄，非常挤」 | 设计按宽画布做，未以原生右侧栏窄宽为目标 | 度量全部改按窄栏基准（卡片 132×46、行距 112）；行高/间距/字号显式声明（宿主 body 行高曾把行撑高）；`user-select: none` 防拖拽选中文本 |
 
 回归面：`tests/tasks-page.spec.tsx` 增 3 例（背景 pointerdown 后节点仍可激活、节点上的手势绝不启动 pan、团队任务板无需点击即常驻可见）；`tests/tasks-graph-layout.spec.ts` 重写 9 例（band 换行、换行 band 不得压到兄弟子树行、宽度求解两段式、运行时预留 live 行）。
 
 ### 本地可视化自检 harness（未入库，`tmp-visual/`，git-excluded）
 
-真实浏览器里的组件级回归无法靠 jsdom 覆盖（点击捕获、fit/居中、主题令牌解析都是浏览器行为）。harness 用 esbuild 把**真实组件** + mockup 形状的 fixture（走 `buildTasksModel`，因此折叠/重挂/富化都真实生效）打包进一个页面，注入从 `dsh-client-ui-theme` 抽出的令牌 CSS，`@deepseek-ai/dsh-client-ui-primitives` 别名到轻量桩（避免把 katex/shiki 资源拖进截图包），再由 Playwright 在 360px / 720px 两档宽度截图并断言：节点点击回调、ⓘ 回调、背景拖拽平移量。本次返工的四条反馈里有三条正是它先复现、修完再确认的。
+真实浏览器里的组件级回归无法靠 jsdom 覆盖（点击捕获、fit/居中、主题令牌解析都是浏览器行为）。harness 用 esbuild 把**真实组件** + 与 `buildTasksModel` 同形状的 fixture（走同一个模型，因此折叠/重挂/富化都真实生效）打包进一个页面，注入从 `dsh-client-ui-theme` 抽出的令牌 CSS，`@deepseek-ai/dsh-client-ui-primitives` 别名到轻量桩（避免把 katex/shiki 资源拖进截图包），再由 Playwright 在 360px / 720px 两档宽度截图并断言：节点点击回调、ⓘ 回调、背景拖拽平移量。本次返工的四条反馈里有三条正是它先复现、修完再确认的。
 
 ## 第二轮返工（2026-09-14 深夜，13 条反馈）
 
@@ -132,8 +132,9 @@ i18n：本轮新增 19 条文案，zh/en/ja + 18 份第三语言词典同步（`
 |---|---|
 | `TaskPopover` | 任务板行、节点任务行、节点详情任务清单、新建按钮（4 处） |
 | `MultilineField` | 任务描述编辑（宿主 primitives 无多行输入，故自建） |
-| `TaskCreateButton` | 任务板 / 其它入口共用同一外观 |
 | `AgentGlyph` / `WorkflowGlyph` / `FoldGlyph` / `TaskLine` | 图与树两种模式共用 |
+
+> **回退后修订**：上表与上一行提到的 `TaskCreateButton` 已删除——它唯一的调用方就是任务板，包一层没有收益；任务板的「新建」现在直接是宿主 outline `Button` + `IconPlusOutline16`（同一文案键 `teamTaskCreate`）。`TaskWindow` / `TaskPopover` / `MultilineField` / `OwnerPicker` 不变。
 
 ## 验证结果（2026-09-14）
 
@@ -147,264 +148,13 @@ PR：[#680](https://github.com/omdsh-dev/DSH-better-sidebar/pull/680)（分支 `
 
 未在本机自动化验证、留给用户实机确认的一项：3384 桌面应用**重启后**的 UI 级复看（新 bundle 已装进 `~/.dsh/profiles/web`，与仓库构建产物 SHA-256 一致）。
 
-## shadcn/ui 迁移（2026-09-17，视觉基座替换）—— 已废弃
-
-> **已废弃（2026-09-21 整体回退）**：本节及其后全部子节（依赖与实际版本 / Tailwind 接入方式 / 令牌映射表 / vendored 组件清单 / 阴影策略 / 体积与 mount 结果 / 真机排障 / stock 风格回调 / 升级路径与本地适配清单 / 页面重组）记录的是 2026-09-17–09-21 期间任务页的 shadcn/ui 视觉基座。该基座已整体回退到插件自有体系，回退根因见文末「回退：任务页回到插件自有体系（2026-09-21，shadcn 层废弃）」。保留全文只为留下排障现场与决策证据——**其中描述的接入方式不再是本仓库或消费插件的建议做法**。
-
-三轮返工把**行为**收敛到位（统一的详情窗口、常驻任务板、可拖动浮窗），但**视觉基座**仍是自建：
-
-- 每张卡片 / 每个节点 / 每行都是一次手写样式，同一种「卡片」在四个文件里有四份近似声明；
-- 卡片自带 `color-mix()` 硬投影与描边，节点一多**满屏阴影相互叠加**，正是「辣眼睛」的根因（阴影是层级手段，被当成了装饰）；
-- 控件形态靠逐处微调对齐，hover / focus-visible / disabled 三态在不同文件里覆盖程度不一。
-
-处置不是再打磨一轮自建样式，而是**换基座**：把 shadcn/ui 的组件源码 vendoring 进 `src/client/ui/`，样式统一由 Tailwind v4 工具类产出，颜色统一走 shadcn 语义令牌 → `--dsw-*` 的桥接，**静态面板零阴影**（层级改由 1px hairline + 表面阶梯承载）。行为语义、稳定钩子、i18n 全部不变，因此这次迁移对上层是不可见的。
-
-### 依赖与实际版本
-
-| 包 | 版本 | 归属 | 作用 |
-|---|---|---|---|
-| `radix-ui` | `^1.6.7` | dependencies | vendored 组件的无样式原语（聚合包，不是 `@radix-ui/react-*` 一族） |
-| `class-variance-authority` | `^0.7.1` | dependencies | `buttonVariants` / `badgeVariants` / `toggleVariants` 的变体表 |
-| `clsx` | `^2.1.1` | dependencies | `cn()` 的条件拼装 |
-| `tailwind-merge` | `^3.7.0` | dependencies | `cn()` 的同族工具类去重（调用方的 `px-4` 胜过组件默认的 `px-2`） |
-| `tailwindcss` | `^4.3.3` | devDependencies | v4 引擎（只构建期用；运行期产物是编译后的 CSS） |
-| `@tailwindcss/postcss` | `^4.3.3` | devDependencies | 构建管线，被 `tsdown.config.ts` 与 `scripts/ui-css.mjs` 共用 |
-| `postcss` | `^8.5.26` | devDependencies | 上面的宿主管线 |
-
-`components.json`（CLI 上下文，非运行期配置）：`style: new-york` / `base: radix` / `rsc: false` / `css: src/client/ui/theme.css`，`aliases` 全部指向 `src/client/ui`——**所以 CLI 的默认 `@/lib/utils` 不会出现在这个仓库**（见下文「统一改动」第 2 条）。
-
-CLI 曾顺手注入一个 `cn: ^0.3.0` 依赖（npm 上真实存在的同名包，仓库里无任何 import）——已删除并 `pnpm install` 重同步 `pnpm-lock.yaml` / `node_modules`。
-
-### Tailwind 接入方式
-
-入口是唯一的：`src/client/ui/theme.css`，编译有**两个**消费方但只有一份定义（`tsdown.config.ts` 导出 `compileTailwind()`，`scripts/ui-css.mjs` 复用它产出可视化 harness 的 `tailwind.css`）：
-
-```
-src/client/ui/theme.css ──┬─ tsdown css-inline 插件（生产）→ 内联进 lib/client.js 的 <style data-plugin>
-                          └─ scripts/ui-css.mjs（pnpm ui:css，仅本地 harness）
-```
-
-**为什么只引 `theme` + `utilities`**：插件注入的样式表是**全局 `<style data-plugin>`**（`injectTag()`，无 shadow DOM）。Tailwind 的完整入口 `@import "tailwindcss"` 会连带 preflight，而 preflight 的 `*,::before,::after { box-sizing; margin: 0; padding: 0; border: 0 solid }` 与 `html { -webkit-text-size-adjust }` 是对**整张 DSH 宿主页面**的重置——会话正文、原生右侧栏、设置页全部会被改版。所以只引：
-
-```css
-@import "tailwindcss/theme.css" layer(theme);
-@import "tailwindcss/utilities.css" layer(utilities);
-@source "../**/*.tsx";
-```
-
-`@source` 是**显式**的：不给它，Tailwind 会以项目根为扫描面，把 `lib/`、`tests/`、`node_modules/` 里像类名的字符串也算进产物（既胖又不可控）。它只扫 `src/client/**/*.tsx`。
-
-**深浅主题**：`@custom-variant dark (&:where([data-ds-dark-theme], [data-ds-dark-theme] *))` —— DSH 的主题翻转是给 `<body>` 打 `data-ds-dark-theme`，不是加 `.dark` 类（不给这条 `@custom-variant`，Tailwind 的 `dark:` 变体会去找 `.dark` 祖先，在本宿主里**永远不会命中**）。但**本次迁移把所有 `dark:` 覆写都删了**：`--dsw-*` 令牌本身就随主题翻转，再写一遍 `dark:` 是双重记账（上游 `dark:bg-destructive/60`、`dark:border-input`、`dark:aria-invalid:ring-destructive/40`、`dark:hover:bg-accent/50` 全属此类）。`@custom-variant` 保留是为了将来确需「令牌之外」的主题分支时有正确锚点。
-
-**级联层与 `dsw-tasks` 作用域根类**（这一条是本仓库特有的坑）：宿主的样式表是**无层级（unlayered）**的，而无层级声明**优先于任何 `@layer` 内的声明**——与特异性无关。也就是说 `layer(utilities)` 里的 `.rounded-md` 打不过宿主任何一条裸元素规则。补偿手段是把页面自己的补偿规则放进层里但抬到**类特异性**，并挂在 **`.dsw-tasks`**（任务页根类，`SubagentView` 的页面根 + `TaskWindow` 的内容根）上：
-
-```css
-@layer base {
-  .dsw-tasks { color: var(--dsw-alias-label-primary); }
-  .dsw-tasks :where(button, input, textarea, select) { font: inherit; }
-  .dsw-tasks :where(*, *::before, *::after) { box-sizing: border-box; }
-  .dsw-tasks :where(a, button, input, textarea, select, [tabindex]):focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 1px; }
-}
-```
-
-`:where()` 把元素重置压回类特异性，所以这几条既到得了页面内的元素，又**不越出 `.dsw-tasks`**——用作用域根类换回了 preflight 里真正需要的三条（`box-sizing` / 控件继承字体 / 前景色），代价是不碰宿主页面。附带的两组：`@layer utilities` 里的细滚动条（走 `--dsw-alias-scrollbar-*`）与 `@media (prefers-reduced-motion: reduce)` 的动效全量关闭。
-
-**`radix-ui` 的入口解析**：`tsdown.config.ts` 把 `module`/`browser` 放在 `mainFields` 首位（`react-remove-scroll` 家族的 `main` 是 `dist/es5`），并给 `tailwind-merge` 加显式 alias（它的 exports map 把 `require` 列在 `import` 之前，会解析到不可 tree-shake 的 `bundle-cjs.js`）。
-
-### shadcn 令牌 → `--dsw-*` 映射表
-
-`theme.css` 的 `:root` 是唯一的桥。每个值都是 `var(--dsw-…)` 引用，**没有颜色字面量**；`@theme inline` 把这些名字再接成 Tailwind 的 `--color-*`（`inline` 保证产物里留着 `var(--background)` 这层间接，宿主皮肤改令牌能立刻生效）。
-
-| shadcn 令牌 | DSH 令牌 | 备注 |
-|---|---|---|
-| `--background` | `--dsw-alias-bg-base` | |
-| `--foreground` | `--dsw-alias-label-primary` | 正文墨色第 1 档 |
-| `--card` | `--dsw-alias-bg-layer-1` | 表面阶梯第 2 级（静态面板） |
-| `--card-foreground` | `--dsw-alias-label-primary` | |
-| `--popover` | `--dsw-alias-bg-layer-2` | 表面阶梯第 3 级（浮层） |
-| `--popover-foreground` | `--dsw-alias-label-primary` | |
-| `--primary` | `--dsw-alias-state-business-primary` | 只给主操作 / 焦点环 / 进行中 |
-| `--primary-foreground` | `--dsw-alias-label-primary-foreground` | |
-| `--secondary` | `--dsw-alias-interactive-bg-hover` | |
-| `--secondary-foreground` | `--dsw-alias-label-primary` | |
-| `--muted` | `--dsw-alias-interactive-bg-hover` | |
-| `--muted-foreground` | `--dsw-alias-label-secondary` | 墨色第 2 档 |
-| `--accent` | `--dsw-alias-interactive-bg-hover` | |
-| `--accent-foreground` | `--dsw-alias-label-primary` | |
-| `--destructive` | `--dsw-alias-state-error-primary` | 错误 / 删除 |
-| `--destructive-foreground` | `--dsw-alias-label-primary-foreground` | 上游此处是 `text-white`（迁移时删掉的唯一颜色字面量） |
-| `--border` | `--dsw-alias-border-l4` | 1px hairline 的来源 |
-| `--input` | `--dsw-alias-border-l4` | |
-| `--ring` | `--dsw-alias-state-business-primary` | |
-| `--success` | `--dsw-alias-state-success-primary` | 非 stock shadcn，任务状态需要 |
-| `--warning` | `--dsw-alias-state-warn-primary` | 非 stock shadcn，阻塞 / 审批需要 |
-| `--foreground-3` | `--dsw-alias-label-tertiary` | 墨色第 3 档（靠重量分层，不靠色数） |
-| `--border-strong` | `--dsw-alias-label-tertiary` | 需要更实的分隔时用 |
-
-圆角是唯一不来自令牌的一组（`--radius` 6px / `sm` 4px / `md` 6px / `lg` 8px / `xl` 12px，纯几何，与皮肤无关）；字体走 `--font-sans: var(--dsw-font-family-default)` / `--font-mono: var(--dsw-font-family-code)`，所以插件不可能与 DSH 的字阶漂移。
-
-### vendored 组件清单与对上游的每处改动
-
-安装命令（16 个组件，17 个文件——`toggle.tsx` 是 `toggle-group` 的 cva 依赖，随 `add` 一起到达）：
-
-```
-npx -y shadcn@latest add button card badge separator input textarea tooltip popover \
-  dropdown-menu scroll-area collapsible toggle-group skeleton spinner empty
-```
-
-按**消费面**清点（`src/client/ui/` 下 18 个文件：16 个组件 + `toggle.tsx` + `utils.ts`）：
-
-> **两个当前无消费者的文件**：`popover.tsx` 与 `skeleton.tsx`。浮层全部走自建的 `AnchoredPopover`（它需要锚定 + 拖动 + 关闭契约，shadcn popover 是 portal 语义，两者不通用），加载态走 `Spinner`。二者按简报要求随 `add` 一起 vendoring 进来，**保留原样**——但「保留」不等于「发货」：实测 `lib/client.js` 里**这两个模块的代码与 `@radix-ui/react-popover` 全部缺席**（rollup 按 import 图 tree-shake；`toggle.tsx` 则相反，`toggle-group` 只取 `toggleVariants`，模块在包内而 `Toggle` 组件不在）。若下次复盘确认仍无消费者，删除这两个文件是纯收益（少两份要跟上游 diff 的源码）。
-
-| 文件 | 实际消费者 | 上游改动摘要 |
-|---|---|---|
-| `button.tsx` | JobsDrawer / SubagentView（别名 `UiButton`）/ TaskWindow / TasksGraph / TasksPopovers | 删 `link` 变体与 `xs` / `lg` / `icon-xs` / `icon-sm` / `icon-lg` 尺寸；`outline` 去掉 `shadow-xs` |
-| `card.tsx` | TaskWindow / TasksGraph / TasksPopovers / TeamBoard | 去掉卡片阴影（静态面板零阴影） |
-| `badge.tsx` | JobsDrawer / TaskWindow / TasksGraph / TasksPopovers / TeamBoard | 删 `ghost` / `link` 变体；`text-white` → `--destructive-foreground` |
-| `separator.tsx` | TaskWindow / TasksPopovers / TeamBoard | 无（保留 `data-slot` 与 orientation 数据属性） |
-| `input.tsx` | TaskWindow | 删上游 7 条 `file:` 变体工具类 |
-| `textarea.tsx` | TaskWindow | 无 |
-| `tooltip.tsx` | SubagentView / TasksGraph | 删 `dark:` 覆写 |
-| `popover.tsx` | **无消费者**（见下） | 只保留 `shadow-md`（真浮层）、删 `dark:` 覆写；删 `PopoverHeader` / `PopoverTitle` / `PopoverDescription` |
-| `dropdown-menu.tsx` | TeamBoard（改派负责人子菜单） | 删 `DropdownMenuCheckboxItem` / `DropdownMenuRadioGroup` / `DropdownMenuRadioItem`（无消费者，顺带消灭唯一的 `CircleIcon` 用法）、删 `DropdownMenuShortcut`；保留 `Sub` 家族；子菜单箭头换宿主图标；`shadow-md` / `shadow-lg` 保留（真浮层） |
-| `scroll-area.tsx` | JobsDrawer / TasksTree | 无 |
-| `collapsible.tsx` | JobsDrawer / TasksTree | 无 |
-| `toggle-group.tsx` | TaskWindow / TeamBoard | 删 `shadow-none`；`src/client/ui/toggle` → `./toggle` |
-| `toggle.tsx` | 无直接消费者（`toggle-group` 的 cva 依赖） | 删 `lg` 尺寸；`toggleVariants` 保留 |
-| `skeleton.tsx` | **无消费者**（见上） | 无 |
-| `spinner.tsx` | TasksTree | **重建**在宿主 `IconLoadingOutline16` 上（上游用 `Loader2Icon`），可访问状态包一层 `role="status"` |
-| `empty.tsx` | SubagentView / TeamBoard | 删 `dark:` 覆写 |
-| `utils.ts` | 全部 vendored 组件 | CLI 重建后重写（`clsx` + `twMerge`） |
-
-逐条列出六类**统一改动**（每处在文件里都有注释说明理由）：
-
-1. **图标一律换宿主 primitives**：删掉 `lucide-react` 后，vendored 文件里只剩两处图标 import——`spinner.tsx` 的 `IconLoadingOutline16`（并据此重建了组件）与 `dropdown-menu.tsx` 的 `IconChevronRightOutline14`（子菜单箭头）。**没有新写一个 SVG**。宿主图标渲染的就是 `svg`，所以组件里的 `[&_svg]` / `[&_svg:not([class*='size-'])]:size-4` 选择器照旧成立。
-2. **`import { cn } from "cn"` → `./utils`**（全部 16 个文件）：CLI 默认写的是 `cn` 这个**npm 上真实存在的包名**，本项目没有该依赖；同时 `toggle-group` 的 `src/client/ui/toggle` 改成相对路径 `./toggle`。全目录不再有 `@/lib/utils` 与裸包名 alias。
-3. **删所有 `dark:` 颜色覆写**（理由见上）。
-4. **非浮层变体删 `shadow-*`**：上游给 `card`（`shadow-sm`）/ `input`（`shadow-xs`）/ `textarea`（`shadow-xs`）/ `toggle`（outline 的 `shadow-xs`）/ `toggle-group`（`shadow-xs` + `data-[spacing=0]:shadow-none`）/ `button`（outline 的 `shadow-xs`）都带了投影，全部删除。迁移后全目录只剩三处 `shadow-*`：`popover.tsx` 一处 `shadow-md`、`dropdown-menu.tsx` 的 `shadow-md` 与 `shadow-lg`。**静态面板零阴影是设计语言，不是遗漏。**
-5. **删无消费者的变体 / 尺寸 / 子组件**：`button` 的 `link` + 5 个尺寸、`badge` 的 `ghost` / `link`、`toggle` 的 `lg`、`popover` 的 `PopoverHeader` / `PopoverTitle` / `PopoverDescription`、`dropdown-menu` 的 `DropdownMenuShortcut`。它们都是**运行期对象里的类字符串**，留着就会进 bundle。
-6. **`input.tsx` 的 `file:` 类删除是双重理由**：页面没有 `<input type="file">` 面，且它们编译出 `::file-selector-button` 选择器——那正是 Tailwind preflight 的特征串，构建产物守卫用它证明「preflight 从未入包」。保留这 7 条会让该守卫**永远误报**。守卫本身也据此收紧了识别方式：改判「chunk CSS 里的重置声明负载 + html 块」，而不是选择器拼写（`tests/ui-bundle.spec.ts` 的 docstring 记录了这次修正）。
-
-外加上游 CLI 之外的两件事：`package.json` 删除 CLI 注入的 `cn` 依赖；`theme.css` 与 `utils.ts` 曾在迁移中误删，按同一定义重建并重新逐条复核（两者都由 `tests/ui-foundation.spec.ts` 完整守护，重建后全绿）。
-
-### 阴影策略（静态面板零阴影，仅浮层）
-
-层级由「重量」承担：1px `border-border` hairline + 表面阶梯（`background` → `card`/`layer-1` → `popover`/`layer-2`）+ 三档墨色。**阴影只允许出现在真正浮动、由自己的锚定几何定位的层**：
-
-| 允许阴影 | 位置 |
-|---|---|
-| `AnchoredPopover`（`shadow-lg`） | 任务窗口 / 节点详情 / 输出浮窗的外壳（自建锚定 + 拖动） |
-| `ui/popover.tsx`（`shadow-md`） | portal 渲染的 shadcn popover |
-| `ui/dropdown-menu.tsx`（`shadow-md` / `shadow-lg`） | portal 渲染的菜单与子菜单 |
-| `ui/tooltip.tsx`（**白名单成员但当前不带阴影**） | portal 渲染的 tooltip 本来就是实心 `bg-foreground` 反色块，不需要投影；列入 `FLOATING_FILES` 只是承认它是浮层 |
-
-守护是**源码级**的（`tests/ui-shadows.spec.ts`）：`STATIC_PANEL_FILES`（页面内布局的 10 个文件）不得出现任何 Tailwind 阴影工具类，`FLOATING_FILES` 是唯一白名单，且最后一条断言要求白名单**不空转**（`AnchoredPopover` 必须真的带阴影，否则白名单在替别处的回归打掩护）。`box-shadow` 声明式写法同样被禁。
-
-### 实测体积与 mount 结果（含返工：把任务页下沉为懒加载 chunk）
-
-第一次门禁的唯一未达成项是体积：迁移后 `lib/client.js` **1452623 bytes（1418.6 KiB）**，比基线 +457.6 KiB，超出计划里 +250 KiB 的预算。定位结论是**浮层栈的固有成本**（`radix-ui` 的 popover / dropdown-menu / tooltip / scroll-area / collapsible 一族 + `floating-ui` + `react-remove-scroll` + `tailwind-merge`，逐生成行归属：浮动层 263.9 KiB、tailwind-merge 59.4 KiB）。
-
-处置不是放宽预算，而是**把这层负载移出启动路径**：任务页（工作流图 + 树 + 任务窗口 + 团队任务板 + 后台任务抽屉 + 整个 vendored shadcn 层与其样式表）整体下沉为既有的懒加载 chunk——
-
-- `src/client/chunks/tasks.tsx` 只 re-export `SubagentView`，并 `import '../ui/theme.css'`（Tailwind 产物随 chunk 走，不占核心包）；
-- `CHUNK_NAMES`（`src/bundle-route.ts`）与 `CHUNKS`（`tsdown.config.ts`）与 `ChunkName`（`chunk-loader.ts`）各加一个 `tasks`，产出 `lib/client-tasks.js`，经 `/sidebar/bundle/tasks.js` 按需下发；
-- 任务页的 tab 描述符改用 `lazyChunkComponent('tasks', mod => mod.SubagentView)`（与终端同款机制：加载中显示占位、失败显示重试），**核心包不再静态 import 任何 chunk 入口**；
-- 从未打开任务页的用户完全不下载这 700 KiB；stub/树/浮窗的既有 hook 与行为全部不变。
-
-返工后实测（同一次 `pnpm build`）：
-
-| 指标 | 值 |
-|---|---|
-| `lib/client.js`（迁移前基线，HEAD `12b4716` 同工具链实测） | 1012271 bytes = 988.5 KiB |
-| `lib/client.js`（迁移后） | **855612 bytes = 835.6 KiB** |
-| 核心包增量 | **−156659 bytes（−153.0 KiB，比迁移前更小）** |
-| `lib/client-tasks.js`（打开任务页时才拉） | 723656 bytes = 706.7 KiB |
-| 体积预算（核心包 ≤ 基线 +250 KiB） | ✅ 达成（且核心包净减） |
-| 核心包含 Tailwind / radix / tailwind-merge / `oklch(` / `lucide-react` | 全部为 0（由 `tests/ui-bundle.spec.ts` 断言） |
-| `lib/client-tasks.js` 含 Tailwind 产物 + radix + 令牌桥 | ✅（同一 spec 断言） |
-
-因此 `tests/ui-bundle.spec.ts` 现在**双向断言**：核心包必须干净（无 utilities/radix/tailwind-merge、无 preflight、无调色板字面量）且 ≤ 基线 +250 KiB；chunk 必须携带 Tailwind 产物、radix 层、`var(--dsw-…)` 桥接与 `__dshChunks__["tasks"]` 槽位，同样不得带 preflight/oklch/lucide。
-
-其余门禁（同一份构建产物）：
-
-- `pnpm typecheck` 0；`pnpm lint` 0；`pnpm vitest run` **136 文件 / 1499 用例通过 / 9 skipped**；
-- `pnpm build` 的四条产物断言全绿：Tailwind 产物确在包内（`--tw-*` + `.flex{`）、**无 preflight**、**无 `oklch(`**、**无 `lucide-react`**；
-- `pnpm pack` ✅；`pnpm test:mount`（真实挂载 + 无头 tab 全扫）**7/7**，`PERF_JSON`：`mountLatencyMs 437`、`longtaskCount 2`（≤ 8 预算）、并且资源清单里出现 **`/sidebar/bundle/tasks.js`** —— 懒加载路径在真实 DSH 外壳里被走到。
-
-新增的守护文件：`tests/ui-foundation.spec.ts`（入口 import 清单 / 令牌桥全表 / 级联层 / 作用域根类 / `@source`）、`tests/ui-bundle.spec.ts`（核心包与 chunk 的双向产物断言 + 体积预算）、`tests/ui-shadows.spec.ts`（静态面板零阴影）。`tests/theme.spec.ts` 追加「迁移后皮肤契约」一节：`src/client/ui/**` 与迁移文件的**颜色字面量**、**Tailwind 默认调色板类**与**未解析 `var()`** 三类回归。
-
-### 真机"完全没有 CSS"的根因：缺 preflight 导致表单控件保留 UA 样式（2026-09-20）
-
-真机反馈：任务页"看起来完全没有 CSS，边框非常模糊"。第一反应是 Tailwind 没下发或级联被宿主压过，**两个假设都被实验否掉**：
-
-- **样式确实下发**：chunk 里含注入代码与完整 CSS 文本，真机资源清单里 `/sidebar/bundle/tasks.js` 200；页面能看出我们的两行标题截断、Badge、ToggleGroup 等布局。
-- **级联不是根因**：用真实宿主样式表（`dsh-web-frontend` 的 index+vendor CSS）＋真实编译产物做受控样本，`padding/radius/border/background/font` 全部是我们的值胜出；宿主 CSS 模块是哈希类名（`button._cfgyt_4`）只命中宿主自己的元素，全局 `button{}` 只有元素级特异性（0,0,1）压不过工具类（0,1,0）。
-
-**真根因**：我们**刻意排除 preflight**（它会重绘整个宿主页面），但 preflight 同时负责**归零表单控件**。于是插件里的 `<button>` 全部保留浏览器 UA 外观 —— 在真实浏览器里对一个只写了 `size-7` 的图标按钮实测：`padding: 1px 6px`、`border: 2px outset`、`background: ButtonFace`(#efefef)、`font: 400 13.33px system-ui`。这正是"灰扑扑的立体小方块 + 发虚的双线边框 + 字号不搭"的来源；`<input>`/`<textarea>`/`<select>` 同理。
-
-**修法**（`src/client/ui/theme.css`）：在 `@layer base` 内补一份**限定 `.dsw-tasks` 作用域**的 preflight 子集（`margin/padding` 归零、`border-width/style` 归零、`background-color/-image` 归零、`color/letter-spacing: inherit`、`appearance: none`、`cursor: pointer`、`:disabled` 默认光标），全部写在 `:where()` 里保持 (0,1,0)，与工具类同特异性但在**更晚的 `utilities` 层**，所以只清掉"没人要的" UA 外观、不抢我们自己的类。同时**显式声明 `@layer theme, base, components, utilities;`**：层序按首次出现决定，否则 `@import ... layer(utilities)` 会把 utilities 注册在 `base` 之前，让 reset 反过来压住 `rounded-md`（实测按钮渲染成直角）。产物里已核对层序为 `properties → theme → base → components → utilities`。
-
-**为什么两层验证都漏了**：本地可视化 harness 的页面没有宿主样式、也没人量过 `getComputedStyle`，UA 外观被当成"我的极简风格"；挂载冒烟断言的是"不崩 + 无 console 错误"，样式正确性不在其内。**因此把"真实宿主样式表 + 真实编译产物 + 真实组件"的镜像页面加入视觉验证流程**（`index-host.html`），并补两条源码级守卫（`tests/ui-foundation.spec.ts`：作用域 reset 的声明必须存在；层序声明必须出现在 import 之前）。
-
-### shadcn/ui stock 风格回调（2026-09-20）
-
-用户的明确诉求是"**shadcn/ui 默认风格就行**"——此前那套"零阴影 + 1px 细线 + 11–13px 字"的极简取向被判定为"像没上样式"。回调原则：**stock 组件默认值优先，只保留画布必需的紧凑化**。改动（11 个文件）：
-
-- **阴影**：静态卡片/面板恢复 stock 轻阴影（按钮 `shadow-xs`、卡片/面板 `shadow-sm`）；浮层继续 `shadow-lg`。`tests/ui-shadows.spec.ts` 的规则从"静态面板零阴影"改为"静态面板只允许 `shadow-xs`/`shadow-sm`，禁用 `shadow-md` 及以上与裸 `box-shadow`"，浮层白名单不变且断言其非空转。
-- **字号**：正文 `text-sm`(14px)、meta `text-xs`(12px) 全面替换 `text-[13px]`/`text-[11px]`/`text-[10px]`；等宽只留 id/时长/工具参数。页面基准字号由 `.dsw-tasks` 的 `font-size: .875rem` 提供。
-- **组件**：状态一律用 vendored `Badge` 的 stock 变体（进行中 `default`、待办/完成 `secondary`、阻塞 `outline`+warning 墨色、错误 `destructive`）；控制条与非图标按钮回到 `Button variant="outline" size="sm"`；行内操作（任务行菜单、抽屉终止）改为 hover/focus 显现但仍可键盘触达；任务窗口/面板内边距回到 stock（`p-4`/`p-6`）。
-- **画布**：节点卡 `rounded-lg border bg-card p-2.5 shadow-xs`，`GRAPH_NODE_W` 150→176、`GRAPH_NODE_H` 60→68（字号变大后需要宽度）；相位框加 `bg-muted/40`。
-- **窄面板不再退化成单列**：`bandColsFor` 改为**按可读性下限预算列数**（`宽度/0.78` 而不是 1:1），360px 面板恢复两列（缩放 ~0.86）；同时把 `FIT_MIN_SCALE` 提升为布局模块导出的 `GRAPH_FIT_MIN_SCALE`，让 fit 与列预算共用同一个下限常量。
-
-### 迁移返工记录（门禁与审查发现）
-
-**1. 体积 → 任务页整体下沉为懒加载 chunk。** 见上一节的返工说明：核心包从 988.5 KiB 降到 835.6 KiB（净减 153.0 KiB），shadcn/radix/Tailwind 产物（706.7 KiB）随 `lib/client-tasks.js` 按需加载。这次返工同时把 Tailwind 样式表挪进 chunk——它只服务任务页，没有理由占启动路径。
-
-**2. React 18 的 ref 兼容（vendored 组件的必要本地适配）。** DSH 宿主跑的是 **React 18**（`@deepseek-ai/dsh-client-ui-primitives` 的 peer 是 `react@^18.2.0`），而 shadcn registry 的组件是按 **React 19** 写的（19 起 `ref` 是普通 prop，所以上游 `Button` 刻意不写 `forwardRef`）。后果：`<TooltipTrigger asChild><Button/></TooltipTrigger>` 里 radix 的 `Slot` 把 ref 递给函数组件会被丢掉 —— **dev 构建打印 "Function components cannot be given refs"，生产构建静默地量不到锚点**（浮层定位失效）。修法是在 `src/client/ui/button.tsx` 上做一处有注释的本地适配（`React.forwardRef`），并在文件里写明升级时会被 CLI `--diff` 抹掉、需要重新施加。**这条只在 dev/可视化 harness 里可见，生产 bundle 不报错，所以 mount e2e 抓不到它** —— 依赖 harness 的 console 断言。
-
-**3. 密度回归 → 卡片两行标题。** 迁移把卡片文字从 11px 提到 shadcn 的 13px，但节点宽度仍是 132px：实测标题只剩约 7 个汉字（"图形重布重写" 被截成 "图…"），密集场景下比迁移前更难读。修法：`GRAPH_NODE_W` 132 → 150、标题改 `text-xs` + `line-clamp-2` + `[overflow-wrap:anywhere]`、`GRAPH_NODE_H` 46 → 60 预留两行高度（`GRAPH_LIVE_H` 13 → 14）。**教训：换字号必须同步核对卡片宽度预算**。
-
-**4. 模型去重（重复 React key 的根因）。** 可视化 harness 在压力 fixture 上抓到 `sub-live-011` 等三个重复 key：根因在 `tasks-model.ts` —— workflow member 的 `childId` 若**不在 run 发起者的 catalog 里**（但存在于树中别处），代码会走"合成节点"分支，生成一个与真实节点**同 id** 的第二张卡片。修法：先按整棵树收集 `knownAgentIds`，只对 catalog 完全不知道的 id 合成节点；并在返回前加一条"每个 session id 只出现一次"的兜底去重。新增两条单测（已知 member 不重复 / 未知 member 仍合成）。
-
-### 升级路径与本地适配清单（stock 优先）
-
-**政策（2026-09-20 起）：与上游 stock 保持一致优先，本地改动只保留"不这样就得坏"的那几条。** 早先那版"裁剪变体、去阴影、压字号"的本地取向已被真机反馈否掉（用户要求"改为 shadcn/ui 最新的默认样式对齐"），因此 `src/client/ui/**` 用 `npx shadcn@latest add … --overwrite` 整批刷成了最新 registry（new-york v4 / radix base），并**重新施加**下面这份最小适配清单：
-
-| # | 本地适配 | 为什么必须 |
-|---|---|---|
-| 1 | `cn` 从 `./utils` 导入；跨组件 import 写显式 `./x.tsx` | registry 写的是虚拟别名 `cn` 与裸 `src/client/ui/...` 说明符，本项目没有那些解析规则 |
-| 2 | 图标一律用宿主 `@deepseek-ai/dsh-client-ui-primitives` 的 `IconXxx` | 皮肤契约禁 lucide；宿主图标随主题变色。`spinner.tsx` 的 `Loader2Icon` → `IconLoadingOutline16`（外层 span 承接 props），`dropdown-menu.tsx` 的勾/箭头 → `IconCheckOutline16`/`IconChevronRightOutline14`，单选圆点用 `span.bg-current` |
-| 3 | 删除所有 `dark:` 变体 | 令牌本身随宿主深浅主题翻转，`dark:` 是多余且会改写宿主主题语义（技能规则也禁手写 dark 覆盖） |
-| 4 | `text-white` → `text-destructive-foreground` | 无颜色字面量是皮肤契约的硬线 |
-| 5 | `Button` 保留 `React.forwardRef` | 宿主是 **React 18**，`asChild` 触发器要 ref 才能量到锚点（registry 面向 React 19，不写 forwardRef） |
-| 6 | 删除 `tw-animate-css` 的动画工具类（`animate-in`/`fade-in-*`/`zoom-in-*`/`slide-in-from-*`） | 该依赖未安装；装了它会向**我们不拥有的宿主页面**注入通用 `@keyframes` 名字，有与宿主动画撞名的风险。缺省即"立即出现"，与 reduced-motion 行为一致 |
-
-**已恢复为 stock（此前被本地裁掉的）**：Button 的完整变体/尺寸集（`link`/`xs`/`lg`/`icon-xs|sm|lg`）、`outline` 的 `shadow-xs`、`transition-all`、Badge 的 `ghost`/`link` 变体。它们只是运行时字符串，未使用的工具类不会进 CSS。
-
-**升级流程**：`npx shadcn@latest add <component> --dry-run` → `--diff` 逐文件看上游改动 → 有本地改动的按上表重新施加（`--overwrite` 后必须重跑下面四条）。落盘后必跑：`pnpm typecheck`、`pnpm vitest run tests/theme.spec.ts tests/ui-shadows.spec.ts tests/ui-foundation.spec.ts tests/ui-bundle.spec.ts`、`pnpm build`（体积与产物断言），以及**镜像页视觉复核**（真实宿主样式表 + 真实组件，见上一节）。
-
-### 页面重组：用最新 stock 组件，而不是手搓 div（2026-09-20）
-
-按 shadcn 技能的硬规则把任务页的组成方式整体换成最新 registry 的构件（4 个并行代理按文件分区改，主线程统一验收）：
-
-- **团队任务板**：`Card` 全组合（`CardHeader`/`CardTitle` + `Separator` 分带 + `CardContent` + `CardFooter`），任务行 = `Item asChild`（`ItemMedia` StateDot / `ItemContent`/`ItemTitle`/`ItemActions`），筛选 = `ToggleGroup`（radix radiogroup + roving tabindex），行内菜单 = `DropdownMenuGroup` 包住每个 `DropdownMenuItem`，空态 = `Empty`。
-- **任务窗口**：`Card` 全组合 + `FieldGroup`/`Field`/`FieldLabel`/`FieldDescription`/`FieldError`；标题空值走 `Field data-invalid` + `Input aria-invalid`（不新增 i18n key）；负责人 = `ToggleGroup`（**default 变体**：实测 `outline` 变体的 hover 与 pressed 同色，选中态不可辨）；删除 armed 用 `Button variant="destructive"`，冲突提示用 `FieldError(role=alert)`。
-- **浮窗**：两张 portal 卡同样 `Card` 全组合（`CardTitle` 放身份、`CardDescription` 放种类、`CardAction` 放状态 Badge、`CardFooter` 放跳转），行 = `Item`（可点击行 `asChild` 真按钮）。
-- **抽屉/页头**：行 = `Item`（终止按钮在 `ItemActions`），分隔全用 `Separator`，加载 = `Spinner`，目录失败横幅 = `Item variant="outline"`，空态 = `Empty`。
-- **图/树**：节点卡配方 `rounded-lg border bg-card p-2.5 shadow-xs`（不再重复声明 stock `Card` 已有的墨色），控制条全部 stock `Button variant="outline" size="sm|icon"`，`z-[6]` → `z-10`；树行的条件类名改走 `cn()`。
-
-**本轮在真实浏览器里抓到的两个"无 preflight"陷阱**（都已修，且在测试/文档里留痕）：
-
-1. **stock `Empty` 只有 `border-dashed` 没有宽度** → 没有 preflight 时露出 UA 的 `3px medium` 虚线框，整页像套了个粗虚线相框；`Empty` 上加 `border-0` 修掉（截图证实）。
-2. **`<Spinner size={12} />` 类型合法但静默失效**：刷新后的 Spinner 变成 `React.ComponentProps<"span">`，`size` 是合法 HTML 属性 → typecheck 全绿而图标按默认 `size-4` 渲染。改用 `className="size-3"`。**教训：组件 API 变更中"仍然类型合法但语义丢失"的那类最危险，只有看渲染结果才能发现。**
-
-**已知未修（记录在案）**：抽屉行在 ~420px 以下的窄宽度里会横向溢出（Radix ScrollArea 的 table 视口按 min-content 计算 + 行内 `nowrap` 的 mono 标题），修复需要重新决定 ScrollArea/行的最小宽度策略；宽面板（用户实机）不受影响。
-
 ---
 
-## 回退：任务页回到插件自有体系（2026-09-21，shadcn 层废弃）
+## 回退记录与结论（2026-09-21：任务页回到插件自有体系）
 
-任务页 2026-09-17 换成 shadcn/ui + Tailwind v4 视觉基座，09-20 又按「对齐上游 stock」回调一轮；09-21 判定该基座与本插件的体系不可调和，整体回退。
+> 本节是 2026-09-17 – 09-21 那次视觉基座尝试的**唯一**记录：本文档曾用 250 余行详述它的依赖版本、Tailwind 接入方式、令牌映射表、vendored 组件清单、体积与真机排障，那套基座已整体回退，正文随之删除，只留「为什么回退」与「回退后的结论」。**本节出现的 shadcn / Tailwind / radix 字样都是对已废弃方案的引用**，不代表本仓库或消费插件的建议做法。
+
+任务页 2026-09-17 换成 shadcn/ui + Tailwind v4 视觉基座（组件源码 vendoring 进 `src/client/ui/`，样式由工具类产出，颜色经 shadcn 语义令牌桥接到 `--dsw-*`），09-20 又按「对齐上游 stock」回调一轮；09-21 判定该基座与本插件的体系不可调和，整体回退。
 
 **改动面**：8 个页面文件（`TasksGraph` / `TasksTree` / `TaskWindow` / `TeamBoard` / `JobsDrawer` / `TasksPopovers` / `SubagentView` / `tasks-shared`）以 `12b4716` 的原生实现（CSS Modules + 宿主 `@deepseek-ai/dsh-client-ui-primitives`）为基线重建，`src/client/ui/**`（23 个文件）、`components.json`、`scripts/ui-css.mjs` 与其 `ui:css` 脚本删除；`radix-ui` / `class-variance-authority` / `tailwind-merge` / `tailwindcss` / `@tailwindcss/postcss` / `postcss` 六个依赖下线；`tasks` 懒加载 chunk 与 `CHUNK_NAMES` 的 `tasks` 项一并取消（回到 `terminal` / `editor` / `mermaid` / `locale` 四项）。**回退只换视觉基座：09-17–09-21 期间的行为修复逐条重新落地**（见下「保留的行为修复」）。
 

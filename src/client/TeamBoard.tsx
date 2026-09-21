@@ -7,6 +7,11 @@
  * member row of Pills (also the owner filter), then task rows (subject +
  * owner + status Tag + ONE overflow Menu).
  *
+ * Readability: the four blocks (bar / filters / rows / footer) share one 12px
+ * gutter and one 6px vertical beat, divided by the 1px l1 rules the stylesheet
+ * draws; a row sits on the 28px rhythm and every line that can be ellipsised
+ * (subject, owner) carries its full text as `title`.
+ *
  * Behaviour: a row and EVERY entry of its menu open the shared task window,
  * which is the ONE surface owning view / edit / create and every CAS mutation
  * — the menu is that window's affordance list hoisted onto the row, not a
@@ -106,16 +111,12 @@ function TeamTaskRow(props: {
 
   return (
     // The row is a flex line so the trailing Menu can sit beside the press
-    // target; the stylesheet has no row+trailing-control class of its own.
-    <div
-      ref={rowRef}
-      style={{ display: 'flex', alignItems: 'center', gap: 2 }}
-    >
+    // target (`.teamTaskRow`).
+    <div ref={rowRef} className={css.teamTaskRow}>
       <Button
         variant="ghost"
         size="sm"
         className={css.teamTask}
-        style={{ flex: 1, minWidth: 0 }}
         aria-label={`${t('teamTaskDetail')} ${task.subject}`}
         title={t('teamTaskDetail')}
         onClick={(event) => { onOpenTask(task, event.currentTarget) }}
@@ -124,9 +125,9 @@ function TeamTaskRow(props: {
           size={6}
           state={task.status === 'completed' ? 'done' : task.ready ? 'ongoing' : 'warning'}
         />
-        <span className={css.teamTaskSubject}>{task.subject}</span>
+        <span className={css.teamTaskSubject} title={task.subject}>{task.subject}</span>
         {task.ownerName !== undefined && (
-          <span className={css.teamTaskOwner}>{task.ownerName}</span>
+          <span className={css.teamTaskOwner} title={task.ownerName}>{task.ownerName}</span>
         )}
         <Tag tone={taskTone(task)}>
           {t(task.ready ? taskStatusKey(task.status) : 'teamTaskBlocked')}

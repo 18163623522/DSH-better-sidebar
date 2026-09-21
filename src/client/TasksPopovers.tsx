@@ -1,9 +1,16 @@
 /**
  * The anchored-popover CONTENTS of the Tasks page (geometry and dismissal
  * live in AnchoredPopover): the agent node detail with a transcript jump and
- * the workflow run detail with clickable member rows. Both follow the mockup
- * grammar — a letter-spaced uppercase head, a dt/dd key/value grid, and one
- * full-width jump action.
+ * the workflow run detail with clickable member rows. Both share one grammar:
+ * a letter-spaced uppercase head, a dt/dd key/value grid, a titled well and
+ * one full-width jump action.
+ *
+ * The two cards are ONE skeleton: the same head band, the same [glyph][title]
+ * title row (the card's own host glyph, never a typed character), the same
+ * inset list well of 28px rows, and one l1 hairline around whatever closes the
+ * card. The only intended difference is where a group header sits: a single
+ * list keeps its label fixed above the well, while a multi-phase run scrolls
+ * each phase label with its own rows.
  *
  * Every control is a host primitive (`Button` / `StateDot` / `Tag`) — a row
  * that opens something IS a `<button>`, so it is keyboard reachable — and the
@@ -23,7 +30,7 @@ import { Button, IconRightUpOutline14, StateDot, Tag } from '@deepseek-ai/dsh-cl
 import type { SidebarSubagentAddress } from '../context-types.ts'
 import type { TasksAgentNode, TasksWorkflowNode } from './tasks-model.ts'
 import {
-  flatten, nodeDotState, taskDotState, taskStatusKey, workflowStatusKey,
+  AgentGlyph, WorkflowGlyph, flatten, nodeDotState, taskDotState, taskStatusKey, workflowStatusKey,
 } from './tasks-shared.tsx'
 import { t, type CopyKey } from './locales.ts'
 import css from './tasks-graph.module.css'
@@ -53,6 +60,16 @@ function PopRow(props: { label: string; mono?: boolean; children: ReactNode }): 
   )
 }
 
+/** The title row both popovers open with: the card's host glyph, then the name. */
+function PopTitleRow(props: { glyph: ReactNode; title: string }): ReactNode {
+  return (
+    <div className={css.popTitleRow}>
+      <span className={css.popGlyph} aria-hidden="true">{props.glyph}</span>
+      <span className={css.popTitle} title={props.title}>{props.title}</span>
+    </div>
+  )
+}
+
 /** The agent node detail popover. */
 export function AgentNodePopover(props: {
   node: TasksAgentNode
@@ -70,7 +87,7 @@ export function AgentNodePopover(props: {
       <div className={css.popHead}>
         <span>{t('tasksNodeDetail')}</span>
       </div>
-      <span className={css.popTitle} title={node.label}>{node.label}</span>
+      <PopTitleRow glyph={<AgentGlyph node={node} />} title={node.label} />
       <PopRows>
         <PopRow label={t('tasksNodeState')}>
           <StateDot state={nodeDotState(node.state)} size={6} /> {t(stateKey(node.state))}
@@ -154,7 +171,7 @@ export function WorkflowNodePopover(props: {
       <div className={css.popHead}>
         <span>{t('workflowRun')}</span>
       </div>
-      <span className={css.popTitle} title={run.name}>▶ {run.name}</span>
+      <PopTitleRow glyph={<WorkflowGlyph />} title={run.name} />
       <PopRows>
         <PopRow label={t('tasksNodeState')}>{t(workflowStatusKey(run.status))}</PopRow>
       </PopRows>

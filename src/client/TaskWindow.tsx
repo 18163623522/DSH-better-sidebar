@@ -15,8 +15,9 @@
  * and the shared `MarkdownText` renderer with the plugin's copy labels.
  */
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import clsx from 'clsx'
 import {
-  Button, IconCheckOutline14, IconCloseOutline16, IconEditOutline16, IconPlusOutline16,
+  Button, IconCheckOutline14, IconCloseOutline16, IconEditOutline16,
   IconRefreshOutline14, IconTrashOutline16, Input, MarkdownText, Pill, StateDot, Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SidebarTeamMemberView, SidebarTeamTaskView } from '../context-types.ts'
@@ -74,6 +75,7 @@ function OwnerPicker(props: {
   return (
     <div className={css.taskOwnerRow} role="group" aria-label={t('teamTaskOwner')}>
       <Pill
+        className={clsx(css.taskOwnerPill, props.owner === undefined && css.taskOwnerPillActive)}
         active={props.owner === undefined}
         disabled={props.disabled}
         onClick={() => { props.onPick('') }}
@@ -83,6 +85,7 @@ function OwnerPicker(props: {
       {props.members.map(member => (
         <Pill
           key={member.id}
+          className={clsx(css.taskOwnerPill, props.owner === member.name && css.taskOwnerPillActive)}
           active={props.owner === member.name}
           disabled={props.disabled}
           onClick={() => { props.onPick(member.name) }}
@@ -117,11 +120,11 @@ function TaskViewBody(props: {
       </div>
       <div className={css.jobPopMeta}>
         <span className={css.popKey}>{t('teamTaskOwner')}</span>
-        <span>{task.ownerName ?? t('teamTaskUnowned')}</span>
+        <span className={css.jobPopValue}>{task.ownerName ?? t('teamTaskUnowned')}</span>
         {task.blockedBy.length > 0 && (
           <>
             <span className={css.popKey}>{t('teamTaskBlockedBy')}</span>
-            <span>{task.blockedBy.join(' · ')}</span>
+            <span className={css.jobPopValue}>{task.blockedBy.join(' · ')}</span>
           </>
         )}
       </div>
@@ -170,6 +173,7 @@ function TaskEditBody(props: {
       <label className={css.taskField}>
         <span className={css.taskLabel}>{t('teamTaskSubject')}</span>
         <Input
+          className={css.taskInput}
           value={props.subject}
           placeholder={t('teamTaskSubjectPlaceholder')}
           aria-label={t('teamTaskSubject')}
@@ -375,10 +379,13 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
               >
                 {t('teamTaskEdit')}
               </Button>
+              {/* One primary per card: the affirmative state change (完成 /
+                  重新打开) is it, so 编辑 stays a plain outline and 删除 keeps
+                  the danger ink beside it. */}
               {task.status === 'completed'
                 ? (
                   <Button
-                    variant="outline"
+                    variant="primary"
                     size="sm"
                     icon={<IconRefreshOutline14 size={12} />}
                     disabled={busy}
@@ -391,7 +398,7 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
                 )
                 : (
                   <Button
-                    variant="outline"
+                    variant="primary"
                     size="sm"
                     icon={<IconCheckOutline14 size={12} />}
                     disabled={busy}
@@ -405,7 +412,7 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
               <Button
                 variant="outline"
                 size="sm"
-                className={armedDelete ? css.jobPopKillArmed : undefined}
+                className={clsx(css.taskDanger, armedDelete && css.taskDangerArmed)}
                 icon={<IconTrashOutline16 size={12} />}
                 disabled={busy}
                 onClick={() => {
@@ -435,23 +442,5 @@ export function TaskPopover(props: TaskWindowProps & { anchor: HTMLElement | nul
     <AnchoredPopover anchor={anchor} onClose={onClose} draggable width={430}>
       {anchor === null ? null : <TaskWindow {...windowProps} onClose={onClose} />}
     </AnchoredPopover>
-  )
-}
-
-/** The create affordance every surface shares. */
-export function TaskCreateButton(props: {
-  disabled?: boolean
-  onClick(anchor: HTMLElement): void
-}): ReactNode {
-  return (
-    <Button
-      variant="outline"
-      size="sm"
-      icon={<IconPlusOutline16 size={13} />}
-      disabled={props.disabled}
-      onClick={(event) => { props.onClick(event.currentTarget) }}
-    >
-      {t('teamTaskCreate')}
-    </Button>
   )
 }
