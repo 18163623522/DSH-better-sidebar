@@ -315,7 +315,6 @@ export const sv: Record<string, string> = {
   codeBlockUnwrap: 'Ingen radbrytning',
   sideChatBlockWindow: '{shown} av {total} rader',
   sideChatConnDisconnected: 'Anslutningen bröts',
-  sideChatConnReconnect: 'Anslut igen',
   sideChatConnConnecting: 'Ansluter igen…',
   sideChatConnRecovered: 'Anslutningen återställd',
   sideChatConnReconnectAction: 'Anslut igen nu',

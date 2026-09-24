@@ -146,6 +146,21 @@ describe.skipIf(!libBuilt)('registry manifest consistency (dsh.plugin.json)', ()
     }
   })
 
+  it('every chunk is staged by scripts/package-registry.mjs (the registry channel ships its own file list)', () => {
+    // The community-registry channel installs the staged `registry/` tree
+    // wholesale, and /sidebar/bundle reads the chunk from THAT copy — a chunk
+    // missing from the staging list 404s there exactly like one missing from
+    // package.json#files does on npm. The list is read as source text because
+    // the script performs its copies at module scope (it cannot be imported).
+    const script = readFileSync(resolve(ROOT, 'scripts/package-registry.mjs'), 'utf8')
+    const start = script.indexOf('const files = [')
+    expect(start, 'scripts/package-registry.mjs declares no `const files = [` list').toBeGreaterThan(-1)
+    const staged = script.slice(start, script.indexOf(']', start))
+    for (const file of CHUNK_FILES) {
+      expect(staged.includes(`'${file}'`), `${file} is not staged by scripts/package-registry.mjs`).toBe(true)
+    }
+  })
+
   it('client bundles require only frozen module-table entries', () => {
     for (const file of ['lib/client.js', manifest.client!.main!, ...CHUNK_FILES]) {
       const source = readFileSync(resolve(ROOT, file), 'utf8')

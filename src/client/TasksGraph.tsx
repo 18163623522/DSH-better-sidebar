@@ -30,7 +30,7 @@ import {
 } from 'react'
 import clsx from 'clsx'
 import {
-  Button, IconChecklistOutline14, IconFullscreenOutline16, IconLoadingOutline16, IconTreeCorner8x10,
+  Button, IconChecklistOutlineRegular, IconFullscreenOutlineRegular, IconLoadingOutlineRegular, IconTreeCornerRegular,
   StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TasksAgentNode, TasksFoldNode, TasksNode, TasksWorkflowNode } from './tasks-model.ts'
@@ -110,7 +110,7 @@ export function ViewModeToggle(props: {
     <Button
       variant="ghost"
       size="sm"
-      icon={toTree ? <IconTreeCorner8x10 /> : <WorkflowGlyph size={13} />}
+      icon={toTree ? <IconTreeCornerRegular /> : <WorkflowGlyph size={13} />}
       aria-label={t(toTree ? 'tasksViewSwitchToTree' : 'tasksViewSwitchToGraph')}
       title={t(toTree ? 'tasksViewSwitchToTree' : 'tasksViewSwitchToGraph')}
       onClick={() => { onModeChange(toTree ? 'tree' : 'graph') }}
@@ -128,7 +128,7 @@ export function FoldToggleButton(props: { folded: boolean; onToggleFold(): void 
       variant="ghost"
       size="sm"
       className={clsx(css.controlBtn, folded && css.controlBtnActive)}
-      icon={<IconChecklistOutline14 size={13} />}
+      icon={<IconChecklistOutlineRegular size={13} />}
       aria-pressed={folded}
       aria-label={t(folded ? 'tasksFoldExpand' : 'tasksFoldCollapse')}
       title={t(folded ? 'tasksFoldExpand' : 'tasksFoldCollapse')}
@@ -322,7 +322,7 @@ export function TasksGraph(props: TasksGraphProps): ReactNode {
             zoom / node clicks fully live underneath. */}
         {loading === true && nodes.length === 0 && (
           <div className={canvasCss.loading}>
-            <span className={canvasCss.loadingGlyph} aria-hidden="true"><IconLoadingOutline16 size={12} /></span>
+            <span className={canvasCss.loadingGlyph} aria-hidden="true"><IconLoadingOutlineRegular size={12} /></span>
             {t('loading')}
           </div>
         )}
@@ -411,7 +411,7 @@ export function TasksGraph(props: TasksGraphProps): ReactNode {
             variant="ghost"
             size="sm"
             className={css.controlBtn}
-            icon={<IconFullscreenOutline16 size={13} />}
+            icon={<IconFullscreenOutlineRegular size={13} />}
             aria-label={t('tasksZoomFit')}
             title={t('tasksZoomFit')}
             onClick={refit}

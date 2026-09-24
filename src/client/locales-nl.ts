@@ -330,7 +330,6 @@ export const nl: Record<string, string> = {
   codeBlockUnwrap: 'Regels niet afbreken',
   sideChatBlockWindow: '{shown} van {total} regels',
   sideChatConnDisconnected: 'Verbinding verbroken',
-  sideChatConnReconnect: 'Opnieuw verbinden',
   sideChatConnConnecting: 'Opnieuw verbinden…',
   sideChatConnRecovered: 'Verbinding hersteld',
   sideChatConnReconnectAction: 'Nu opnieuw verbinden',

@@ -318,7 +318,6 @@ export const de: Record<string, string> = {
   codeBlockUnwrap: 'Zeilen nicht umbrechen',
   sideChatBlockWindow: '{shown} von {total} Zeilen',
   sideChatConnDisconnected: 'Verbindung verloren',
-  sideChatConnReconnect: 'Neu verbinden',
   sideChatConnConnecting: 'Verbinde neu…',
   sideChatConnRecovered: 'Verbindung wiederhergestellt',
   sideChatConnReconnectAction: 'Jetzt neu verbinden',

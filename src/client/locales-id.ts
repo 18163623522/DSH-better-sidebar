@@ -330,7 +330,6 @@ export const id: Record<string, string> = {
   codeBlockUnwrap: 'Jangan bungkus baris',
   sideChatBlockWindow: '{shown} dari {total} baris',
   sideChatConnDisconnected: 'Koneksi terputus',
-  sideChatConnReconnect: 'Sambungkan ulang',
   sideChatConnConnecting: 'Menyambung ulang…',
   sideChatConnRecovered: 'Koneksi dipulihkan',
   sideChatConnReconnectAction: 'Sambungkan ulang sekarang',

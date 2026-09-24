@@ -20,9 +20,9 @@
  */
 import { useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  Button, IconChecklistOutline14, IconCheckOutline14, IconChevronUpOutline14, IconEditOutline16,
-  IconEllipsisOutline16, IconPlusOutline16, IconRefreshOutline14, IconTrashOutline16,
-  IconUserOutline16, Menu, Pill, StateDot, Tag,
+  Button, IconChecklistOutlineRegular, IconCheckOutlineRegular, IconChevronUpOutlineRegular, IconEditOutlineRegular,
+  IconEllipsisOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconTrashOutlineRegular,
+  IconUserOutlineRegular, Menu, Pill, StateDot, Tag,
   type MenuEntry, type TagTone,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SidebarTeamMemberView, SidebarTeamTaskView } from '../context-types.ts'
@@ -66,20 +66,20 @@ function taskMenuItems(
     {
       id: 'state',
       label: t(completed ? 'teamTaskReopen' : 'teamTaskComplete'),
-      icon: completed ? <IconRefreshOutline14 size={14} /> : <IconCheckOutline14 size={14} />,
+      icon: completed ? <IconRefreshOutlineRegular size={14} /> : <IconCheckOutlineRegular size={14} />,
     },
-    { id: 'edit', label: t('teamTaskEdit'), icon: <IconEditOutline16 size={14} /> },
+    { id: 'edit', label: t('teamTaskEdit'), icon: <IconEditOutlineRegular size={14} /> },
     {
       id: 'owner',
       label: t('teamTaskOwner'),
-      icon: <IconUserOutline16 size={14} />,
+      icon: <IconUserOutlineRegular size={14} />,
       submenu: [
         { id: 'owner:', label: t('teamTaskUnowned') },
         ...teammates.map(member => ({ id: `owner:${member.name}`, label: member.name })),
       ],
     },
     { type: 'separator', id: 'team-task-sep' },
-    { id: 'delete', label: t('teamTaskDelete'), icon: <IconTrashOutline16 size={14} /> },
+    { id: 'delete', label: t('teamTaskDelete'), icon: <IconTrashOutlineRegular size={14} /> },
   ]
 }
 
@@ -148,7 +148,7 @@ function TeamTaskRow(props: {
           <Button
             variant="ghost"
             size="sm"
-            icon={<IconEllipsisOutline16 size={13} />}
+            icon={<IconEllipsisOutlineRegular size={13} />}
             aria-label={`${t('teamTaskActions')} ${task.subject}`}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
@@ -191,7 +191,7 @@ export function TeamBoard(props: TeamBoardProps): ReactNode {
         aria-expanded={!collapsed}
         onClick={onToggleCollapsed}
       >
-        <span className={css.teamBoardIcon} aria-hidden="true"><IconChecklistOutline14 size={11} /></span>
+        <span className={css.teamBoardIcon} aria-hidden="true"><IconChecklistOutlineRegular size={11} /></span>
         <span>{t('teamBoard')}</span>
         <span className={css.teamBoardCount}>
           {t('teamChip', { members: members.length, tasks: live.length })}
@@ -201,7 +201,7 @@ export function TeamBoard(props: TeamBoardProps): ReactNode {
           style={{ display: 'inline-flex', transform: collapsed ? undefined : 'rotate(180deg)' }}
           aria-hidden="true"
         >
-          <IconChevronUpOutline14 size={12} />
+          <IconChevronUpOutlineRegular size={12} />
         </span>
       </button>
       {!collapsed && (
@@ -247,7 +247,7 @@ export function TeamBoard(props: TeamBoardProps): ReactNode {
             <Button
               variant="outline"
               size="sm"
-              icon={<IconPlusOutline16 size={13} />}
+              icon={<IconPlusOutlineRegular size={13} />}
               onClick={(event) => { onOpenTask(undefined, event.currentTarget) }}
             >
               {t('teamTaskCreate')}

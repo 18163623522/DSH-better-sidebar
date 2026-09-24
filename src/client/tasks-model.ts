@@ -1,14 +1,14 @@
 /**
  * The unified view model of the Tasks page: one ordered node list the graph
  * canvas AND the tree mode both render (same data, same fold state). Pure
- * derivation over the sessions list feed (byId lineage + per-parent
- * catalogs), the live activity map, the folded workflow runs, and the
- * optional team view — kept framework-free for node-environment unit tests.
+ * derivation over the sessions list feed (byId lineage + the host's
+ * per-session `subagentCatalog` projection views), the live activity map, the
+ * folded workflow runs, and the optional team view — kept framework-free for
+ * node-environment unit tests.
  *
  * Shape rules:
- * - agent rows walk the lazy per-parent catalogs in pre-order (the same
- *   recursion the classic tree used); Side Chat threads and diagnostic rows
- *   never become nodes;
+ * - agent rows walk the per-parent catalog views in pre-order (the same
+ *   recursion the classic tree used); Side Chat threads never become nodes;
  * - a workflow run hangs under its ORIGIN agent; member agents that already
  *   exist as the origin's catalog children are RE-PARENTED under the run
  *   node, members without a catalog row are synthesized from the run's own
@@ -22,14 +22,14 @@
 import type {
   SidebarSessionSummary,
   SidebarSubagentAddress,
-  SidebarSubagentCatalog,
-  SidebarSubagentChildEntry,
+  SidebarSubagentCatalogEntry,
   SidebarTeamMemberView,
   SidebarTeamTaskView,
 } from '../context-types.ts'
 import type { LastActivity } from '../subagent-activity.ts'
 import type { WorkflowRunView } from '../workflow-runs.ts'
 import { isSideThreadSummary } from './subagent-detect.ts'
+import { childActivity, isKnownLeaf, type SubagentCatalogView } from './subagent-catalog.ts'
 
 /** Display state of one agent node (drives the dot + fold candidacy). */
 export type TasksNodeState = 'running' | 'idle' | 'done' | 'error'
@@ -52,7 +52,8 @@ export interface TasksAgentNode {
   label: string
   /** The summary's display title when it differs from the label. */
   title?: string
-  mode?: 'one-shot' | 'continuable'
+  /** The catalog row's mode; `unknown` claims neither and renders nothing. */
+  mode?: SidebarSubagentCatalogEntry['mode']
   state: TasksNodeState
   /** The catalog's raw activity word (the secondary line localizes it). */
   activity: 'running' | 'inactive'
@@ -103,7 +104,8 @@ export type TasksNode = TasksAgentNode | TasksWorkflowNode | TasksFoldNode
 /** Inputs of the model build (all already-resolved client mirrors). */
 export interface TasksModelInput {
   byId: Readonly<Record<string, SidebarSessionSummary>>
-  catalogs: Readonly<Record<string, SidebarSubagentCatalog | undefined>>
+  /** Per-parent catalog views (DSH 0.1.7 projectors, see {@link subagentCatalogs}). */
+  catalogs: Readonly<Record<string, SubagentCatalogView | undefined>>
   rootId: string
   currentSessionId: string
   live: Readonly<Record<string, LastActivity | undefined>>
@@ -117,7 +119,7 @@ export interface TasksModelInput {
 
 /** Human label of one catalog child (the classic rule). */
 function childLabel(
-  entry: SidebarSubagentChildEntry,
+  entry: SidebarSubagentCatalogEntry,
   summary: SidebarSessionSummary | undefined,
 ): string {
   return entry.label ?? summary?.displayTitle ?? entry.id
@@ -196,26 +198,27 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
   const knownAgentIds = new Set<string>()
   for (const catalog of Object.values(catalogs)) {
     if (catalog?.state !== 'ready') continue
-    for (const entry of catalog.entries) {
-      if (entry.kind === 'child') knownAgentIds.add(entry.id)
-    }
+    for (const entry of catalog.entries) knownAgentIds.add(entry.id)
   }
   // The local children lists of `appendChildren` are built lazily per parent,
   // so this global set is what makes the guard below order-independent.
 
-  /** The agent children of one parent, in catalog order (side threads and
-   *  diagnostics excluded), with workflow runs appended in start order. */
+  /** The agent children of one parent, in catalog order (side threads
+   *  excluded), with workflow runs appended in start order. */
   const appendChildren = (parentId: string): void => {
     const catalog = catalogs[parentId]
     const entries = catalog?.state === 'ready' ? catalog.entries : []
     const agentChildren: TasksAgentNode[] = []
     for (const entry of entries) {
-      if (entry.kind !== 'child') continue
       const summary = byId[entry.id]
       if (summary !== undefined && isSideThreadSummary(summary)) continue
       if (entry.label?.startsWith('Side: ') ?? false) continue
       const team = teamOf(entry.id)
-      const state: TasksNodeState = entry.activity === 'running'
+      // DSH 0.1.7's catalog row carries the identity only: the live channel
+      // folds RUNNING children (absence = not running) and a row keeps its
+      // disclosure unless its own catalog is known-empty.
+      const activity = childActivity(live, entry.id)
+      const state: TasksNodeState = activity === 'running'
         ? 'running'
         : team !== undefined ? teamState(team.status) : 'done'
       agentChildren.push({
@@ -227,12 +230,12 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
           ? { title: summary.displayTitle } : {}),
         mode: entry.mode,
         state,
-        activity: entry.activity,
+        activity,
         current: entry.id === currentSessionId,
         ...(live[entry.id] !== undefined ? { live: live[entry.id] } : {}),
         ...(team !== undefined ? { team } : {}),
         ...(tasksByNode.get(entry.id) !== undefined ? { tasks: tasksByNode.get(entry.id) } : {}),
-        hasChildren: entry.hasChildren,
+        hasChildren: !isKnownLeaf(catalogs, entry.id),
         childAddress: { parentSessionId: parentId, childSessionId: entry.id, mode: entry.mode },
       })
     }

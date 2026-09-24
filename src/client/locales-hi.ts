@@ -332,7 +332,6 @@ export const hi: Record<string, string> = {
   codeBlockUnwrap: 'पंक्तियाँ न लपेटें',
   sideChatBlockWindow: 'कुल {total} में से {shown} पंक्तियाँ',
   sideChatConnDisconnected: 'कनेक्शन टूट गया',
-  sideChatConnReconnect: 'फिर से कनेक्ट करें',
   sideChatConnConnecting: 'फिर से कनेक्ट हो रहा है…',
   sideChatConnRecovered: 'कनेक्शन बहाल हुआ',
   sideChatConnReconnectAction: 'अभी फिर से कनेक्ट करें',

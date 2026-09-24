@@ -332,7 +332,6 @@ export const vi: Record<string, string> = {
   codeBlockUnwrap: 'Không ngắt dòng',
   sideChatBlockWindow: '{shown} trong {total} dòng',
   sideChatConnDisconnected: 'Mất kết nối',
-  sideChatConnReconnect: 'Kết nối lại',
   sideChatConnConnecting: 'Đang kết nối lại…',
   sideChatConnRecovered: 'Đã khôi phục kết nối',
   sideChatConnReconnectAction: 'Kết nối lại ngay',

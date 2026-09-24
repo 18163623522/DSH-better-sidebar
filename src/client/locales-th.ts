@@ -332,7 +332,6 @@ export const th: Record<string, string> = {
   codeBlockUnwrap: 'ไม่ตัดบรรทัด',
   sideChatBlockWindow: '{shown} จาก {total} บรรทัด',
   sideChatConnDisconnected: 'การเชื่อมต่อขาดหาย',
-  sideChatConnReconnect: 'เชื่อมต่อใหม่',
   sideChatConnConnecting: 'กำลังเชื่อมต่อใหม่…',
   sideChatConnRecovered: 'กู้คืนการเชื่อมต่อแล้ว',
   sideChatConnReconnectAction: 'เชื่อมต่อใหม่ตอนนี้',

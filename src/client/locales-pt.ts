@@ -315,7 +315,6 @@ export const pt: Record<string, string> = {
   codeBlockUnwrap: 'Não quebrar linhas',
   sideChatBlockWindow: '{shown} de {total} linhas',
   sideChatConnDisconnected: 'Conexão perdida',
-  sideChatConnReconnect: 'Reconectar',
   sideChatConnConnecting: 'Reconectando…',
   sideChatConnRecovered: 'Conexão restabelecida',
   sideChatConnReconnectAction: 'Reconectar agora',

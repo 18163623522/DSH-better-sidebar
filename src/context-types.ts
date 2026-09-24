@@ -390,10 +390,14 @@ export interface SidebarSessionList {
    * this plugin reads is `subagentCatalog`, the direct-child list the 0.1.6
    * runtime published as `subagentsByParent`.
    *
-   * Two facts the 0.1.6 snapshot carried are gone and must not be re-read:
-   * there is no `current` session id (`ctx.sidebarRight.mounted` is the
-   * sanctioned feed for "which session's seat is on screen"), and there is no
-   * background-jobs mirror (the `jobs.list` route reads the registry itself).
+   * Three facts the 0.1.6 snapshot carried are gone and must not be brought
+   * back: there is no `current` session id (`ctx.sidebarRight.mounted` is the
+   * sanctioned feed for "which session's seat is on screen"), there is no
+   * background-jobs mirror (the `jobs.list` route reads the registry itself),
+   * and there is no per-parent observe handshake — 0.1.7 loads every session's
+   * projections once per connection, so a catalog surface reads them instead
+   * of observing and unobserving (0.1.6's `setSubagentCatalogOpen` is deleted,
+   * not renamed).
    */
   projectionsBySession?: Readonly<Record<string, SidebarProjectionSnapshot>>
 }
@@ -460,10 +464,6 @@ export interface SidebarSessionsService {
    * Resolve an already discovered direct-parent address without opening it.
    */
   subagentAddress?(id: string): SidebarSubagentAddress | undefined
-  /**
-   * Mark whether a catalog surface is consuming live membership updates.
-   */
-  setSubagentCatalogOpen?(parentSessionId: string, open: boolean): void
   /**
    * Refresh one direct-child catalog.
    */

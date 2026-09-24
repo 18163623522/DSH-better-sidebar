@@ -325,7 +325,6 @@ export const fr: Record<string, string> = {
   codeBlockUnwrap: 'Ne pas retourner à la ligne',
   sideChatBlockWindow: '{shown} sur {total} lignes',
   sideChatConnDisconnected: 'Connexion perdue',
-  sideChatConnReconnect: 'Reconnecter',
   sideChatConnConnecting: 'Reconnexion…',
   sideChatConnRecovered: 'Connexion rétablie',
   sideChatConnReconnectAction: 'Reconnecter maintenant',

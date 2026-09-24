@@ -330,7 +330,6 @@ export const ru: Record<string, string> = {
   codeBlockUnwrap: 'Не переносить строки',
   sideChatBlockWindow: '{shown} из {total} строк',
   sideChatConnDisconnected: 'Соединение потеряно',
-  sideChatConnReconnect: 'Переподключиться',
   sideChatConnConnecting: 'Переподключение…',
   sideChatConnRecovered: 'Соединение восстановлено',
   sideChatConnReconnectAction: 'Переподключиться сейчас',

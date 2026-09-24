@@ -12,9 +12,12 @@ import { renderRoot } from './test-utils.ts'
 import { SubagentView } from '../src/client/SubagentView.tsx'
 import type {
   Context,
+  SidebarJobView,
+  SidebarProjectionSnapshot,
   SidebarSessionList,
   SidebarSessionSummary,
-  SidebarSubagentCatalog,
+  SidebarSubagentAddress,
+  SidebarSubagentCatalogEntry,
 } from '../src/context-types.ts'
 
 /** A subscribable sessions-list snapshot (mirror of the runtime list feed). */
@@ -36,16 +39,21 @@ function makeStore(initial: SidebarSessionList) {
 
 type Store = ReturnType<typeof makeStore>
 
+/** The navigation spy the page must reach (DSH 0.1.7 `ctx.uiWorkspace`). */
+interface NavigationSpy {
+  opened: Array<SidebarSubagentAddress | string>
+}
+
 /** The client context face SubagentView touches. */
-function makeCtx(store: Store, spies: { openSubagent?: (address: unknown) => void } = {}): Context {
+function makeCtx(store: Store, navigation?: NavigationSpy): Context {
   return {
     sessions: {
       list: store,
-      setSubagentCatalogOpen: () => {},
-      openSubagent: spies.openSubagent ?? (() => {}),
-      open: () => {},
-      refreshSubagents: async () => {},
+      refreshProjections: async () => {},
     },
+    get: (name: string) => (name === 'uiWorkspace' && navigation !== undefined
+      ? { openSession: (target: SidebarSubagentAddress | string) => { navigation.opened.push(target) } }
+      : undefined),
   } as unknown as Context
 }
 
@@ -56,11 +64,16 @@ function jsonResponse(value: unknown): Response {
 let teamPayload: unknown = { available: false }
 const teamMutations: Array<{ method: string; body: Record<string, unknown> }> = []
 const fetchedMethods: string[] = []
+/** Job lists the stubbed `jobs.list` route answers with, keyed by OWNER session. */
+let jobsByOwner: Record<string, SidebarJobView[]> = {}
 
 beforeEach(() => {
   teamPayload = { available: false }
   teamMutations.length = 0
   fetchedMethods.length = 0
+  jobsByOwner = {
+    root: [{ id: 'bash-1', kind: 'bash', label: 'sleep 300', status: 'running', startedAt: 1_000 }],
+  }
   vi.stubGlobal('fetch', async (url: string | URL | Request, init?: RequestInit) => {
     const method = String(url).split('/').pop()
     fetchedMethods.push(method ?? '')
@@ -68,6 +81,9 @@ beforeEach(() => {
     if (method === 'subagents.live') return jsonResponse({ ok: true, value: { live: {} } })
     if (method === 'workflows.list') return jsonResponse({ ok: true, value: { runs: [] } })
     if (method === 'teams.view') return jsonResponse({ ok: true, value: teamPayload })
+    if (method === 'jobs.list') {
+      return jsonResponse({ ok: true, value: { jobs: jobsByOwner[String(body.sessionId ?? '')] ?? [] } })
+    }
     if (method === 'teams.taskCreate' || method === 'teams.taskUpdate') {
       teamMutations.push({ method: method ?? '', body })
       return jsonResponse({
@@ -92,35 +108,42 @@ afterEach(() => {
   for (const el of document.querySelectorAll('body > div')) el.remove()
 })
 
-/** A snapshot with N direct children of root (all settled one-shots). */
+/**
+ * A snapshot with N direct children of root (all settled one-shots). The rows
+ * come from the host's `subagentCatalog` projection and each child carries a
+ * loaded EMPTY catalog of its own — DSH 0.1.7 rows have no `hasChildren`, so
+ * that is what makes them known leaves (and therefore fold candidates).
+ */
 function snapshotWithChildren(count: number): SidebarSessionList {
   const byId: Record<string, SidebarSessionSummary> = {
     root: { id: 'root', displayTitle: '主会话', running: true },
   }
-  const entries: SidebarSubagentCatalog['entries'] = []
+  const projectionsBySession: Record<string, SidebarProjectionSnapshot> = {}
+  const entries: SidebarSubagentCatalogEntry[] = []
   for (let index = 0; index < count; index += 1) {
     const id = `child-${index}`
     byId[id] = { id, displayTitle: id, origin: 'subagent', parentId: 'root', running: false }
-    entries.push({ kind: 'child', id, activity: 'inactive', hasChildren: false, mode: 'one-shot', label: `子代理 ${index}` })
+    entries.push({ id, createdAt: 1_000 + index, mode: 'one-shot', label: `子代理 ${index}` })
+    projectionsBySession[id] = { values: { subagentCatalog: [] }, state: 'ready', error: null }
   }
-  return {
-    current: 'root',
-    byId,
-    subagentsByParent: {
-      root: { entries, parentAvailable: true, state: 'ready', error: null },
-    },
-    jobsBySession: {
-      root: [{ id: 'bash-1', kind: 'bash', label: 'sleep 300', status: 'running', startedAt: 1_000 }],
-    },
+  projectionsBySession.root = { values: { subagentCatalog: entries }, state: 'ready', error: null }
+  return { byId, projectionsBySession }
+}
+
+/** Flush the mount-time job reads (request → envelope → json → Promise.all). */
+async function flushJobs(): Promise<void> {
+  for (let tick = 0; tick < 4; tick++) {
+    await act(async () => { await Promise.resolve() })
   }
 }
 
 describe('Tasks page interactions', () => {
-  it('keeps the jobs drawer open below the agent threshold', () => {
+  it('keeps the jobs drawer open below the agent threshold', async () => {
     const store = makeStore(snapshotWithChildren(2))
     const { container, unmount } = renderRoot(
       createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
     )
+    await flushJobs()
     // 3 agents (root + 2 children) < 8: the drawer renders its rows open.
     expect(container.textContent).toContain('sleep 300')
     expect(container.textContent).not.toContain('已自动折叠')
@@ -132,6 +155,7 @@ describe('Tasks page interactions', () => {
     const { container, unmount } = renderRoot(
       createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
     )
+    await flushJobs()
     // 9 agents ≥ 8: collapsed, the auto note explains, no rows rendered.
     expect(container.textContent).not.toContain('sleep 300')
     expect(container.textContent).toContain('已自动折叠')
@@ -162,9 +186,9 @@ describe('Tasks page interactions', () => {
   })
 
   it('opens the node detail window on card click; the jump button goes to the transcript', async () => {
-    const opened: unknown[] = []
+    const navigation: NavigationSpy = { opened: [] }
     const store = makeStore(snapshotWithChildren(1))
-    const ctx = makeCtx(store, { openSubagent: (address) => { opened.push(address) } })
+    const ctx = makeCtx(store, navigation)
     const { container, unmount } = renderRoot(
       createElement(SubagentView, { sessionId: 'root', active: true, ctx }),
     )
@@ -174,14 +198,16 @@ describe('Tasks page interactions', () => {
     const node = container.querySelector('[data-graph-node="child-0"]') as HTMLElement
     await act(async () => { node.click() })
     // The card no longer jumps directly: it IS the detail affordance.
-    expect(opened).toEqual([])
+    expect(navigation.opened).toEqual([])
     const dialog = document.querySelector('[role="dialog"]') as HTMLElement
     expect(dialog).not.toBeNull()
     expect(dialog.textContent).toContain('节点详情')
     const jump = [...dialog.querySelectorAll('button')].find(button => button.textContent?.includes('查看转录'))
     expect(jump).toBeDefined()
     await act(async () => { jump?.click() })
-    expect(opened).toEqual([{ parentSessionId: 'root', childSessionId: 'child-0', mode: 'one-shot' }])
+    // The workspace face owns main-view selection since 0.1.6; ISessions.openSubagent
+    // is gone from the runtime, so that is the call the page must make.
+    expect(navigation.opened).toEqual([{ parentSessionId: 'root', childSessionId: 'child-0', mode: 'one-shot' }])
     unmount()
   })
 
@@ -218,9 +244,9 @@ describe('Tasks page interactions', () => {
 
 describe('Tasks page graph interactions and team board', () => {
   it('activates a graph node after a background pointerdown (no click theft)', async () => {
-    const opened: unknown[] = []
+    const navigation: NavigationSpy = { opened: [] }
     const store = makeStore(snapshotWithChildren(1))
-    const ctx = makeCtx(store, { openSubagent: (address) => { opened.push(address) } })
+    const ctx = makeCtx(store, navigation)
     const { container, unmount } = renderRoot(
       createElement(SubagentView, { sessionId: 'root', active: true, ctx }),
     )
@@ -238,7 +264,7 @@ describe('Tasks page graph interactions and team board', () => {
     await act(async () => { node.click() })
     // The click is not stolen: the card's own action (its detail window) ran.
     expect(document.querySelector('[role="dialog"]')).not.toBeNull()
-    expect(opened).toEqual([])
+    expect(navigation.opened).toEqual([])
     unmount()
   })
 
@@ -391,6 +417,7 @@ describe('Tasks page: owned tasks, host-primitive controls, draggable output', (
     const { container, unmount } = renderRoot(
       createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
     )
+    await flushJobs()
     const row = container.querySelector('button[aria-label*="sleep 300"]') as HTMLButtonElement
     await act(async () => { row.click() })
     const card = document.querySelector('[role="dialog"]') as HTMLElement

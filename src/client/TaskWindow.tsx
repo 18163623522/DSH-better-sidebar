@@ -17,8 +17,8 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import {
-  Button, IconCheckOutline14, IconCloseOutline16, IconEditOutline16,
-  IconRefreshOutline14, IconTrashOutline16, Input, MarkdownText, Pill, StateDot, Tag,
+  Button, IconCheckOutlineRegular, IconCloseOutlineRegular, IconEditOutlineRegular,
+  IconRefreshOutlineRegular, IconTrashOutlineRegular, Input, MarkdownText, Pill, StateDot, Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SidebarTeamMemberView, SidebarTeamTaskView } from '../context-types.ts'
 import { api } from './api.ts'
@@ -133,7 +133,13 @@ function TaskViewBody(props: {
           ? <div className={css.popHint}>{t('teamTaskNoDescription')}</div>
           : (
             <MarkdownText
-              {...markdownTextProps(body, { copyLabel: t('copy'), copiedLabel: t('copied') })}
+              {...markdownTextProps(body, {
+                copyLabel: t('copy'),
+                copiedLabel: t('copied'),
+                codeLabel: t('codeBlockTitle'),
+                wrapLabel: t('codeBlockWrap'),
+                unwrapLabel: t('codeBlockUnwrap'),
+              })}
             />
           )}
       </div>
@@ -309,7 +315,7 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
           <Button
             variant="ghost"
             size="sm"
-            icon={<IconCloseOutline16 size={12} />}
+            icon={<IconCloseOutlineRegular size={12} />}
             aria-label={t('teamTaskCancel')}
             title={t('teamTaskCancel')}
             onClick={onClose}
@@ -345,7 +351,7 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
               <Button
                 variant="primary"
                 size="sm"
-                icon={<IconCheckOutline14 size={12} />}
+                icon={<IconCheckOutlineRegular size={12} />}
                 disabled={busy || subject.trim() === ''}
                 onClick={save}
               >
@@ -374,7 +380,7 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
               <Button
                 variant="outline"
                 size="sm"
-                icon={<IconEditOutline16 size={12} />}
+                icon={<IconEditOutlineRegular size={12} />}
                 onClick={() => { setEditing(true) }}
               >
                 {t('teamTaskEdit')}
@@ -387,7 +393,7 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
                   <Button
                     variant="primary"
                     size="sm"
-                    icon={<IconRefreshOutline14 size={12} />}
+                    icon={<IconRefreshOutlineRegular size={12} />}
                     disabled={busy}
                     onClick={() => void mutate(() => api.teamsTaskUpdate(rootId, {
                       taskId: task.id, expectedRevision: task.revision, action: 'reopen',
@@ -400,7 +406,7 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
                   <Button
                     variant="primary"
                     size="sm"
-                    icon={<IconCheckOutline14 size={12} />}
+                    icon={<IconCheckOutlineRegular size={12} />}
                     disabled={busy}
                     onClick={() => void mutate(() => api.teamsTaskUpdate(rootId, {
                       taskId: task.id, expectedRevision: task.revision, action: 'complete',
@@ -413,7 +419,7 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
                 variant="outline"
                 size="sm"
                 className={clsx(css.taskDanger, armedDelete && css.taskDangerArmed)}
-                icon={<IconTrashOutline16 size={12} />}
+                icon={<IconTrashOutlineRegular size={12} />}
                 disabled={busy}
                 onClick={() => {
                   if (!armedDelete) { setArmedDelete(true); return }

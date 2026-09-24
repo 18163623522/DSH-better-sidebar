@@ -15,7 +15,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  Button, IconChevronUpOutline14, IconCopyOutline16, IconStopFill16, StateDot, Switch, Tag,
+  Button, IconChevronUpOutlineRegular, IconCopyOutlineRegular, IconStopFillRegular, StateDot, Switch, Tag,
   type TagTone,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SidebarJobView } from '../context-types.ts'
@@ -120,7 +120,7 @@ export function JobsDrawer(props: JobsDrawerProps): ReactNode {
         <span className={css.jobsBigNum}>{liveCount > 0 ? liveCount : rows.length}</span>
         <span className={css.jobsDrawerCount}>{countLabel}</span>
         <span className={css.jobsDrawerChev} data-open={open ? 'true' : 'false'} aria-hidden="true">
-          <IconChevronUpOutline14 size={12} />
+          <IconChevronUpOutlineRegular size={12} />
         </span>
       </button>
       {!autoOpen && <div className={css.jobsAutoNote}>{t('jobsAutoCollapsed')}</div>}
@@ -174,7 +174,7 @@ export function JobsDrawer(props: JobsDrawerProps): ReactNode {
                       size="sm"
                       className={css.jobsKill}
                       data-armed={armed ? 'true' : 'false'}
-                      icon={<IconStopFill16 size={11} />}
+                      icon={<IconStopFillRegular size={11} />}
                       aria-label={armed ? t('jobKillConfirm') : t('jobKill')}
                       title={armed ? t('jobKillConfirm') : t('jobKill')}
                       disabled={killing}
@@ -288,7 +288,7 @@ export function JobOutputPopoverContent(props: {
           <Button
             variant="ghost"
             size="sm"
-            icon={<IconCopyOutline16 size={12} />}
+            icon={<IconCopyOutlineRegular size={12} />}
             aria-label={copied ? t('jobCopied') : t('jobCopyOutput')}
             title={copied ? t('jobCopied') : t('jobCopyOutput')}
             disabled={text === ''}
@@ -343,7 +343,7 @@ export function JobOutputPopoverContent(props: {
             variant="outline"
             size="sm"
             className={armed ? css.jobPopKillArmed : undefined}
-            icon={<IconStopFill16 size={11} />}
+            icon={<IconStopFillRegular size={11} />}
             disabled={killing}
             onClick={() => {
               if (armed) void kill()

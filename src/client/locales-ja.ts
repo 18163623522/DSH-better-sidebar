@@ -332,7 +332,6 @@ export const ja: Record<string, string> = {
   codeBlockUnwrap: '折り返しを無効にする',
   sideChatBlockWindow: '全 {total} 行中 {shown} 行を表示',
   sideChatConnDisconnected: '接続が切断されました。クリックで再接続',
-  sideChatConnReconnect: '再接続',
   sideChatConnConnecting: '再接続中…',
   sideChatConnRecovered: '接続が復旧しました',
   sideChatConnReconnectAction: '今すぐ再接続',

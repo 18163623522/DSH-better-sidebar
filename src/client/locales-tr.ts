@@ -332,7 +332,6 @@ export const tr: Record<string, string> = {
   codeBlockUnwrap: 'Satırları kaydırma',
   sideChatBlockWindow: '{total} satırdan {shown} satır',
   sideChatConnDisconnected: 'Bağlantı koptu',
-  sideChatConnReconnect: 'Yeniden bağlan',
   sideChatConnConnecting: 'Yeniden bağlanıyor…',
   sideChatConnRecovered: 'Bağlantı geri yüklendi',
   sideChatConnReconnectAction: 'Şimdi yeniden bağlan',

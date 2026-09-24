@@ -333,7 +333,6 @@ export const ar: Record<string, string> = {
   codeBlockUnwrap: 'بدون التفاف للأسطر',
   sideChatBlockWindow: '{shown} من {total} سطرًا',
   sideChatConnDisconnected: 'انقطع الاتصال',
-  sideChatConnReconnect: 'إعادة الاتصال',
   sideChatConnConnecting: 'جارٍ إعادة الاتصال…',
   sideChatConnRecovered: 'تم استعادة الاتصال',
   sideChatConnReconnectAction: 'إعادة الاتصال الآن',

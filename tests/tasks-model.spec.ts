@@ -13,10 +13,11 @@ import {
 } from '../src/client/tasks-model.ts'
 import type {
   SidebarSessionSummary,
-  SidebarSubagentCatalog,
-  SidebarSubagentChildEntry,
+  SidebarSubagentCatalogEntry,
   SidebarTeamMemberView,
 } from '../src/context-types.ts'
+import type { SubagentCatalogView } from '../src/client/subagent-catalog.ts'
+import type { LastActivity } from '../src/subagent-activity.ts'
 import type { WorkflowRunView } from '../src/workflow-runs.ts'
 
 /** A summary row. */
@@ -24,14 +25,19 @@ function summary(id: string, over: Partial<SidebarSessionSummary> = {}): Sidebar
   return { id, displayTitle: id, ...over }
 }
 
-/** A catalog child row. */
-function child(id: string, over: Partial<SidebarSubagentChildEntry> = {}): SidebarSubagentChildEntry {
-  return { kind: 'child', id, activity: 'running', hasChildren: false, mode: 'one-shot', ...over }
+/** One `subagentCatalog` projection row (DSH 0.1.7 shape). */
+function child(id: string, over: Partial<SidebarSubagentCatalogEntry> = {}): SidebarSubagentCatalogEntry {
+  return { id, createdAt: 0, mode: 'one-shot', ...over }
 }
 
-/** A ready catalog. */
-function catalog(entries: SidebarSubagentCatalog['entries']): SidebarSubagentCatalog {
-  return { entries, parentAvailable: true, state: 'ready', error: null }
+/** A loaded catalog view (what the projection folds into). */
+function catalog(entries: SidebarSubagentCatalogEntry[]): SubagentCatalogView {
+  return { entries, state: 'ready', error: null }
+}
+
+/** The live channel's fold: only the RUNNING children appear (DSH 0.1.7). */
+function running(...ids: string[]): Record<string, LastActivity> {
+  return Object.fromEntries(ids.map(id => [id, { text: `${id} is working` }]))
 }
 
 /** A workflow run view. */
@@ -71,7 +77,7 @@ describe('buildTasksModel', () => {
   it('walks the catalogs in pre-order and marks the current session', () => {
     const model = buildTasksModel(input({
       catalogs: {
-        root: catalog([child('a'), child('b', { activity: 'inactive' })]),
+        root: catalog([child('a'), child('b')]),
         a: catalog([child('a1')]),
       },
       byId: {
@@ -79,6 +85,7 @@ describe('buildTasksModel', () => {
         a: summary('a'), b: summary('b'), a1: summary('a1'),
       },
       currentSessionId: 'a1',
+      live: running('a', 'a1'),
       folded: false,
     }))
     expect(model.map(node => node.id)).toEqual(['root', 'a', 'a1', 'b'])
@@ -86,6 +93,9 @@ describe('buildTasksModel', () => {
     expect(agents(model).find(node => node.id === 'a1')?.childAddress).toEqual({
       parentSessionId: 'a', childSessionId: 'a1', mode: 'one-shot',
     })
+    // Activity comes from the live channel, and `b` (absent there) is settled.
+    expect(agents(model).find(node => node.id === 'a')?.state).toBe('running')
+    expect(agents(model).find(node => node.id === 'b')?.state).toBe('done')
   })
 
   it('excludes Side Chat threads from the model', () => {
@@ -108,7 +118,7 @@ describe('buildTasksModel', () => {
       }],
     })
     const model = buildTasksModel(input({
-      catalogs: { root: catalog([child('m1', { activity: 'inactive' })]) },
+      catalogs: { root: catalog([child('m1')]) },
       byId: { root: summary('root'), m1: summary('m1', { displayTitle: 'M1' }) },
       runs: [audit],
       folded: false,
@@ -138,12 +148,15 @@ describe('buildTasksModel', () => {
     const model = buildTasksModel(input({
       catalogs: {
         root: catalog([
-          child('done-1', { activity: 'inactive' }),
-          child('done-2', { activity: 'inactive' }),
-          child('live', { activity: 'running' }),
-          child('mate', { activity: 'inactive' }),
-          child('parent', { activity: 'inactive', hasChildren: true }),
+          child('done-1'), child('done-2'), child('live'), child('mate'), child('parent'),
         ]),
+        // A KNOWN LEAF is a child whose OWN catalog loaded empty (0.1.7 rows
+        // carry no `hasChildren`): only those two are fold candidates.
+        'done-1': catalog([]),
+        'done-2': catalog([]),
+        'live': catalog([]),
+        'mate': catalog([]),
+        // `parent` has a child of its own, so it keeps its whole branch.
         parent: catalog([child('grandchild')]),
       },
       byId: {
@@ -152,6 +165,7 @@ describe('buildTasksModel', () => {
         live: summary('live'), mate: summary('mate'),
         parent: summary('parent'), grandchild: summary('grandchild'),
       },
+      live: running('live'),
       teamMembers: [member({ id: 'mate', status: 'idle' })],
     }))
     expect(model.map(node => node.id)).toEqual([
@@ -161,9 +175,17 @@ describe('buildTasksModel', () => {
     expect(fold).toMatchObject({ parentId: 'root', count: 2, memberIds: ['done-1', 'done-2'] })
   })
 
+  it('keeps a child whose own catalog is unknown (never folds on missing data)', () => {
+    const model = buildTasksModel(input({
+      catalogs: { root: catalog([child('opaque')]) },
+      byId: { root: summary('root'), opaque: summary('opaque') },
+    }))
+    expect(model.map(node => node.id)).toEqual(['root', 'opaque'])
+  })
+
   it('unfolds everything when folded is false', () => {
     const base = input({
-      catalogs: { root: catalog([child('done-1', { activity: 'inactive' })]) },
+      catalogs: { root: catalog([child('done-1')]) },
       byId: { root: summary('root'), 'done-1': summary('done-1') },
       folded: false,
     })
@@ -204,7 +226,7 @@ describe('buildTasksModel: duplicate workflow members', () => {
     const model = buildTasksModel(input({
       catalogs: {
         root: catalog([child('a')]),
-        a: catalog([child('m1', { activity: 'inactive' })]),
+        a: catalog([child('m1')]),
       },
       byId: { root: summary('root'), a: summary('a'), m1: summary('m1') },
       runs: [audit],

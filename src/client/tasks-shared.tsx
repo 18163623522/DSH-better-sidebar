@@ -13,7 +13,7 @@
  */
 import type { ReactNode } from 'react'
 import {
-  IconAgentPresetOutline16, IconBranchOutline16, IconChecklistOutline14, IconUserOutline16,
+  IconAgentPresetOutlineRegular, IconBranchOutlineRegular, IconChecklistOutlineRegular, IconUserOutlineRegular,
   type StateDotState,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { LastActivity } from '../subagent-activity.ts'
@@ -75,18 +75,33 @@ export function flatten(text: string): string {
 /** The host icon of one agent node (the lead and plain children share one). */
 export function AgentGlyph(props: { node: TasksAgentNode; size?: number }): ReactNode {
   const size = props.size ?? 11
-  if (props.node.team?.role === 'teammate') return <IconUserOutline16 size={size} />
-  return <IconAgentPresetOutline16 size={size} />
+  if (props.node.team?.role === 'teammate') return <IconUserOutlineRegular size={size} />
+  return <IconAgentPresetOutlineRegular size={size} />
 }
 
 /** The workflow-run glyph. */
 export function WorkflowGlyph(props: { size?: number }): ReactNode {
-  return <IconBranchOutline16 size={props.size ?? 11} />
+  return <IconBranchOutlineRegular size={props.size ?? 11} />
 }
 
 /** The fold aggregate glyph. */
 export function FoldGlyph(props: { size?: number }): ReactNode {
-  return <IconChecklistOutline14 size={props.size ?? 11} />
+  return <IconChecklistOutlineRegular size={props.size ?? 11} />
+}
+
+/**
+ * The mode word of one catalog row, or undefined when it names no mode. DSH
+ * 0.1.7 added `unknown` (a child the host's catalog fold kept without a
+ * readable descriptor): it claims NEITHER mode, so the segment is omitted
+ * rather than mislabelled.
+ */
+export function modeLabel(mode: TasksAgentNode['mode']): string | undefined {
+  switch (mode) {
+    case 'one-shot': return t('subagentModeOneShot')
+    case 'continuable': return t('subagentModeContinuable')
+    case 'unknown':
+    case undefined: return undefined
+  }
 }
 
 /**
@@ -101,10 +116,8 @@ export function agentMeta(node: TasksAgentNode): string {
   if (node.team?.role === 'teammate' && node.team.model !== undefined && node.team.model !== '') {
     return `${node.team.model} · ${state}`
   }
-  if (node.mode !== undefined) {
-    return `${node.mode === 'one-shot' ? t('subagentModeOneShot') : t('subagentModeContinuable')} · ${state}`
-  }
-  return state
+  const mode = modeLabel(node.mode)
+  return mode === undefined ? state : `${mode} · ${state}`
 }
 
 /** The mono meta line of a workflow run card: status · member tally. */
@@ -167,7 +180,7 @@ export function TaskLine(props: {
         props.onOpenTask(primary.id, event.currentTarget)
       }}
     >
-      <span className={css.taskGlyph} aria-hidden="true"><IconChecklistOutline14 size={9} /></span>
+      <span className={css.taskGlyph} aria-hidden="true"><IconChecklistOutlineRegular size={9} /></span>
       <span className={css.taskSubject}>{primary.subject}</span>
       <span className={css.taskState}>{t(taskStatusKey(primary.status))}</span>
       {tasks.length > 1 && <span className={css.taskMore}>{`+${tasks.length - 1}`}</span>}

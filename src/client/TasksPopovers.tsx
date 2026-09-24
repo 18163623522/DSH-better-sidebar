@@ -26,11 +26,11 @@
  */
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
-import { Button, IconRightUpOutline14, StateDot, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconRightUpOutlineRegular, StateDot, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SidebarSubagentAddress } from '../context-types.ts'
 import type { TasksAgentNode, TasksWorkflowNode } from './tasks-model.ts'
 import {
-  AgentGlyph, WorkflowGlyph, flatten, nodeDotState, taskDotState, taskStatusKey, workflowStatusKey,
+  AgentGlyph, WorkflowGlyph, flatten, modeLabel, nodeDotState, taskDotState, taskStatusKey, workflowStatusKey,
 } from './tasks-shared.tsx'
 import { t, type CopyKey } from './locales.ts'
 import css from './tasks-graph.module.css'
@@ -78,6 +78,8 @@ export function AgentNodePopover(props: {
   onOpenTask(taskId: string, anchor: HTMLElement): void
 }): ReactNode {
   const { node, onJump, onOpenTask } = props
+  /** The row's mode word; `unknown` claims no mode and this row is omitted. */
+  const nodeMode = modeLabel(node.mode)
   const liveText = node.live?.text !== undefined ? flatten(node.live.text) : undefined
   const liveTool = node.live?.tool !== undefined
     ? `${node.live.tool.name}${node.live.tool.args === '' ? '' : ` ${node.live.tool.args}`}`
@@ -92,10 +94,8 @@ export function AgentNodePopover(props: {
         <PopRow label={t('tasksNodeState')}>
           <StateDot state={nodeDotState(node.state)} size={6} /> {t(stateKey(node.state))}
         </PopRow>
-        {node.mode !== undefined && (
-          <PopRow label={t('tasksNodeMode')}>
-            {node.mode === 'one-shot' ? t('subagentModeOneShot') : t('subagentModeContinuable')}
-          </PopRow>
+        {nodeMode !== undefined && (
+          <PopRow label={t('tasksNodeMode')}>{nodeMode}</PopRow>
         )}
         {node.team !== undefined && (
           <PopRow label={t('tasksNodeTeamRole')}>
@@ -141,7 +141,7 @@ export function AgentNodePopover(props: {
           <Button
             variant="primary"
             size="sm"
-            icon={<IconRightUpOutline14 size={12} />}
+            icon={<IconRightUpOutlineRegular size={12} />}
             onClick={() => { onJump(node) }}
           >
             {t('tasksNodeJump')}

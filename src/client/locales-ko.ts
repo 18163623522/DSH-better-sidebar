@@ -324,7 +324,6 @@ export const ko: Record<string, string> = {
   codeBlockUnwrap: '줄 바꿈 해제',
   sideChatBlockWindow: '전체 {total}줄 중 {shown}줄 표시',
   sideChatConnDisconnected: '연결이 끊겼습니다',
-  sideChatConnReconnect: '다시 연결',
   sideChatConnConnecting: '다시 연결 중…',
   sideChatConnRecovered: '연결이 복원되었습니다',
   sideChatConnReconnectAction: '지금 다시 연결',

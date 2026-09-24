@@ -323,7 +323,6 @@ export const it: Record<string, string> = {
   codeBlockUnwrap: 'Nessun a capo',
   sideChatBlockWindow: '{shown} di {total} righe',
   sideChatConnDisconnected: 'Connessione persa',
-  sideChatConnReconnect: 'Riconnetti',
   sideChatConnConnecting: 'Riconnessione…',
   sideChatConnRecovered: 'Connessione ripristinata',
   sideChatConnReconnectAction: 'Riconnetti ora',

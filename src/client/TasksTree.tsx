@@ -17,7 +17,7 @@
  */
 import { useCallback, useMemo, useRef, type KeyboardEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { IconLoadingOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconLoadingOutlineRegular, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TasksAgentNode, TasksNode, TasksWorkflowNode } from './tasks-model.ts'
 import {
   AgentGlyph, agentMeta, FoldGlyph, foldPreviews, LiveLine, nodeDotState, TaskLine,
@@ -200,7 +200,7 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
       >
         {loading === true && roots.length === 0 && (
           <div className={css.viewEmptyHint}>
-            <span className={css.treeGlyph} aria-hidden="true"><IconLoadingOutline16 size={12} /></span>
+            <span className={css.treeGlyph} aria-hidden="true"><IconLoadingOutlineRegular size={12} /></span>
             {t('loading')}
           </div>
         )}

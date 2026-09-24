@@ -7,13 +7,13 @@
  */
 import type { ReactNode } from 'react'
 import {
-  IconCodeOutline16,
-  IconEditOutline16,
-  IconEllipsisOutline16,
-  IconGlobeOutline14,
-  IconPlayOutline16,
-  IconSearchOutline16,
-  IconThinkOutline16,
+  IconCodeOutlineRegular,
+  IconEditOutlineRegular,
+  IconEllipsisOutlineRegular,
+  IconGlobeOutlineRegular,
+  IconPlayOutlineRegular,
+  IconSearchOutlineRegular,
+  IconThinkOutlineRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 
 /** One glyph renderer (host icon components accept a pixel size). */
@@ -21,21 +21,21 @@ type Glyph = (size: number) => ReactNode
 
 /** The explicit tool-family map (longest-prefix wins at lookup). */
 const TOOL_GLYPHS: ReadonlyArray<readonly [string, Glyph]> = [
-  ['read', size => <IconCodeOutline16 size={size} />],
-  ['write', size => <IconEditOutline16 size={size} />],
-  ['edit', size => <IconEditOutline16 size={size} />],
-  ['glob', size => <IconSearchOutline16 size={size} />],
-  ['grep', size => <IconSearchOutline16 size={size} />],
-  ['search', size => <IconSearchOutline16 size={size} />],
-  ['bash', size => <IconPlayOutline16 size={size} />],
-  ['shell', size => <IconPlayOutline16 size={size} />],
-  ['web', size => <IconGlobeOutline14 size={size} />],
-  ['fetch', size => <IconGlobeOutline14 size={size} />],
-  ['think', size => <IconThinkOutline16 size={size} />],
+  ['read', size => <IconCodeOutlineRegular size={size} />],
+  ['write', size => <IconEditOutlineRegular size={size} />],
+  ['edit', size => <IconEditOutlineRegular size={size} />],
+  ['glob', size => <IconSearchOutlineRegular size={size} />],
+  ['grep', size => <IconSearchOutlineRegular size={size} />],
+  ['search', size => <IconSearchOutlineRegular size={size} />],
+  ['bash', size => <IconPlayOutlineRegular size={size} />],
+  ['shell', size => <IconPlayOutlineRegular size={size} />],
+  ['web', size => <IconGlobeOutlineRegular size={size} />],
+  ['fetch', size => <IconGlobeOutlineRegular size={size} />],
+  ['think', size => <IconThinkOutlineRegular size={size} />],
 ]
 
 /** The fallback glyph for unmapped tools. */
-const FALLBACK_GLYPH: Glyph = size => <IconEllipsisOutline16 size={size} />
+const FALLBACK_GLYPH: Glyph = size => <IconEllipsisOutlineRegular size={size} />
 
 /**
  * The glyph of one tool name: exact match first, then a prefix match so

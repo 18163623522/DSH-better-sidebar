@@ -334,7 +334,6 @@ export const pl: Record<string, string> = {
   codeBlockUnwrap: 'Bez zawijania wierszy',
   sideChatBlockWindow: '{shown} z {total} wierszy',
   sideChatConnDisconnected: 'Połączenie utracone',
-  sideChatConnReconnect: 'Połącz ponownie',
   sideChatConnConnecting: 'Łączenie ponownie…',
   sideChatConnRecovered: 'Połączenie przywrócone',
   sideChatConnReconnectAction: 'Połącz ponownie teraz',

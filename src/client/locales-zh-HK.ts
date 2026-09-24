@@ -347,7 +347,6 @@ export const zhHK: Record<string, string> = {
   codeBlockUnwrap: '取消自動換行',
   sideChatBlockWindow: '共 {total} 行 · 顯示 {shown} 行',
   sideChatConnDisconnected: '連線已中斷',
-  sideChatConnReconnect: '重新連線',
   sideChatConnConnecting: '正在重新連線…',
   sideChatConnRecovered: '連線已恢復',
   sideChatConnReconnectAction: '立即重新連線',
