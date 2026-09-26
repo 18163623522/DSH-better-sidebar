@@ -7,10 +7,10 @@
  * request). Failures surface as {@link SidebarApiError} with the wire code.
  */
 import { encodeHtmlUrl } from '../html-route.ts'
-import type { LastActivity } from '../subagent-activity.ts'
 import type { SidechatLiveEvent, SidechatLogEvent, SidechatThreadInfo } from '../sidechat-core.ts'
 import type {
   SidebarCreateTeamTaskRequest,
+  SidebarChildLiveView,
   SidebarJobView,
   SidebarSessionEvent,
   SidebarTeamMemberView,
@@ -119,8 +119,8 @@ export interface JobOutputResult {
   read: boolean
 }
 
-/** The `subagents.live` response: running child id → latest activity. */
-export type SubagentLiveResult = { live: Record<string, LastActivity> }
+/** The `subagents.live` response: one row per tree child (and the root). */
+export type SubagentLiveResult = { live: Record<string, SidebarChildLiveView> }
 
 /** The `workflows.list` response: the tree's folded workflow runs. */
 export type WorkflowsListResult = { runs: WorkflowRunView[] }
@@ -375,7 +375,8 @@ export const api = {
   /**
    * One batch live-preview fetch for the whole Subagent tree. The payload is
    * the already-resolved topology ROOT (not a session scope); the host
-   * enumerates descendants once and folds running children's activity.
+   * enumerates descendants once and folds every child's newest process range
+   * into the main agent's merged-activity summary.
    */
   subagentsLive: (rootSessionId: string, signal?: AbortSignal) =>
     call<SubagentLiveResult>('subagents.live', { rootSessionId }, signal),

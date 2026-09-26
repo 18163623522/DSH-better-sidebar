@@ -16,7 +16,8 @@ import {
   IconAgentPresetOutlineRegular, IconBranchOutlineRegular, IconChecklistOutlineRegular, IconUserOutlineRegular,
   type StateDotState,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { LastActivity } from '../subagent-activity.ts'
+import type { SidebarChildLiveView } from '../context-types.ts'
+import { liveActivityLabel } from './process-labels.ts'
 import type { TasksAgentNode, TasksNodeState, TasksNodeTask, TasksWorkflowNode } from './tasks-model.ts'
 import { toolGlyph } from './tool-icons.tsx'
 import { t, type CopyKey } from './locales.ts'
@@ -189,25 +190,26 @@ export function TaskLine(props: {
 }
 
 /**
- * The live activity row of a RUNNING agent: the tool's own icon + tool name +
- * args (the approved format), plus the flattened last text line underneath.
+ * The live activity row of a RUNNING agent: the merged process summary the
+ * main conversation would show for the child's newest range (category wording
+ * + the running call's detail), plus the flattened last text line underneath.
  * A running node with neither reads as thinking.
  */
-export function LiveLine(props: { live: LastActivity | undefined }): ReactNode {
+export function LiveLine(props: { live: SidebarChildLiveView | undefined }): ReactNode {
   const { live } = props
-  if (live?.text === undefined && live?.tool === undefined) {
+  const activity = liveActivityLabel(live?.summary)
+  if (activity === undefined && live?.text === undefined) {
     return <span className={css.nodeMeta}>{t('subagentThinking')}</span>
   }
   return (
     <>
-      {live.tool !== undefined && (
+      {activity !== undefined && (
         <span className={css.live}>
-          <span className={css.liveGlyph} aria-hidden="true">{toolGlyph(live.tool.name)(9)}</span>
-          <span className={css.liveTool}>{live.tool.name}</span>
-          {live.tool.args !== '' && <span className={css.liveArgs}>{preview(live.tool.args)}</span>}
+          <span className={css.liveGlyph} aria-hidden="true">{toolGlyph('bash')(9)}</span>
+          <span className={css.liveTool} title={activity}>{activity}</span>
         </span>
       )}
-      {live.text !== undefined && (
+      {live?.text !== undefined && (
         <span className={css.liveText}>{preview(flatten(live.text), TEXT_PREVIEW)}</span>
       )}
     </>

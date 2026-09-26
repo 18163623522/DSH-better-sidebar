@@ -125,7 +125,7 @@ describe('SubagentView live polling', () => {
       if (method === 'subagents.live') {
         const body = JSON.parse(String(init?.body)) as { rootSessionId?: string }
         liveCalls.push(body.rootSessionId ?? '')
-        return jsonResponse({ ok: true, value: { live: { a: {}, b: {} } } })
+        return jsonResponse({ ok: true, value: { live: { a: { running: true }, b: { running: true } } } })
       }
       if (method === 'jobs.list') return jsonResponse({ ok: true, value: { jobs: [] } })
       throw new Error(`unexpected fetch ${String(url)}`)
@@ -177,7 +177,7 @@ describe('SubagentView live polling', () => {
 
     // Settle the first request; only then does the next 3s tick fire.
     await act(async () => {
-      resolveFirst?.(jsonResponse({ ok: true, value: { live: { a: {}, b: {} } } }))
+      resolveFirst?.(jsonResponse({ ok: true, value: { live: { a: { running: true }, b: { running: true } } } }))
       await Promise.resolve()
     })
     await act(async () => { await vi.advanceTimersByTimeAsync(3_000) })
@@ -217,7 +217,7 @@ describe('SubagentView live polling', () => {
 
     // Settling the stale response must neither render nor schedule a poll.
     await act(async () => {
-      resolveFirst?.(jsonResponse({ ok: true, value: { live: { a: { text: 'stale' } } } }))
+      resolveFirst?.(jsonResponse({ ok: true, value: { live: { a: { running: true, text: 'stale' } } } }))
       await Promise.resolve()
     })
     await act(async () => { await vi.advanceTimersByTimeAsync(10_000) })
@@ -235,7 +235,7 @@ describe('SubagentView live polling', () => {
       if (method === 'subagents.live') {
         const body = JSON.parse(String(init?.body)) as { rootSessionId?: string }
         liveCalls.push(body.rootSessionId ?? '')
-        const live = body.rootSessionId === 'root' ? { a: { text: 'hello' } } : {}
+        const live = body.rootSessionId === 'root' ? { a: { running: true, text: 'hello' } } : {}
         return jsonResponse({ ok: true, value: { live } })
       }
       if (method === 'jobs.list') return jsonResponse({ ok: true, value: { jobs: [] } })

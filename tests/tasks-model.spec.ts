@@ -17,7 +17,7 @@ import type {
   SidebarTeamMemberView,
 } from '../src/context-types.ts'
 import type { SubagentCatalogView } from '../src/client/subagent-catalog.ts'
-import type { LastActivity } from '../src/subagent-activity.ts'
+import type { SidebarChildLiveView } from '../src/context-types.ts'
 import type { WorkflowRunView } from '../src/workflow-runs.ts'
 
 /** A summary row. */
@@ -36,8 +36,9 @@ function catalog(entries: SidebarSubagentCatalogEntry[]): SubagentCatalogView {
 }
 
 /** The live channel's fold: only the RUNNING children appear (DSH 0.1.7). */
-function running(...ids: string[]): Record<string, LastActivity> {
-  return Object.fromEntries(ids.map(id => [id, { text: `${id} is working` }]))
+/** The live map of a set of RUNNING sessions (the new live-view shape). */
+function running(...ids: string[]): Record<string, SidebarChildLiveView> {
+  return Object.fromEntries(ids.map(id => [id, { running: true, text: `${id} is working` }]))
 }
 
 /** A workflow run view. */

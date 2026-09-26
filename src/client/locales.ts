@@ -976,7 +976,17 @@ export const LOCALE_NS = 'betterSidebar'
 // path most sessions never enter.
 
 /** The DSH locale service attached by the client apply (absent → browser detection). */
-let localeService: { getSnapshot(): { active: string } } | undefined
+let localeService: {
+  getSnapshot(): { active: string }
+  /**
+   * Bind one registered namespace to a translate function (DSH's
+   * `LocaleRuntime.bind`). Optional because a consumer may attach only the
+   * snapshot face. The untyped overload is what makes cross-package key reads
+   * possible: an UNREGISTERED namespace yields a function that returns the key
+   * itself, which is exactly how {@link chatT} detects "not available".
+   */
+  bind?(ns: string): (key: string, params?: Record<string, string | number>) => string
+} | undefined
 
 /**
  * The better-locale override store attached by the client apply
@@ -1003,8 +1013,48 @@ let betterLocaleStore: {
  * `t()` function, and the Sidebar root's locale subscription re-renders the
  * whole tree on switches.
  */
-export function attachLocale(service: { getSnapshot(): { active: string } } | undefined): void {
+export function attachLocale(service: {
+  getSnapshot(): { active: string }
+  /** Optional namespace binding ({@link chatT} needs it; a bare snapshot face is still valid). */
+  bind?(ns: string): (key: string, params?: Record<string, string | number>) => string
+} | undefined): void {
   localeService = service
+}
+
+/**
+ * Translate a key in the HOST's own `chat` namespace — the wording the main
+ * conversation's merged "process" header uses (`message.stepProcess.*`,
+ * registered by `@deepseek-ai/dsh-client-ui-chat`). The Tasks page reads it so
+ * a running node reads exactly like the main agent's own activity line instead
+ * of inventing a second vocabulary (and without adding ~40 keys to 20 plugin
+ * dictionaries).
+ *
+ * Deliberately untyped: these keys are NOT a documented host contract. A host
+ * that renames one, or a deployment where the chat target never mounted,
+ * returns the key unchanged — the caller then falls back to its own wording
+ * ({@link chatT} answers undefined) rather than printing `message.…`.
+ *
+ * @param key - full `chat`-namespace key.
+ * @param params - `{name}` placeholders to interpolate (the host does this).
+ * @returns the translated text, or undefined when unavailable.
+ */
+export function chatT(key: string, params?: Record<string, string | number>): string | undefined {
+  const service = localeService
+  if (service === undefined) return undefined
+  try {
+    // MUST stay a METHOD call: DSH's `bind` reads `this.bound`, so a detached
+    // reference (`const bind = service.bind; bind('chat')`) throws
+    // "Cannot read properties of undefined (reading 'bound')" — caught by the
+    // real-host mount lane, invisible to closure fakes in unit tests.
+    const translate = service.bind?.('chat')
+    if (typeof translate !== 'function') return undefined
+    const text = translate(key, params)
+    return typeof text === 'string' && text !== '' && text !== key ? text : undefined
+  } catch {
+    // The namespace seam is undocumented: a host that reshapes it must degrade
+    // to the caller's own wording, never break a render.
+    return undefined
+  }
 }
 
 /**

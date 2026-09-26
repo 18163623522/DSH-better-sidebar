@@ -7,6 +7,7 @@
  * the width-aware solver.
  */
 import { describe, expect, it } from 'vitest'
+import type { SidebarChildLiveView } from '../src/context-types.ts'
 import {
   GRAPH_GAP_Y,
   GRAPH_LIVE_H,
@@ -48,6 +49,12 @@ function layoutRow(layout: ReturnType<typeof layoutTasksGraph>, id: string): num
   const box = layout.boxes.get(id)
   if (box === undefined) throw new Error(`no box for ${id}`)
   return (box.y - GRAPH_PAD) / GRAPH_ROW_STRIDE
+}
+
+/** One running node's live view: a merged activity row, no text tail. */
+const ACTIVITY: SidebarChildLiveView = {
+  running: true,
+  summary: { counts: [{ kind: 'read', count: 1 }], running: 'read', runningDetail: 'x' },
 }
 
 describe('layoutTasksGraph', () => {
@@ -98,11 +105,11 @@ describe('layoutTasksGraph', () => {
     expect(plain.boxes.get('mate')?.h).toBe(GRAPH_NODE_H)
   })
 
-  it('reserves the live tail row only when the tail carries a tool AND text', () => {
+  it('reserves the live tail row only when the tail carries activity AND text', () => {
     const nodes: TasksNode[] = [
       agent('root'),
-      agent('tool-only', 'root', false, { live: { tool: { name: 'read', args: 'x' } } }),
-      agent('both', 'root', false, { live: { tool: { name: 'read', args: 'x' }, text: 'y' } }),
+      agent('tool-only', 'root', false, { live: ACTIVITY }),
+      agent('both', 'root', false, { live: { ...ACTIVITY, text: 'y' } }),
     ]
     const layout = layoutTasksGraph(nodes)
     // One live row either way (the tool row, or the meta-styled thinking
@@ -118,9 +125,7 @@ describe('layoutTasksGraph', () => {
     expect(GRAPH_ROW_STRIDE).toBeGreaterThanOrEqual(tallest)
     const nodes: TasksNode[] = [
       agent('root'),
-      agent('busiest', 'root', false, {
-        live: { tool: { name: 'read', args: 'x' }, text: 'y' }, tasks: [task('t1')],
-      }),
+      agent('busiest', 'root', false, { live: { ...ACTIVITY, text: 'y' }, tasks: [task('t1')] }),
     ]
     const layout = layoutTasksGraph(nodes)
     expect(layout.boxes.get('busiest')?.h).toBe(tallest)

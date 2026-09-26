@@ -10,6 +10,7 @@
  * the core bundle; <100-node trees need no virtualisation).
  */
 import type { TasksNode } from './tasks-model.ts'
+import type { SidebarChildLiveView } from '../context-types.ts'
 import { tasksEdges } from './tasks-model.ts'
 
 /** Geometry constants of the canvas (px, pre-scale). The design target is the
@@ -115,12 +116,18 @@ export interface LayoutOptions {
  * The tallest shape therefore is base + live + live-tail + task, which stays
  * inside {@link GRAPH_ROW_STRIDE} (rows can never overlap).
  */
+/** Whether a node's live view carries a merged-activity row to render. */
+function hasMergedActivity(live: SidebarChildLiveView | undefined): boolean {
+  if (live === undefined) return false
+  return (live.summary?.counts.length ?? 0) > 0 || live.summary?.running !== undefined
+}
+
 function nodeHeight(node: TasksNode): number {
   if (node.kind !== 'agent') return GRAPH_NODE_H
   let height = GRAPH_NODE_H
   if (node.state === 'running') {
     height += GRAPH_LIVE_H
-    if (node.live?.tool !== undefined && node.live.text !== undefined) height += GRAPH_LIVE_TAIL_H
+    if (hasMergedActivity(node.live) && node.live?.text !== undefined) height += GRAPH_LIVE_TAIL_H
   }
   if ((node.tasks?.length ?? 0) > 0) height += GRAPH_TASK_H
   return height

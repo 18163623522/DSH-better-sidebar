@@ -26,10 +26,10 @@ import type {
   SidebarTeamMemberView,
   SidebarTeamTaskView,
 } from '../context-types.ts'
-import type { LastActivity } from '../subagent-activity.ts'
+import type { SidebarChildLiveView } from '../context-types.ts'
 import type { WorkflowRunView } from '../workflow-runs.ts'
 import { isSideThreadSummary } from './subagent-detect.ts'
-import { childActivity, isKnownLeaf, type SubagentCatalogView } from './subagent-catalog.ts'
+import { childLive, isKnownLeaf, type SubagentCatalogView } from './subagent-catalog.ts'
 
 /** Display state of one agent node (drives the dot + fold candidacy). */
 export type TasksNodeState = 'running' | 'idle' | 'done' | 'error'
@@ -59,8 +59,8 @@ export interface TasksAgentNode {
   activity: 'running' | 'inactive'
   /** The on-screen session (the "you are here" marker). */
   current: boolean
-  /** Live tail of a running child (the icon + tool + args line). */
-  live?: LastActivity
+  /** Live tail of a running child (the merged activity + newest text). */
+  live?: SidebarChildLiveView
   /** Team enrichment (membership view matched by session id). */
   team?: {
     role: 'lead' | 'teammate'
@@ -108,7 +108,7 @@ export interface TasksModelInput {
   catalogs: Readonly<Record<string, SubagentCatalogView | undefined>>
   rootId: string
   currentSessionId: string
-  live: Readonly<Record<string, LastActivity | undefined>>
+  live: Readonly<Record<string, SidebarChildLiveView | undefined>>
   runs: readonly WorkflowRunView[]
   teamMembers: readonly SidebarTeamMemberView[]
   /** The team's shared tasks; each lands on its OWNER's node. */
@@ -215,9 +215,10 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
       if (entry.label?.startsWith('Side: ') ?? false) continue
       const team = teamOf(entry.id)
       // DSH 0.1.7's catalog row carries the identity only: the live channel
-      // folds RUNNING children (absence = not running) and a row keeps its
-      // disclosure unless its own catalog is known-empty.
-      const activity = childActivity(live, entry.id)
+      // reports EVERY child with an explicit `running` flag, and a row keeps
+      // its disclosure unless its own catalog is known-empty.
+      const view = childLive(live, entry.id)
+      const activity: 'running' | 'inactive' = view?.running === true ? 'running' : 'inactive'
       const state: TasksNodeState = activity === 'running'
         ? 'running'
         : team !== undefined ? teamState(team.status) : 'done'
@@ -232,7 +233,7 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
         state,
         activity,
         current: entry.id === currentSessionId,
-        ...(live[entry.id] !== undefined ? { live: live[entry.id] } : {}),
+        ...(view !== undefined ? { live: view } : {}),
         ...(team !== undefined ? { team } : {}),
         ...(tasksByNode.get(entry.id) !== undefined ? { tasks: tasksByNode.get(entry.id) } : {}),
         hasChildren: !isKnownLeaf(catalogs, entry.id),

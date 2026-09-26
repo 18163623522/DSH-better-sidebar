@@ -30,6 +30,7 @@
  */
 import type { Context as CordisContext } from '@deepseek-ai/cordis'
 import type { BetterSidebarService } from './client/service.ts'
+import type { ProcessActivitySummary } from './process-activity.ts'
 
 /** The request face route handlers see (structural subset of node's
  *  IncomingMessage: the URL/method/header reads and the async body
@@ -172,6 +173,31 @@ export interface SidebarHistoryEntry {
 
 /** Lifecycle status set of one background job (closed wire union). */
 export type SidebarJobStatus = 'running' | 'stopping' | 'completed' | 'killed' | 'failed'
+
+/**
+ * One tree child's live view as the `subagents.live` route reports it: the
+ * catalog's activity flag plus the fold of the child's newest process range
+ * (see ./process-activity.ts).
+ *
+ * `running` is the catalog's flag and is therefore always present on a CHILD
+ * row; the fold's fields are optional. The route used to report running
+ * children only, so "absent from the map" meant "not running" — a reading that
+ * cannot survive a route which also reports settled children's summaries.
+ */
+export interface SidebarChildLiveView {
+  /**
+   * The catalog's activity flag. Present on every CHILD row; ABSENT on the
+   * topology root, which the host cannot classify (the caller already knows
+   * its session's running state from the session list).
+   */
+  running?: boolean
+  /** The child's newest assistant text (the card's detail line). */
+  text?: string
+  /** The newest range's merged activity; absent when that range called nothing. */
+  summary?: ProcessActivitySummary
+  /** Epoch ms of the newest event observed. */
+  lastEventTime?: number
+}
 
 /**
  * One background job as the client mirror sees it (wire `JobView` shape:

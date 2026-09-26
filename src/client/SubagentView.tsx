@@ -34,6 +34,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   Context,
+  SidebarChildLiveView,
   SidebarJobView,
   SidebarSessionList,
   SidebarSubagentAddress,
@@ -45,7 +46,6 @@ import {
 } from './subagent-detect.ts'
 import { subagentCatalogs } from './subagent-catalog.ts'
 import { treeSessionIds } from './subagent-lineage.ts'
-import { type LastActivity } from '../subagent-activity.ts'
 import { collectTreeJobs, orderJobs } from './subagent-jobs.ts'
 import { api, type TeamsViewResult } from './api.ts'
 import { usePolling } from './use-polling.ts'
@@ -93,8 +93,8 @@ interface CatalogRefreshFace {
 function useSubagentLive(
   rootId: string | undefined,
   active: boolean,
-): Readonly<Record<string, LastActivity>> {
-  const [live, setLive] = useState<Record<string, LastActivity>>({})
+): Readonly<Record<string, SidebarChildLiveView>> {
+  const [live, setLive] = useState<Record<string, SidebarChildLiveView>>({})
 
   // A new tree must never inherit another root's live previews.
   useEffect(() => { setLive({}) }, [rootId])

@@ -32,6 +32,7 @@ import type { TasksAgentNode, TasksWorkflowNode } from './tasks-model.ts'
 import {
   AgentGlyph, WorkflowGlyph, flatten, modeLabel, nodeDotState, taskDotState, taskStatusKey, workflowStatusKey,
 } from './tasks-shared.tsx'
+import { liveActivityLabel } from './process-labels.ts'
 import { t, type CopyKey } from './locales.ts'
 import css from './tasks-graph.module.css'
 
@@ -81,9 +82,9 @@ export function AgentNodePopover(props: {
   /** The row's mode word; `unknown` claims no mode and this row is omitted. */
   const nodeMode = modeLabel(node.mode)
   const liveText = node.live?.text !== undefined ? flatten(node.live.text) : undefined
-  const liveTool = node.live?.tool !== undefined
-    ? `${node.live.tool.name}${node.live.tool.args === '' ? '' : ` ${node.live.tool.args}`}`
-    : undefined
+  // The merged activity the main conversation would show for this node's
+  // newest range (category wording + the running call's detail).
+  const liveTool = liveActivityLabel(node.live?.summary)
   return (
     <div className={css.popCard}>
       <div className={css.popHead}>
