@@ -1,24 +1,26 @@
 /**
  * The background-jobs bottom drawer of the Tasks page and its output popover.
  *
- * Drawer: the tree's jobs (owner-labeled, fed by the `session/jobs` push
- * mirror) collapse into a bottom bar that AUTO-COLLAPSES once the tree has
- * many agents — the manual toggle always wins afterwards.
+ * Drawer: the tree's jobs (owner-labeled, fed by the HOST's client jobs
+ * service — see jobs-client.ts) collapse into a bottom bar that AUTO-COLLAPSES
+ * once the tree has many agents — the manual toggle always wins afterwards.
  *
  * Popover: clicking a row opens a DRAGGABLE, portalled output card (see
  * AnchoredPopover) instead of docking a pane inside the page. It shows the
- * output the MODEL has read (event replay — never the model's job_output
- * cursor), with a copy action, a follow-latest switch, the two-click kill,
- * and a terminal-style tail while the job runs.
+ * output the host streams for an OBSERVER (never the model's consuming
+ * cursor), with a copy action, a follow-latest switch, the two-click kill, and
+ * a terminal-style tail while the job runs.
  *
- * Every control is a host primitive (Button / Tag / Switch / StateDot).
+ * Every control is a host primitive (Button / Tag / Switch / StateDot /
+ * TerminalBlock).
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   Button, IconChevronUpOutlineRegular, IconCopyOutlineRegular, IconStopFillRegular, StateDot, Switch, Tag,
-  type TagTone,
+  TerminalBlock, type TagTone,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { SidebarJobView } from '../context-types.ts'
+import type { SidebarClientJobsService, SidebarJobView, SidebarObservedJob } from '../context-types.ts'
+import { terminalBlockLabels } from './block-labels.ts'
 import {
   formatJobDuration,
   isJobLive,
@@ -26,12 +28,9 @@ import {
   jobStatusLabel,
   type TreeJob,
 } from './subagent-jobs.ts'
-import { api, type JobOutputResult } from './api.ts'
 import { t } from './locales.ts'
 import css from './tasks-graph.module.css'
 
-/** Refresh cadence of an open job-output popover while its job runs. */
-const JOB_POLL_MS = 2000
 /** How long the kill button stays armed before it needs re-confirming. */
 const JOB_KILL_ARM_MS = 3000
 /** The agent count at which the drawer starts collapsed. */
@@ -47,6 +46,10 @@ function jobTone(job: SidebarJobView): TagTone {
 
 export interface JobsDrawerProps {
   rows: readonly TreeJob[]
+  /** The host client jobs service; absent → no kill control is offered. */
+  jobs: SidebarClientJobsService | undefined
+  /** The observed output of the job whose panel is open (host stream). */
+  observed: SidebarObservedJob | undefined
   /** Agent count of the tree (root included) — the auto-collapse signal. */
   agentCount: number
   /** Open the output popover of one row (anchor = the row's main button). */
@@ -56,7 +59,7 @@ export interface JobsDrawerProps {
 }
 
 export function JobsDrawer(props: JobsDrawerProps): ReactNode {
-  const { rows, agentCount, onOpenOutput, openJobId } = props
+  const { rows, agentCount, jobs, onOpenOutput, openJobId } = props
   const autoOpen = agentCount < JOBS_DRAWER_COLLAPSE_AT
   /** Manual override; undefined = follow the auto rule. */
   const [manualOpen, setManualOpen] = useState<boolean | undefined>(undefined)
@@ -90,17 +93,18 @@ export function JobsDrawer(props: JobsDrawerProps): ReactNode {
   }, [liveCount])
 
   const kill = useCallback(async (row: TreeJob): Promise<void> => {
+    if (jobs === undefined) return
     setKillingId(row.job.id)
     setKillErrorId(undefined)
     try {
-      await api.jobKill({ sessionId: row.ownerSessionId }, row.job.id)
+      await jobs.kill(row.ownerSessionId, row.job.id)
     } catch {
       setKillErrorId(row.job.id)
     } finally {
       setKillingId(undefined)
       setArmedId(undefined)
     }
-  }, [])
+  }, [jobs])
 
   if (rows.length === 0) return null
 
@@ -205,46 +209,24 @@ export function JobsDrawer(props: JobsDrawerProps): ReactNode {
  * keeps its two-click confirm.
  */
 export function JobOutputPopoverContent(props: {
-  ownerSessionId: string
+  /** The host client jobs service (absent → the panel only reports that). */
+  jobs: SidebarClientJobsService | undefined
   job: SidebarJobView
-  active: boolean
+  /** The owner session the roster carried the job under (kill + observation). */
+  ownerSessionId: string
+  /** The host's streamed observation of THIS job (undefined until it arrives). */
+  observed: SidebarObservedJob | undefined
 }): ReactNode {
-  const { ownerSessionId, job, active } = props
-  const [state, setState] = useState<'loading' | JobOutputResult | 'error'>('loading')
+  const { jobs, job, ownerSessionId, observed } = props
   const [follow, setFollow] = useState(true)
   const [copied, setCopied] = useState(false)
   const [armed, setArmed] = useState(false)
   const [killing, setKilling] = useState(false)
   const [killFailed, setKillFailed] = useState(false)
-  const controllerRef = useRef<AbortController | undefined>(undefined)
   const preRef = useRef<HTMLPreElement>(null)
   const live = isJobLive(job)
-
-  const load = useCallback(async (): Promise<void> => {
-    controllerRef.current?.abort()
-    const controller = new AbortController()
-    controllerRef.current = controller
-    try {
-      const result = await api.jobOutput({ sessionId: ownerSessionId }, job.id, controller.signal)
-      setState(result)
-    } catch {
-      // A newer pull aborted this one, or the wire failed: keep the last
-      // known output; only a popover that never loaded anything shows an error.
-      setState(current => (current === 'loading' ? 'error' : current))
-    }
-  }, [ownerSessionId, job.id])
-
-  useEffect(() => {
-    void load()
-    if (!active || !live) return
-    const timer = window.setInterval(() => { void load() }, JOB_POLL_MS)
-    return () => { window.clearInterval(timer) }
-    // isJobLive reads only job.status; the job object churns on every catalog
-    // refresh and must not restart the poll interval.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [load, active, job.status])
-
-  useEffect(() => () => { controllerRef.current?.abort() }, [])
+  const text = observed?.text ?? ''
+  const labels = useMemo(() => terminalBlockLabels(), [])
 
   // The armed kill disarms itself, like the drawer's button.
   useEffect(() => {
@@ -253,26 +235,22 @@ export function JobOutputPopoverContent(props: {
     return () => { window.clearTimeout(timer) }
   }, [armed])
 
-  // Terminal-tail behavior: each refresh pins the view to the newest output
+  // Terminal-tail behavior: every frame pins the view to the newest output
   // while the reader keeps the follow switch on.
   useEffect(() => {
-    if (!live || !follow || typeof state !== 'object' || state.text.length === 0) return
+    if (!live || !follow || text.length === 0) return
     const pre = preRef.current
     if (pre !== null) pre.scrollTop = pre.scrollHeight
-    // Same as the poll effect: only the status transition matters.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, job.status, follow])
+  }, [text, live, follow])
 
-  const text = typeof state === 'object' ? state.text : ''
-
-  /** Two-click kill from the popover (then re-read so the row settles). */
+  /** Two-click kill from the popover (the roster settles the row afterwards). */
   const kill = async (): Promise<void> => {
+    if (jobs === undefined) return
     setKilling(true)
     setKillFailed(false)
     try {
-      await api.jobKill({ sessionId: ownerSessionId }, job.id)
+      await jobs.kill(ownerSessionId, job.id)
       setArmed(false)
-      await load()
     } catch {
       setKillFailed(true)
     } finally {
@@ -311,16 +289,26 @@ export function JobOutputPopoverContent(props: {
         {job.detail !== undefined && job.detail !== '' && <span>{job.detail}</span>}
         <span className={css.popHint}>{t('jobDragHint')}</span>
       </div>
-      {state === 'loading' && <div className={css.popHint}>{t('loading')}</div>}
-      {state === 'error' && <div className={css.popError}>{t('jobOutputError')}</div>}
-      {typeof state === 'object' && (
+      {observed === undefined && <div className={css.popHint}>{t('loading')}</div>}
+      {observed !== undefined && (
         <>
-          {state.text.length > 0
-            ? <pre ref={preRef} className={`${css.popPre} ${css.jobPopPre}`} data-popover-no-drag>{state.text}</pre>
-            : state.read
-              ? <div className={css.popHint}>{t('jobNoOutput')}</div>
-              : <div className={css.popHint}>{t('jobNotReadYet')}</div>}
-          {state.truncated && <div className={css.popHint}>{t('jobOutputTruncated')}</div>}
+          {observed.gapBefore && <div className={css.popHint}>{t('jobOutputTruncated')}</div>}
+          {observed.error !== undefined && <div className={css.popError}>{t('jobOutputError')}</div>}
+          {observed.text.length > 0
+            ? (
+              <div ref={preRef as unknown as React.RefObject<HTMLDivElement>} data-popover-no-drag>
+                <TerminalBlock
+                  command={job.label}
+                  output={observed.text}
+                  running={observed.streaming}
+                  runStateDot={false}
+                  maxLines={Number.POSITIVE_INFINITY}
+                  copyText={job.label}
+                  labels={labels}
+                />
+              </div>
+            )
+            : <div className={css.popHint}>{t('jobNoOutput')}</div>}
         </>
       )}
       <div className={css.jobPopActions} data-popover-no-drag>

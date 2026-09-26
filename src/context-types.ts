@@ -210,8 +210,16 @@ export interface SidebarJobView {
   kind: string
   /** Producer-supplied one-line label: the command, or the delegation description. */
   label: string
+  /**
+   * Owning session; absent for an unowned job, which every caller can see.
+   * The client service's roster is keyed by WATCHED session, so this is what
+   * tells a row whether it belongs to the tree on screen.
+   */
+  owner?: string
   /** Current lifecycle state. */
   status: SidebarJobStatus
+  /** The producer's live progress line ('3/10'), cleared at settlement. */
+  progress?: string
   /** Kind-specific status detail ('exit code: 3'), present once supplied. */
   detail?: string
   /** Epoch ms when the job was registered. */
@@ -230,11 +238,51 @@ export interface SidebarJobView {
  * reads `list` through the plugin's own `jobs.list` route (the client session
  * snapshot stopped mirroring background jobs in the same release).
  */
-export interface SidebarJobsService {
-  /** Caller-owned and unowned jobs in registration order (the Tasks page list). */
-  list(caller?: string): SidebarJobView[]
-  /** Request cancellation; throws for an unknown or foreign job. */
-  kill(id: string, caller?: string, reason?: string): 'requested' | 'already-finished'
+/**
+ * One job's retained output as the HOST's client service observes it
+ * (mirror of `@deepseek-ai/dsh-api-job-controller/client`'s observed entry).
+ * `gapBefore` marks output the observer missed between frames; `error` carries
+ * a producer-side failure; `streaming` is true while the job still writes.
+ */
+export interface SidebarObservedJob {
+  text: string
+  gapBefore: boolean
+  streaming: boolean
+  error?: string
+}
+
+/** The host client jobs service's snapshot (roster by session + observations). */
+export interface SidebarJobsSnapshot {
+  /** Whole-set roster per WATCHED session: empty arrays are how a session ends. */
+  rows: Record<string, SidebarJobView[]>
+  /** Retained output per observed job id. */
+  observed: Record<string, SidebarObservedJob | undefined>
+}
+
+/**
+ * The host's CLIENT jobs service (`ctx.jobs`, mounted by the web profile's
+ * `@deepseek-ai/dsh-api-job-controller/client`), structurally mirrored: the
+ * plugin never imports the host package.
+ *
+ * It replaces the plugin's own three-route jobs transport: `watchRows` keeps
+ * one session's roster current as a push stream, `observe` streams a job's
+ * retained output WITHOUT moving the model's consuming cursor, and `kill` is
+ * the same registry admission the old route forwarded.
+ */
+export interface SidebarClientJobsService {
+  state: {
+    getSnapshot(): SidebarJobsSnapshot
+    subscribe(listener: () => void): () => void
+  }
+  /** Watch one session's roster; returns the release function (ref-counted). */
+  watchRows(sessionId: string): () => void
+  /**
+   * Observe one job's output; returns the release function. `sessionId` may be
+   * undefined for a job whose owner the roster has not resolved yet.
+   */
+  observe(sessionId: string | undefined, jobId: string): () => void
+  /** Request cancellation of one job (owned by `sessionId`). */
+  kill(sessionId: string, jobId: string): Promise<void>
 }
 
 /** The host agent registry face (structural mirror of the runtime `ctx.agents`). */
@@ -660,7 +708,7 @@ export interface SidebarContextShape {
   /** The client module system (rc.8+ chunk-loader externals). */
   modules: { import(specifier: string): Promise<unknown> }
   /** The host background-job registry (optional; routes degrade to 503). */
-  jobs: SidebarJobsService
+  jobs: SidebarClientJobsService
   /** The host live-agent registry (optional; side chat thread agents). */
   agents: SidebarAgentsService
   /**

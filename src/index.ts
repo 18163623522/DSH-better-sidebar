@@ -41,7 +41,6 @@ import { launchExternal } from './open-external.ts'
 import * as git from './git.ts'
 import { SettingsConflictError } from '@deepseek-ai/dsh-settings'
 import { AgentOpenRegistry, registerOpenTool, type AgentOpenRequest } from './agent-opens.ts'
-import { buildJobsApi, type SidebarJobsRoutes } from './jobs-routes.ts'
 import { buildSubagentLiveApi, type SidebarSubagentLiveRoutes } from './subagent-live-route.ts'
 import { buildTeamsApi, type SidebarTeamsRoutes } from './team-routes.ts'
 import { buildWorkflowsApi, type SidebarWorkflowRoutes } from './workflow-routes.ts'
@@ -264,12 +263,6 @@ function buildApi(
     const requested = typeof record?.worktree === 'string' && record.worktree !== '' ? record.worktree : undefined
     return { sessionId: base.sessionId, cwd: await git.resolveWorktree(base.cwd, requested) }
   }
-  // Background jobs: the LIST rides the harness's `session/jobs` push
-  // mirror, so these routes only replay output the model has read (from the
-  // session's own event log — no DSH source is touched, the model's
-  // job_output cursor is never consumed) and kill (the registry's stock
-  // API). A deployment without the jobs registry downgrades kill to a 503.
-  const jobsApi: SidebarJobsRoutes = buildJobsApi(ctx, resolved.readLimit)
   // Subagent live previews: one batch request instead of N per-child
   // `subagents.history` calls. The route degrades to a 503 when the host
   // subagent runtime is absent (the page has no topology to show anyway).
@@ -484,16 +477,6 @@ function buildApi(
       const window = filtered.length > CHANGES_EVENTS_CAP ? filtered.slice(filtered.length - CHANGES_EVENTS_CAP) : filtered
       return { events: window, lastSeq: window.at(-1)?.seq ?? afterSeq }
     },
-    // Background jobs: list the caller's own jobs, read one job's output (a
-    // REPLAY of what the model has read so far, from the owner session's
-    // event log — the model's job_output cursor is never touched, so the
-    // human pane can never steal the agent's bytes), and kill one job. The
-    // list route exists because DSH 0.1.7 deleted the session/jobs push
-    // mirror the Tasks page used to read. Kill is fenced to the owning
-    // session by the jobs registry.
-    'jobs.list': (payload) => jobsApi.list(payload),
-    'jobs.output': (payload) => jobsApi.output(payload),
-    'jobs.kill': (payload) => jobsApi.kill(payload),
     // Subagent live previews: one batch request per refresh; the route folds
     // the newest text/tool activity of every running child in the tree.
     'subagents.live': (payload) => subagentLiveApi.live(payload),

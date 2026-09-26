@@ -34,8 +34,9 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   Context,
+  SidebarClientJobsService,
+  SidebarObservedJob,
   SidebarChildLiveView,
-  SidebarJobView,
   SidebarSessionList,
   SidebarSubagentAddress,
 } from '../context-types.ts'
@@ -46,9 +47,12 @@ import {
 } from './subagent-detect.ts'
 import { subagentCatalogs } from './subagent-catalog.ts'
 import { treeSessionIds } from './subagent-lineage.ts'
-import { collectTreeJobs, orderJobs } from './subagent-jobs.ts'
+import { orderJobs, type TreeJob } from './subagent-jobs.ts'
 import { api, type TeamsViewResult } from './api.ts'
 import { usePolling } from './use-polling.ts'
+import {
+  clientJobs, collectRows, useJobObservation, useJobWatchers, useJobsSnapshot,
+} from './jobs-client.ts'
 import { t } from './locales.ts'
 import { buildTasksModel, type TasksAgentNode, type TasksWorkflowNode } from './tasks-model.ts'
 import { TasksGraph } from './TasksGraph.tsx'
@@ -66,8 +70,6 @@ import legacy from './SubagentView.module.css'
 const POLL_MS = 3000
 /** Poll cadence of the workflow-run and team views while the page is visible. */
 const TELEMETRY_POLL_MS = 5000
-/** Poll cadence of the background-job lists (one read per tree session). */
-const JOBS_POLL_MS = 3000
 
 /**
  * The workspace face's "show this conversation" verb. DSH moved child and
@@ -156,43 +158,34 @@ function useTeamView(
 }
 
 /**
- * The background-job lists of the whole tree, keyed by OWNER session.
- *
- * DSH 0.1.7 dropped the client session snapshot's `jobsBySession` push mirror,
- * so the registry is read through the plugin's own `jobs.list` route — and the
- * registry's access fence admits a job to its OWNER session only, so the whole
- * tree is one read per tree session, fanned out on each tick. A host without
- * the jobs service (503) or one dropped read degrades to an empty set for THAT
- * session; the next tick retries.
+ * The tree's background jobs, read through the HOST's client jobs service
+ * (`ctx.jobs` — see jobs-client.ts). Watching is per tree session (the host
+ * shares one stream between watchers) and only while the page is on screen;
+ * a deployment without the service renders no jobs surface at all.
  */
 function useTreeJobs(
+  ctx: Context,
   byId: SidebarSessionList['byId'],
   rootId: string | undefined,
   active: boolean,
-): Readonly<Record<string, readonly SidebarJobView[]>> {
+): {
+  rows: TreeJob[]
+  jobs: SidebarClientJobsService | undefined
+  /** The observed output per job id (the panel picks its own entry). */
+  observed: Readonly<Record<string, SidebarObservedJob | undefined>>
+} {
+  const jobs = useMemo(() => clientJobs(ctx), [ctx])
+  const snapshot = useJobsSnapshot(jobs)
   const treeIds = useMemo(
     () => (rootId === undefined ? [] : [...treeSessionIds(byId, rootId)]),
     [byId, rootId],
   )
-  const [jobsBySession, setJobsBySession] = useState<Readonly<Record<string, readonly SidebarJobView[]>>>({})
-  useEffect(() => { setJobsBySession({}) }, [rootId])
-  const poll = useCallback(async (signal: AbortSignal): Promise<void> => {
-    const entries = await Promise.all(treeIds.map(async (sessionId): Promise<[string, readonly SidebarJobView[]]> => {
-      try {
-        const result = await api.jobsList(sessionId, signal)
-        return [sessionId, result.jobs]
-      } catch {
-        return [sessionId, []]
-      }
-    }))
-    if (!signal.aborted) setJobsBySession(Object.fromEntries(entries))
-  }, [treeIds])
-  usePolling(active && treeIds.length > 0, poll, {
-    intervalMs: JOBS_POLL_MS,
-    mode: 'self-scheduling',
-    immediate: true,
-  })
-  return jobsBySession
+  useJobWatchers(jobs, treeIds, active)
+  const rows = useMemo(
+    () => (rootId === undefined ? [] : orderJobs(collectRows(snapshot, byId, new Set(treeIds)))),
+    [snapshot, byId, rootId, treeIds],
+  )
+  return { rows, jobs, observed: snapshot.observed }
 }
 
 /** The open popover of the page (one at a time, anchored). */
@@ -380,12 +373,15 @@ export function SubagentView(props: {
   )
   const agentCount = totals.count + 1
 
-  /** The tree's ordered job rows (owner-labeled, read per tree session). */
-  const jobsBySession = useTreeJobs(byId, rootId, active)
-  const jobRows = useMemo(
-    () => orderJobs(collectTreeJobs(byId, jobsBySession, rootId)),
-    [byId, jobsBySession, rootId],
-  )
+  /** The tree's ordered job rows (owner-labeled, off the host's push roster). */
+  const treeJobs = useTreeJobs(ctx, byId, rootId, active)
+  const jobRows = treeJobs.rows
+  // Only the open panel's job is observed: the host streams output per observer.
+  const openJob = popover?.kind === 'job'
+    ? jobRows.find(row => row.job.id === popover.jobId)
+    : undefined
+  useJobObservation(treeJobs.jobs, openJob?.ownerSessionId, openJob?.job.id)
+  const observedJob = openJob === undefined ? undefined : treeJobs.observed[openJob.job.id]
 
   /** Catalogs that failed to load (surfaced as one banner in both modes). */
   const failedParents = useMemo(
@@ -456,7 +452,14 @@ export function SubagentView(props: {
     if (popover.kind === 'job') {
       const row = jobRows.find(candidate => candidate.job.id === popover.jobId)
       if (row === undefined) return null
-      return <JobOutputPopoverContent ownerSessionId={row.ownerSessionId} job={row.job} active={active} />
+      return (
+        <JobOutputPopoverContent
+          jobs={treeJobs.jobs}
+          ownerSessionId={row.ownerSessionId}
+          job={row.job}
+          observed={treeJobs.observed[row.job.id]}
+        />
+      )
     }
     const node = model.find(candidate => candidate.id === popover.nodeId)
     if (node === undefined) return null
@@ -587,6 +590,8 @@ export function SubagentView(props: {
       <JobsDrawer
         rows={jobRows}
         agentCount={agentCount}
+        jobs={treeJobs.jobs}
+        observed={observedJob}
         openJobId={popover?.kind === 'job' ? popover.jobId : undefined}
         onOpenOutput={(row, anchor) => {
           setPopover(popover?.kind === 'job' && popover.jobId === row.job.id

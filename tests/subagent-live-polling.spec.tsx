@@ -46,6 +46,9 @@ function makeCtx(store: Store, historySpy: ReturnType<typeof vi.fn>): Context {
         subagents: { history: historySpy },
       },
     },
+    // No host jobs service in this harness: the page renders no jobs surface
+    // (and therefore issues no jobs request).
+    get: () => undefined,
   } as unknown as Context
 }
 
@@ -135,7 +138,6 @@ describe('SubagentView live polling', () => {
           },
         })
       }
-      if (method === 'jobs.list') return jsonResponse({ ok: true, value: { jobs: [] } })
       throw new Error(`unexpected fetch ${String(url)}`)
     })
 
@@ -171,7 +173,6 @@ describe('SubagentView live polling', () => {
         liveCalls.push(body.rootSessionId ?? '')
         return new Promise<Response>((resolve) => { resolveFirst = resolve })
       }
-      if (method === 'jobs.list') return jsonResponse({ ok: true, value: { jobs: [] } })
       throw new Error(`unexpected fetch ${String(url)}`)
     })
 
@@ -210,7 +211,6 @@ describe('SubagentView live polling', () => {
         liveCalls.push(body.rootSessionId ?? '')
         return new Promise<Response>((resolve) => { resolveFirst = resolve })
       }
-      if (method === 'jobs.list') return jsonResponse({ ok: true, value: { jobs: [] } })
       throw new Error(`unexpected fetch ${String(url)}`)
     })
 
@@ -254,7 +254,6 @@ describe('SubagentView live polling', () => {
           : {}
         return jsonResponse({ ok: true, value: { live } })
       }
-      if (method === 'jobs.list') return jsonResponse({ ok: true, value: { jobs: [] } })
       throw new Error(`unexpected fetch ${String(url)}`)
     })
 

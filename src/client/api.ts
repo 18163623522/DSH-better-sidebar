@@ -11,7 +11,6 @@ import type { SidechatLiveEvent, SidechatLogEvent, SidechatThreadInfo } from '..
 import type {
   SidebarCreateTeamTaskRequest,
   SidebarChildLiveView,
-  SidebarJobView,
   SidebarSessionEvent,
   SidebarTeamMemberView,
   SidebarTeamTaskMutationResult,
@@ -103,21 +102,6 @@ export interface FsTextResult { kind: 'text'; content: string; truncated: boolea
 /** Binary read result (no content; images load through the media route).
  *  `head` carries the first bytes (base64) for viewer detect sniffing. */
 export interface FsBinaryResult { kind: 'binary'; size: number; truncated: boolean; head: string }
-
-/**
- * One jobs.output response: the output the MODEL has read so far for the
- * job (replayed from the owner session's event log — the model's
- * job_output cursor is never touched, so the pane can never steal the
- * agent's bytes). `read` is false until the model actually called
- * job_output for the job.
- */
-export interface JobOutputResult {
-  text: string
-  /** True when the host capped the text at its output limit. */
-  truncated: boolean
-  /** Whether the model has read the job at least once. */
-  read: boolean
-}
 
 /** The `subagents.live` response: one row per tree child (and the root). */
 export type SubagentLiveResult = { live: Record<string, SidebarChildLiveView> }
@@ -348,30 +332,6 @@ export const api = {
   /** Cherry-pick one commit onto the current branch. */
   gitCherryPick: (scope: SessionScope, hash: string, worktree?: string) =>
     call<{ ok: true }>('git.cherry-pick', gitPayload(scope, worktree, { hash })),
-  /**
-   * The output the model has read so far for one background job (replayed
-   * from the owner session's event log — never the model's job_output
-   * cursor). The scope MUST be the job's OWNER session.
-   */
-  jobOutput: (scope: SessionScope, id: string, signal?: AbortSignal) =>
-    call<JobOutputResult>('jobs.output', scopePayload(scope, { id }), signal),
-  /**
-   * The background-job list of one session (the Tasks page's jobs section and
-   * the job auto-open trigger). DSH 0.1.7 dropped the client session
-   * snapshot's jobs mirror, so the registry is read through the plugin's own
-   * `jobs.list` route. The registry's access fence admits a job to its OWNER
-   * session (and to unowned jobs) only, so a caller that needs the whole tree
-   * asks once per tree session. A host without the jobs service answers 503:
-   * the rejection is the caller's to degrade from (an empty section).
-   */
-  jobsList: (sessionId: string, signal?: AbortSignal) =>
-    call<{ jobs: SidebarJobView[] }>('jobs.list', { sessionId }, signal),
-  /** Request cancellation of one background job (live jobs flip to stopping). */
-  jobKill: (scope: SessionScope, id: string, reason?: string) =>
-    call<{ ok: true; outcome: 'requested' | 'already-finished' }>('jobs.kill', scopePayload(scope, {
-      id,
-      ...(reason !== undefined ? { reason } : {}),
-    })),
   /**
    * One batch live-preview fetch for the whole Subagent tree. The payload is
    * the already-resolved topology ROOT (not a session scope); the host

@@ -12,7 +12,8 @@ import { renderRoot } from './test-utils.ts'
 import { SubagentView } from '../src/client/SubagentView.tsx'
 import type {
   Context,
-  SidebarJobView,
+  SidebarClientJobsService,
+  SidebarJobsSnapshot,
   SidebarProjectionSnapshot,
   SidebarSessionList,
   SidebarSessionSummary,
@@ -44,6 +45,41 @@ interface NavigationSpy {
   opened: Array<SidebarSubagentAddress | string>
 }
 
+/**
+ * A structurally faithful double of the host's client jobs service: a
+ * subscribable snapshot, a reference-counted `watchRows`, an `observe` that
+ * records its calls, and a `kill` that records its arguments.
+ */
+function makeJobsService() {
+  let snapshot: SidebarJobsSnapshot = { rows: {}, observed: {} }
+  const listeners = new Set<() => void>()
+  const observations: Array<{ sessionId: string | undefined; jobId: string }> = []
+  const kills: Array<{ sessionId: string; jobId: string }> = []
+  const service: SidebarClientJobsService = {
+    state: {
+      getSnapshot: () => snapshot,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener)
+        return () => { listeners.delete(listener) }
+      },
+    },
+    watchRows: () => () => {},
+    observe: (sessionId: string | undefined, jobId: string) => {
+      observations.push({ sessionId, jobId })
+      return () => {}
+    },
+    kill: async (sessionId: string, jobId: string) => { kills.push({ sessionId, jobId }) },
+  }
+  const emit = (next: Partial<SidebarJobsSnapshot>): void => {
+    snapshot = { ...snapshot, ...next }
+    for (const listener of [...listeners]) listener()
+  }
+  return { service, emit, observations, kills }
+}
+
+/** The jobs service the page reads (rebuilt per test in beforeEach). */
+let jobsFake: ReturnType<typeof makeJobsService>
+
 /** The client context face SubagentView touches. */
 function makeCtx(store: Store, navigation?: NavigationSpy): Context {
   return {
@@ -51,9 +87,13 @@ function makeCtx(store: Store, navigation?: NavigationSpy): Context {
       list: store,
       refreshProjections: async () => {},
     },
-    get: (name: string) => (name === 'uiWorkspace' && navigation !== undefined
-      ? { openSession: (target: SidebarSubagentAddress | string) => { navigation.opened.push(target) } }
-      : undefined),
+    get: (name: string) => {
+      if (name === 'jobs') return jobsFake.service
+      if (name === 'uiWorkspace' && navigation !== undefined) {
+        return { openSession: (target: SidebarSubagentAddress | string) => { navigation.opened.push(target) } }
+      }
+      return undefined
+    },
   } as unknown as Context
 }
 
@@ -64,8 +104,6 @@ function jsonResponse(value: unknown): Response {
 let teamPayload: unknown = { available: false }
 const teamMutations: Array<{ method: string; body: Record<string, unknown> }> = []
 const fetchedMethods: string[] = []
-/** Job lists the stubbed `jobs.list` route answers with, keyed by OWNER session. */
-let jobsByOwner: Record<string, SidebarJobView[]> = {}
 /** The `subagents.live` payload the stub answers with (session id → live view). */
 let livePayload: Record<string, unknown> = {}
 /** The folded workflow runs the stub answers `workflows.list` with. */
@@ -77,9 +115,12 @@ beforeEach(() => {
   runsPayload = []
   teamMutations.length = 0
   fetchedMethods.length = 0
-  jobsByOwner = {
-    root: [{ id: 'bash-1', kind: 'bash', label: 'sleep 300', status: 'running', startedAt: 1_000 }],
-  }
+  jobsFake = makeJobsService()
+  jobsFake.emit({
+    rows: {
+      root: [{ id: 'bash-1', kind: 'bash', label: 'sleep 300', status: 'running', startedAt: 1_000 }],
+    },
+  })
   vi.stubGlobal('fetch', async (url: string | URL | Request, init?: RequestInit) => {
     const method = String(url).split('/').pop()
     fetchedMethods.push(method ?? '')
@@ -87,9 +128,6 @@ beforeEach(() => {
     if (method === 'subagents.live') return jsonResponse({ ok: true, value: { live: livePayload } })
     if (method === 'workflows.list') return jsonResponse({ ok: true, value: { runs: runsPayload } })
     if (method === 'teams.view') return jsonResponse({ ok: true, value: teamPayload })
-    if (method === 'jobs.list') {
-      return jsonResponse({ ok: true, value: { jobs: jobsByOwner[String(body.sessionId ?? '')] ?? [] } })
-    }
     if (method === 'teams.taskCreate' || method === 'teams.taskUpdate') {
       teamMutations.push({ method: method ?? '', body })
       return jsonResponse({
