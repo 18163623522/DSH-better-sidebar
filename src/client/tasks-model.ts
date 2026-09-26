@@ -69,6 +69,13 @@ export interface TasksAgentNode {
     status: SidebarTeamMemberView['status']
     diagnostics: string[]
   }
+  /**
+   * Tree depth (the root is 0). Drives the card's GROUP COLOUR: every node of
+   * one level wears the same left edge, so a wide graph still reads as bands.
+   */
+  depth: number
+  /** Workflow phase this node is a member of (workflow runs only). */
+  phase?: { key: string; index: number; title?: string }
   /** The catalog's durable children signal (fold candidacy's leaf test). */
   hasChildren?: boolean
   /** Shared tasks owned by this agent (team boards only; empty otherwise). */
@@ -84,6 +91,8 @@ export interface TasksWorkflowNode {
   kind: 'workflow'
   id: string
   parentId: string
+  /** Tree depth (see {@link TasksAgentNode.depth}). */
+  depth: number
   run: WorkflowRunView
 }
 
@@ -92,6 +101,8 @@ export interface TasksFoldNode {
   kind: 'fold'
   id: string
   parentId: string
+  /** Tree depth (see {@link TasksAgentNode.depth}). */
+  depth: number
   count: number
   /** The folded session ids, in original order (expansion restores them). */
   memberIds: string[]
@@ -115,6 +126,12 @@ export interface TasksModelInput {
   teamTasks?: readonly SidebarTeamTaskView[]
   /** Whether settled leaves collapse into fold nodes. */
   folded: boolean
+  /**
+   * Nodes the READER folded by hand (a completed card's bar chevron). They fold
+   * under the same guards as the global rule, so a manual fold can never hide a
+   * running or branching node — it only adds a per-node trigger.
+   */
+  foldedIds?: ReadonlySet<string>
 }
 
 /** Human label of one catalog child (the classic rule). */
@@ -153,7 +170,9 @@ function memberOutcomeState(outcome: 'completed' | 'failed' | 'cancelled' | unde
  * trails its parent's remaining children.
  */
 export function buildTasksModel(input: TasksModelInput): TasksNode[] {
-  const { byId, catalogs, rootId, currentSessionId, live, runs, teamMembers, folded } = input
+  const {
+    byId, catalogs, rootId, currentSessionId, live, runs, teamMembers, folded, foldedIds,
+  } = input
   const teamTasks = input.teamTasks ?? []
   const teamById = new Map(teamMembers.map(member => [member.id, member]))
   /** Owner display name → node id (the board assigns by member name). */
@@ -205,7 +224,7 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
 
   /** The agent children of one parent, in catalog order (side threads
    *  excluded), with workflow runs appended in start order. */
-  const appendChildren = (parentId: string): void => {
+  const appendChildren = (parentId: string, depth: number): void => {
     const catalog = catalogs[parentId]
     const entries = catalog?.state === 'ready' ? catalog.entries : []
     const agentChildren: TasksAgentNode[] = []
@@ -226,6 +245,7 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
         kind: 'agent',
         id: entry.id,
         parentId,
+        depth: depth + 1,
         label: childLabel(entry, summary),
         ...(summary?.displayTitle !== undefined && summary.displayTitle !== entry.label
           ? { title: summary.displayTitle } : {}),
@@ -246,16 +266,25 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
     const runNodes: TasksWorkflowNode[] = []
     const memberNodes: TasksAgentNode[][] = []
     for (const run of runsByOrigin.get(parentId) ?? []) {
-      const runNode: TasksWorkflowNode = { kind: 'workflow', id: `run:${run.runId}`, parentId, run }
+      const runNode: TasksWorkflowNode = {
+        kind: 'workflow', id: `run:${run.runId}`, parentId, depth: depth + 1, run,
+      }
       runNodes.push(runNode)
       const members: TasksAgentNode[] = []
-      for (const phase of run.phases) {
+      for (const [phaseIndex, phase] of run.phases.entries()) {
         for (const member of phase.members) {
           const existing = member.childId !== ''
             ? agentChildren.find(candidate => candidate.id === member.childId)
             : undefined
+          const phaseRef = {
+            key: `${run.runId}:${phaseIndex}`,
+            index: phaseIndex,
+            ...(phase.title === undefined ? {} : { title: phase.title }),
+          }
           if (existing !== undefined) {
             existing.parentId = runNode.id
+            existing.depth = runNode.depth + 1
+            existing.phase = phaseRef
             if (tasksByNode.get(existing.id) !== undefined) existing.tasks = tasksByNode.get(existing.id)
             members.push(existing)
           } else if (member.childId !== '' && knownAgentIds.has(member.childId)) {
@@ -267,6 +296,8 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
               kind: 'agent',
               id: childKnown ? member.childId : `wfmember:${run.runId}:${member.seq}`,
               parentId: runNode.id,
+              depth: runNode.depth + 1,
+              phase: phaseRef,
               label: member.label,
               state: memberOutcomeState(member.outcome),
               activity: member.outcome === undefined ? 'running' : 'inactive',
@@ -286,6 +317,8 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
     const visibleAgentChildren = agentChildren.filter(child => child.parentId === parentId)
 
     // Fold: settled agent leaves of THIS parent collapse into one aggregate.
+    // `folded` is the page-level rule; `foldedIds` are the nodes the reader
+    // folded by hand from their own card bar. Both run through the SAME guards.
     const kept: TasksAgentNode[] = []
     const foldCandidates: TasksAgentNode[] = []
     for (const child of visibleAgentChildren) {
@@ -293,7 +326,8 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
       // its own — folding a parent would hide its live branch.
       const isLeaf = child.hasChildren !== true && !runsByOrigin.has(child.id)
       if (
-        folded && isLeaf && !child.current && child.team === undefined
+        (folded || (foldedIds?.has(child.id) ?? false)) && isLeaf && !child.current
+        && child.team === undefined
         && (child.state === 'done' || child.state === 'error')
       ) {
         foldCandidates.push(child)
@@ -304,13 +338,14 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
 
     for (const child of kept) {
       out.push(child)
-      appendChildren(child.id)
+      appendChildren(child.id, child.depth)
     }
     if (foldCandidates.length > 0) {
       out.push({
         kind: 'fold',
         id: `fold:${parentId}`,
         parentId,
+        depth: depth + 1,
         count: foldCandidates.length,
         memberIds: foldCandidates.map(child => child.id),
         previews: foldCandidates.slice(0, 2).map(child => child.label),
@@ -325,7 +360,10 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
       const keptMembers: TasksAgentNode[] = []
       const foldedMembers: TasksAgentNode[] = []
       for (const member of members) {
-        if (folded && !member.current && (member.state === 'done' || member.state === 'error')) {
+        if (
+          (folded || (foldedIds?.has(member.id) ?? false)) && !member.current
+          && (member.state === 'done' || member.state === 'error')
+        ) {
           foldedMembers.push(member)
         } else {
           keptMembers.push(member)
@@ -337,6 +375,7 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
           kind: 'fold',
           id: `fold:${runNode.id}`,
           parentId: runNode.id,
+          depth: runNode.depth + 1,
           count: foldedMembers.length,
           memberIds: foldedMembers.map(member => member.id),
           previews: foldedMembers.slice(0, 2).map(member => member.label),
@@ -350,6 +389,7 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
   out.push({
     kind: 'agent',
     id: rootId,
+    depth: 0,
     label: rootSummary?.displayTitle !== undefined && rootSummary.displayTitle !== ''
       ? rootSummary.displayTitle
       : rootId,
@@ -359,7 +399,7 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
     ...(rootTeam !== undefined ? { team: rootTeam } : {}),
     ...(tasksByNode.get(rootId) !== undefined ? { tasks: tasksByNode.get(rootId) } : {}),
   })
-  appendChildren(rootId)
+  appendChildren(rootId, 0)
 
   // Last-resort guard: one node per session id, first occurrence wins. Real
   // catalogs list a child under exactly one parent, so this only fires on

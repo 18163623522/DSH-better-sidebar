@@ -66,7 +66,11 @@
 .edge {
   fill: none;
   stroke: var(--dsw-alias-label-tertiary);
-  stroke-width: 1;
+  /* 1.5px, not 1: at the narrow panel's fit scale (0.78–0.86) a 1px stroke
+     lands under a device pixel and the whole hierarchy fades out — measured on
+     the rendered page by swapping the token and the width. */
+  stroke-width: 1.5;
+  stroke-linecap: round;
 }
 
 .edgeTeam {
@@ -90,12 +94,21 @@
    groups its members without competing with the solid cards and the ink
    connectors drawn over it. Its label is the part a reader actually reads, so
    the label — and only the label — climbs onto a text ink. */
+/* The phase frame is the SPATIAL grouping of one workflow phase; the phase
+   badges on its member cards carry the same colour, so the reader can match
+   frame ↔ member without reading the frame's own label. It stays a hairline:
+   the frame must not compete with the cards it encloses. */
 .phaseFrame {
   position: absolute;
   border: 1px dashed var(--dsw-alias-border-l2);
   border-radius: 4px;
   pointer-events: none;
 }
+
+.phaseFrame.phase0 { border-color: color-mix(in srgb, var(--dsw-alias-label-primary) 42%, transparent); }
+.phaseFrame.phase1 { border-color: color-mix(in srgb, var(--dsw-alias-label-primary) 34%, transparent); }
+.phaseFrame.phase2 { border-color: color-mix(in srgb, var(--dsw-alias-label-primary) 27%, transparent); }
+.phaseFrame.phase3 { border-color: color-mix(in srgb, var(--dsw-alias-label-primary) 21%, transparent); }
 
 .phaseLabel {
   position: absolute;
@@ -122,13 +135,17 @@
    centering the column turns that leftover into even padding around the block
    instead of a hole under it (the box size itself is fixed — the edges and the
    phase frames are placed from it, so a card can never be content-sized). */
+/* The two-segment node card. The segments own their padding because each one
+   paints its own surface: the TOP segment carries the identity (kind badge,
+   name, meta, task line) over the level's faint tint, the BOTTOM bar carries
+   the state and the merged activity. The layout in tasks-graph-layout.ts
+   reserves both rows, so the box handed to a card is exactly its height. */
 .node {
   position: absolute;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  padding: 6px 8px;
+  padding: 0;
   background: var(--dsw-alias-bg-layer-1);
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 4px;
@@ -170,6 +187,217 @@
 
 .nodeError {
   border-color: var(--dsw-alias-state-error-primary);
+}
+
+/* ── The two-segment card: identity on top, state bar at the bottom ─────── */
+
+/* The group colour of a node is its DEPTH. The host ships no chart palette and
+   the skin contract forbids literal colours, so the ramp mixes the one accent
+   token: level 0 is the accent itself, deeper levels recede. The level also
+   tints the top segment faintly, so a wide graph still reads as bands. */
+.depth0 { --card-edge: 100%; --card-tint: 7%; }
+.depth1 { --card-edge: 72%; --card-tint: 5%; }
+.depth2 { --card-edge: 48%; --card-tint: 3.5%; }
+.depth3 { --card-edge: 28%; --card-tint: 2.5%; }
+
+.cardTop {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px 5px 10px;
+  background: color-mix(
+    in srgb, var(--dsw-alias-state-business-primary) var(--card-tint, 6%), var(--dsw-alias-bg-layer-1)
+  );
+}
+
+/* The level edge: 2px, full height of the segment, never a second border. */
+.cardTop::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: color-mix(
+    in srgb, var(--dsw-alias-state-business-primary) var(--card-edge, 100%), transparent
+  );
+}
+
+.cardBadges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* The kind badge names WHAT the node is (main agent / subagent / teammate /
+   workflow / completed aggregate) — the vocabulary the page header already
+   uses, never a glyph the reader has to decode. */
+.kindBadge {
+  flex: none;
+  padding: 0 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 2px;
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* The workflow phase badge: the SECOND grouping axis. It takes the ink family
+   (the level edge owns the accent family) so the two never read as one. */
+.phaseBadge {
+  flex: none;
+  max-width: 62%;
+  padding: 0 4px;
+  border: 1px solid;
+  border-radius: 2px;
+  font: var(--dsw-font-xxxs-11);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.phase0 {
+  color: var(--dsw-alias-label-primary);
+  border-color: color-mix(in srgb, var(--dsw-alias-label-primary) 45%, transparent);
+}
+
+.phase1 {
+  color: color-mix(in srgb, var(--dsw-alias-label-primary) 78%, transparent);
+  border-color: color-mix(in srgb, var(--dsw-alias-label-primary) 38%, transparent);
+}
+
+.phase2 {
+  color: color-mix(in srgb, var(--dsw-alias-label-primary) 58%, transparent);
+  border-color: color-mix(in srgb, var(--dsw-alias-label-primary) 30%, transparent);
+}
+
+.phase3 {
+  color: color-mix(in srgb, var(--dsw-alias-label-primary) 42%, transparent);
+  border-color: color-mix(in srgb, var(--dsw-alias-label-primary) 24%, transparent);
+}
+
+.cardName {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font: var(--dsw-font-xxs-strong-12);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The aggregate carries a count instead of a name: one rung down in weight and
+   ink, so a settled summary never competes with a live node. */
+.cardNamePlain {
+  -webkit-line-clamp: 1;
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.cardMeta {
+  font: var(--dsw-font-xxxs-11);
+  font-family: var(--ds-font-family-code, monospace);
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── The state bar ──────────────────────────────────────────────────────── */
+
+.cardBar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  height: 22px;
+  padding: 0 6px 0 8px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-label-secondary);
+  overflow: hidden;
+}
+
+/* Executing: the bar's background SWEEPS left → right (the same motion the
+   main conversation's shimmer uses, applied to a strip instead of text). The
+   band is 45% of the bar and travels the full width; the last third of the
+   cycle rests, so a fast glance still catches it at rest. */
+.cardBar[data-running='true']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--dsw-alias-state-business-primary) 14%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 45% 100%;
+  background-repeat: no-repeat;
+  background-position: 0% center;
+  animation: dsh-tasks-bar-sweep 1.5s cubic-bezier(0.33, 0, 0.67, 1) infinite;
+  pointer-events: none;
+}
+
+@keyframes dsh-tasks-bar-sweep {
+  0% { background-position: 0% center; }
+  66.6667%, 100% { background-position: 100% center; }
+}
+
+/* Motion is decoration here: the state word and the activity text carry the
+   same information without it. */
+@media (prefers-reduced-motion: reduce) {
+  .cardBar[data-running='true']::after {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+.barDot {
+  flex: none;
+}
+
+.barState {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* The merged activity: the main agent's own wording for the node's newest
+   range, in the mono voice the page uses for machine text. */
+.barActivity {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--ds-font-family-code, monospace);
+  color: var(--dsw-alias-state-business-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.barFold {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.barFold:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
 }
 
 /* The fold aggregate mirrors the tree's dashed fold row (`treeFoldRow`). */

@@ -30,49 +30,87 @@ import {
 } from 'react'
 import clsx from 'clsx'
 import {
-  Button, IconChecklistOutlineRegular, IconFullscreenOutlineRegular, IconLoadingOutlineRegular, IconTreeCornerRegular,
-  StateDot,
+  Button, IconChecklistOutlineRegular, IconChevronDownOutlineRegular, IconFullscreenOutlineRegular,
+  IconLoadingOutlineRegular, IconTreeCornerRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TasksAgentNode, TasksFoldNode, TasksNode, TasksWorkflowNode } from './tasks-model.ts'
 import { tasksEdges } from './tasks-model.ts'
 import {
-  GRAPH_FIT_MIN_SCALE, GRAPH_NODE_W, layoutTasksGraphForWidth, type GraphBox,
+  GRAPH_FIT_MIN_SCALE, GRAPH_NODE_H, GRAPH_NODE_W, GRAPH_PAD, layoutTasksGraphForWidth,
+  type GraphBox,
 } from './tasks-graph-layout.ts'
 import {
-  AgentGlyph, agentMeta, FoldGlyph, foldPreviews, LiveLine, nodeDotState, TaskLine,
-  WorkflowGlyph, workflowMeta,
+  agentMeta, foldPreviews, TaskLine, WorkflowGlyph, workflowMeta,
 } from './tasks-shared.tsx'
+import { CardBar, CardTop, phaseClass, type CardKind } from './tasks-card.tsx'
+import { doneActivityTitle, liveActivityLabel } from './process-labels.ts'
 import { t } from './locales.ts'
 import css from './tasks-graph.module.css'
 import canvasCss from './tasks-canvas.module.css'
 
-/** The zoom bounds of the canvas. */
-const ZOOM_MIN = 0.3
-const ZOOM_MAX = 1.5
+/** The zoom bounds of the canvas. The upper bound is deliberately above 1: on
+ *  a narrow panel the reader zooms IN to read a card, and the fit's own cap
+ *  (FIT_MAX_SCALE) is what keeps a two-node tree from ballooning. */
+const ZOOM_MIN = 0.4
+const ZOOM_MAX = 2
 /** Upper bound of the auto-fit scale (never balloon a two-node tree). */
-const FIT_MAX_SCALE = 1.15
+const FIT_MAX_SCALE = 1.3
+/** Breathing room the fit leaves around the CONTENT box, per axis. */
+const FIT_MARGIN = 24
+/** How much of the canvas must stay on screen while panning (px). */
+const PAN_KEEP = 72
 /* The readability floor the fit honours is `GRAPH_FIT_MIN_SCALE` (imported):
  * the layout budgets its columns from the same number, so scaling and wrapping
  * can never disagree. */
+/** The perpendicular stub each connector leaves a card with (px, pre-scale). */
+const EDGE_STUB = 8
 /** Drag-vs-click separation: pointer travel below this stays a click. */
 const CLICK_TOLERANCE_PX = 4
 
 /**
- * Card line 1 of an agent / run node: the canvas node title with the
- * truncation swapped for a TWO-line clamp — a single ellipsized line left too
- * few CJK characters to tell two siblings apart, and `nodeHeight` in
- * tasks-graph-layout.ts reserves the card height for that second line (plus
- * one row per live / task line below it). The untruncated name stays in the
- * `title` attribute.
+ * The card kind of one agent node: the node's own role decides the badge, so a
+ * teammate never reads as a plain subagent and the root never reads as a child.
  */
-const NODE_TITLE = canvasCss.nodeTitle
-/** The fold aggregate's title: the same clamp on the receding plain ink. */
-const NODE_TITLE_PLAIN = clsx(NODE_TITLE, canvasCss.nodeTitlePlain)
+function agentCardKind(node: TasksAgentNode): CardKind {
+  if (node.team?.role === 'teammate') return 'teammate'
+  return node.parentId === undefined ? 'main' : 'subagent'
+}
+
+/**
+ * The bar's activity line. A running node shows the LIVE merged activity; a
+ * settled one shows the same merged wording in its completed form (the host's
+ * own `done.*` phrasing) — a settled card whose bar read only "已完成" would
+ * throw away the one thing the fold is for.
+ */
+function barActivity(node: TasksAgentNode): string | undefined {
+  const summary = node.live?.summary
+  if (node.state === 'running') return liveActivityLabel(summary)
+  return summary === undefined ? undefined : doneActivityTitle(summary)
+}
+
+/** Members of one run that already reported an outcome. */
+function doneMembers(node: TasksWorkflowNode): number {
+  let done = 0
+  for (const phase of node.run.phases) {
+    for (const member of phase.members) if (member.outcome !== undefined) done += 1
+  }
+  return done
+}
+
+/** Members of one run across every phase. */
+function totalMembers(node: TasksWorkflowNode): number {
+  let total = 0
+  for (const phase of node.run.phases) total += phase.members.length
+  return total
+}
 
 /** One phase frame of a run node (the dashed box behind its members). */
 interface PhaseFrame {
   key: string
   title: string | undefined
+  /** The phase's index within its run — drives the frame's colour, which the
+   *  members' own phase badges repeat (badge + colour, no lines to decode). */
+  index: number
   x: number
   y: number
   w: number
@@ -88,7 +126,12 @@ export interface TasksGraphProps {
   onWorkflowInfo(node: TasksWorkflowNode, anchor: HTMLElement): void
   /** Open the shared task window for one task id. */
   onOpenTask(taskId: string, anchor: HTMLElement): void
+  /** The control cluster's global fold switch (settled leaves). */
   onToggleFold(): void
+  /** The fold AGGREGATE's click: expand everything (global + manual folds). */
+  onExpandFold(): void
+  /** Fold ONE settled node into its parent's aggregate (the bar's chevron). */
+  onFoldNode(node: TasksAgentNode): void
   mode: 'graph' | 'tree'
   onModeChange(mode: 'graph' | 'tree'): void
   /** Fallback hint while the root catalog hydrates (the graph twin of
@@ -138,7 +181,10 @@ export function FoldToggleButton(props: { folded: boolean; onToggleFold(): void 
 }
 
 export function TasksGraph(props: TasksGraphProps): ReactNode {
-  const { nodes, folded, rootId, onNodeInfo, onWorkflowInfo, onOpenTask, onToggleFold, mode, onModeChange, loading } = props
+  const {
+    nodes, folded, rootId, onNodeInfo, onWorkflowInfo, onOpenTask, onToggleFold, onExpandFold,
+    onFoldNode, mode, onModeChange, loading,
+  } = props
   const containerRef = useRef<HTMLDivElement>(null)
   const [tf, setTf] = useState({ x: 0, y: 0, k: 1 })
   const [dragging, setDragging] = useState(false)
@@ -158,22 +204,56 @@ export function TasksGraph(props: TasksGraphProps): ReactNode {
   const edges = useMemo(() => tasksEdges(nodes), [nodes])
   const nodeById = useMemo(() => new Map(nodes.map(node => [node.id, node])), [nodes])
 
-  /** Center the canvas in the container (both axes) and scale to fill. */
+  /**
+   * Center the canvas and scale it to fill. The fit measures the CONTENT box
+   * (the layout's padding is breathing room, not content): centering the padded
+   * box leaves the graph visibly off-center in a narrow panel, which is exactly
+   * how "the graph looks small and sits in a corner" happens.
+   */
   const fit = useCallback((): void => {
     const container = containerRef.current
     if (container === null) return
     const cw = container.clientWidth
     const ch = container.clientHeight
     if (cw === 0 || ch === 0) return
+    const contentW = Math.max(GRAPH_NODE_W, layout.width - GRAPH_PAD * 2)
+    const contentH = Math.max(GRAPH_NODE_H, layout.height - GRAPH_PAD * 2)
     const k = Math.max(
       GRAPH_FIT_MIN_SCALE,
-      Math.min((cw - 24) / layout.width, (ch - 24) / layout.height, FIT_MAX_SCALE),
+      Math.min(
+        (cw - FIT_MARGIN * 2) / contentW,
+        (ch - FIT_MARGIN * 2) / contentH,
+        FIT_MAX_SCALE,
+      ),
     )
     setTf({
-      x: (cw - layout.width * k) / 2,
-      y: Math.max(8, (ch - layout.height * k) / 2),
+      x: (cw - contentW * k) / 2 - GRAPH_PAD * k,
+      y: Math.max(FIT_MARGIN / 2, (ch - contentH * k) / 2) - GRAPH_PAD * k,
       k,
     })
+  }, [layout.width, layout.height])
+
+  /**
+   * Keep the canvas reachable: a pan or a zoom-out may never push the whole
+   * graph off screen (the classic "I dragged it away and cannot find it").
+   * `PAN_KEEP` px of content stay inside the container on every axis.
+   */
+  const clampTf = useCallback((next: { x: number; y: number; k: number }) => {
+    const container = containerRef.current
+    if (container === null) return next
+    const cw = container.clientWidth
+    const ch = container.clientHeight
+    const w = layout.width * next.k
+    const h = layout.height * next.k
+    const minX = Math.min(PAN_KEEP, cw - PAN_KEEP) - w
+    const maxX = Math.max(PAN_KEEP, cw - PAN_KEEP)
+    const minY = Math.min(PAN_KEEP, ch - PAN_KEEP) - h
+    const maxY = Math.max(PAN_KEEP, ch - PAN_KEEP)
+    return {
+      x: Math.min(maxX, Math.max(minX, next.x)),
+      y: Math.min(maxY, Math.max(minY, next.y)),
+      k: next.k,
+    }
   }, [layout.width, layout.height])
 
   /** The ⌂ button: refit AND re-enable auto-fit for later resizes. */
@@ -210,18 +290,22 @@ export function TasksGraph(props: TasksGraphProps): ReactNode {
       const mx = event.clientX - rect.left
       const my = event.clientY - rect.top
       const { x, y, k } = tfRef.current
-      const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, k * Math.exp(-event.deltaY * 0.0014)))
+      // Wheel deltas arrive in pixels, lines or pages depending on the device;
+      // normalise first, or a line-scrolling mouse zooms 30× slower than a
+      // trackpad (and a trackpad pinch, which reports ctrlKey, feels stuck).
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 100 : 1
+      const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, k * Math.exp(-event.deltaY * unit * 0.0014)))
       if (next === k) return
       touchedRef.current = true
-      setTf({
+      setTf(clampTf({
         x: mx - (mx - x) * (next / k),
         y: my - (my - y) * (next / k),
         k: next,
-      })
+      }))
     }
     container.addEventListener('wheel', onWheel, { passive: false })
     return () => { container.removeEventListener('wheel', onWheel) }
-  }, [])
+  }, [clampTf])
 
   const zoomBy = useCallback((factor: number): void => {
     const container = containerRef.current
@@ -231,8 +315,8 @@ export function TasksGraph(props: TasksGraphProps): ReactNode {
     touchedRef.current = true
     const mx = container.clientWidth / 2
     const my = container.clientHeight / 2
-    setTf({ x: mx - (mx - x) * (next / k), y: my - (my - y) * (next / k), k: next })
-  }, [])
+    setTf(clampTf({ x: mx - (mx - x) * (next / k), y: my - (my - y) * (next / k), k: next }))
+  }, [clampTf])
 
   /**
    * Drag-pan. The gesture only ever starts on the BACKGROUND: a pointerdown
@@ -241,6 +325,18 @@ export function TasksGraph(props: TasksGraphProps): ReactNode {
    * container, which retargets the derived click event and silently kills
    * every node interaction.
    */
+  /**
+   * Double-clicking the BACKGROUND re-fits and hands the view back to auto-fit
+   * (the gesture a pan/zoom away from the graph needs); a double-click on a
+   * card stays the card's own.
+   */
+  const onDoubleClick = useCallback((event: React.MouseEvent<HTMLDivElement>): void => {
+    const target = event.target as HTMLElement
+    if (target.closest('[data-graph-node]') !== null) return
+    if (target.closest('[data-graph-controls]') !== null) return
+    refit()
+  }, [refit])
+
   const onPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>): void => {
     if (event.button !== 0) return
     const target = event.target as HTMLElement
@@ -257,7 +353,7 @@ export function TasksGraph(props: TasksGraphProps): ReactNode {
       if (travelRef.current <= CLICK_TOLERANCE_PX) return
       touchedRef.current = true
       setDragging(true)
-      setTf(current => ({ ...current, x: x + dx, y: y + dy }))
+      setTf(clampTf({ x: x + dx, y: y + dy, k: tfRef.current.k }))
     }
     const onUp = (): void => {
       window.removeEventListener('pointermove', onMove)
@@ -268,7 +364,7 @@ export function TasksGraph(props: TasksGraphProps): ReactNode {
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
     window.addEventListener('pointercancel', onUp)
-  }, [])
+  }, [clampTf])
 
   /** Suppress node clicks that ended a drag gesture. */
   const clickAllowed = useCallback((): boolean => travelRef.current <= CLICK_TOLERANCE_PX, [])
@@ -291,20 +387,38 @@ export function TasksGraph(props: TasksGraphProps): ReactNode {
         const y1 = Math.min(...boxes.map(box => box.y)) - 20
         const x2 = Math.max(...boxes.map(box => box.x + box.w)) + 12
         const y2 = Math.max(...boxes.map(box => box.y + box.h)) + 12
-        frames.push({ key: `${runNode.id}:${phaseIndex}`, title: phase.title, x: x1, y: y1, w: x2 - x1, h: y2 - y1 })
+        frames.push({
+          key: `${runNode.id}:${phaseIndex}`,
+          title: phase.title,
+          index: phaseIndex,
+          x: x1,
+          y: y1,
+          w: x2 - x1,
+          h: y2 - y1,
+        })
       })
     }
     return frames
   }, [nodes, layout])
 
-  /** The bezier edge path between two boxes (top-down). */
+  /**
+   * The connector between two boxes: a straight PERPENDICULAR stub out of the
+   * parent's bottom and into the child's top, joined by one bezier. The stubs
+   * are what make the hierarchy legible where several lines leave one card —
+   * a pure bottom-center-to-top-center bezier leaves at an angle, so a ranked
+   * tree reads as a fan of diagonals over the cards between the rows.
+   */
   const edgePath = (from: GraphBox, to: GraphBox): string => {
     const x1 = from.x + from.w / 2
     const y1 = from.y + from.h
     const x2 = to.x + to.w / 2
     const y2 = to.y
-    const dy = Math.max(24, (y2 - y1) / 2)
-    return `M ${x1} ${y1} C ${x1} ${y1 + dy} ${x2} ${y2 - dy} ${x2} ${y2}`
+    const span = Math.max(0, y2 - y1)
+    const stub = Math.min(EDGE_STUB, span / 3)
+    const dy = Math.max(16, (y2 - y1 - stub * 2) / 2)
+    return `M ${x1} ${y1} L ${x1} ${y1 + stub} `
+      + `C ${x1} ${y1 + stub + dy} ${x2} ${y2 - stub - dy} ${x2} ${y2 - stub} `
+      + `L ${x2} ${y2}`
   }
 
   return (
@@ -315,6 +429,7 @@ export function TasksGraph(props: TasksGraphProps): ReactNode {
         role="group"
         aria-label={t('tasksViewGraph')}
         onPointerDown={onPointerDown}
+        onDoubleClick={onDoubleClick}
       >
         {/* The graph twin of TasksTree's loading row: the same copy key and the
             same "nothing to show yet" condition (an empty canvas would render
@@ -357,7 +472,7 @@ export function TasksGraph(props: TasksGraphProps): ReactNode {
           {phaseFrames.map(frame => (
             <div
               key={frame.key}
-              className={css.phaseFrame}
+              className={clsx(css.phaseFrame, phaseClass(frame.index))}
               style={{ left: frame.x, top: frame.y, width: frame.w, height: frame.h }}
             >
               <span className={css.phaseLabel}>{frame.title ?? t('workflowPhaseUnnamed')}</span>
@@ -376,11 +491,11 @@ export function TasksGraph(props: TasksGraphProps): ReactNode {
             const box = layout.boxes.get(node.id)
             if (box === undefined) return null
             const style = { left: box.x, top: box.y, width: GRAPH_NODE_W, minHeight: box.h }
-            if (node.kind === 'fold') return renderFoldNode(node, style, onToggleFold, clickAllowed)
+            if (node.kind === 'fold') return renderFoldNode(node, style, onExpandFold, clickAllowed)
             if (node.kind === 'workflow') {
               return renderWorkflowNode(node, style, onWorkflowInfo, clickAllowed)
             }
-            return renderAgentNode(node, style, onNodeInfo, onOpenTask, clickAllowed)
+            return renderAgentNode(node, style, onNodeInfo, onOpenTask, clickAllowed, onFoldNode)
           })}
         </div>
         <div className={css.controls} data-graph-controls>
@@ -422,18 +537,21 @@ export function TasksGraph(props: TasksGraphProps): ReactNode {
   )
 }
 
-/** One agent node card: dot + title, one mono meta line, live line when running. */
+/** One agent node card: identity on top, the state bar at the bottom. */
 function renderAgentNode(
   node: TasksAgentNode,
   style: { left: number; top: number; width: number; minHeight: number },
   onNodeInfo: (node: TasksAgentNode, anchor: HTMLElement) => void,
   onOpenTask: (taskId: string, anchor: HTMLElement) => void,
   clickAllowed: () => boolean,
+  onFold?: (node: TasksAgentNode) => void,
 ): ReactNode {
+  const settled = node.state === 'done' || node.state === 'error'
   return (
     <div
       key={node.id}
       data-graph-node={node.id}
+      data-depth={node.depth}
       role="button"
       tabIndex={-1}
       aria-label={`${node.label} ${agentMeta(node)}`}
@@ -442,7 +560,7 @@ function renderAgentNode(
         css.node,
         node.team?.role === 'teammate' && css.nodeTeam,
         node.current && css.nodeCurrent,
-        (node.state === 'done' || node.state === 'error') && !node.current && css.nodeSettled,
+        settled && !node.current && css.nodeSettled,
         node.state === 'error' && css.nodeError,
       )}
       style={style}
@@ -451,50 +569,70 @@ function renderAgentNode(
         onNodeInfo(node, event.currentTarget)
       }}
     >
-      <span className={css.nodeHeader}>
-        <StateDot state={nodeDotState(node.state)} size={6} className={css.nodeDot} />
-        <span className={css.nodeGlyph} aria-hidden="true"><AgentGlyph node={node} /></span>
-        <span className={NODE_TITLE} title={node.label}>{node.label}</span>
-      </span>
-      <span className={css.nodeMeta} title={agentMeta(node)}>{agentMeta(node)}</span>
-      {node.state === 'running' && <LiveLine live={node.live} />}
-      <TaskLine tasks={node.tasks} onOpenTask={onOpenTask} />
+      <CardTop
+        kind={agentCardKind(node)}
+        depth={node.depth}
+        {...(node.phase === undefined ? {} : { phase: node.phase })}
+        name={node.label}
+        meta={agentMeta(node)}
+      >
+        <TaskLine tasks={node.tasks} onOpenTask={onOpenTask} />
+      </CardTop>
+      <CardBar
+        state={node.state}
+        running={node.state === 'running'}
+        {...(barActivity(node) === undefined ? {} : { activity: barActivity(node) })}
+        {...(settled && !node.current && onFold !== undefined
+          ? { onFold: () => { onFold(node) } }
+          : {})}
+      />
     </div>
   )
 }
 
-/** One workflow run node card. */
+/** One workflow run node card: same frame, its own badges and state. */
 function renderWorkflowNode(
   node: TasksWorkflowNode,
   style: { left: number; top: number; width: number; minHeight: number },
   onWorkflowInfo: (node: TasksWorkflowNode, anchor: HTMLElement) => void,
   clickAllowed: () => boolean,
 ): ReactNode {
+  const running = node.run.status === 'running'
   return (
     <div
       key={node.id}
       data-graph-node={node.id}
+      data-depth={node.depth}
       role="button"
       tabIndex={-1}
       aria-label={`${node.run.name} ${workflowMeta(node)}`}
-      className={clsx(css.node, css.nodeWorkflow, node.run.status !== 'running' && css.nodeSettled)}
+      className={clsx(css.node, css.nodeWorkflow, !running && css.nodeSettled)}
       style={style}
       onClick={(event) => {
         if (!clickAllowed()) return
         onWorkflowInfo(node, event.currentTarget)
       }}
     >
-      <span className={css.nodeHeader}>
-        <StateDot state={node.run.status === 'running' ? 'ongoing' : 'done'} size={6} className={css.nodeDot} />
-        <span className={css.nodeGlyph} aria-hidden="true"><WorkflowGlyph /></span>
-        <span className={NODE_TITLE} title={node.run.name}>{node.run.name}</span>
-      </span>
-      <span className={css.nodeMeta}>{workflowMeta(node)}</span>
+      <CardTop
+        kind="workflow"
+        depth={node.depth}
+        name={node.run.name}
+        meta={workflowMeta(node)}
+      />
+      <CardBar
+        state={running ? 'running' : 'done'}
+        running={running}
+        stateWord={false}
+        activity={t('workflowMembers', { done: doneMembers(node), total: totalMembers(node) })}
+      />
     </div>
   )
 }
 
-/** One fold aggregate node. */
+/**
+ * One fold aggregate node: the completed leaves of one parent, collapsed. Its
+ * bar is the action row (expand), so the whole card stays one click target.
+ */
 function renderFoldNode(
   node: TasksFoldNode,
   style: { left: number; top: number; width: number; minHeight: number },
@@ -505,6 +643,7 @@ function renderFoldNode(
     <div
       key={node.id}
       data-graph-node={node.id}
+      data-depth={node.depth}
       role="button"
       tabIndex={-1}
       aria-label={`${t('tasksFoldCompleted', { count: node.count })} · ${t('tasksFoldExpand')}`}
@@ -515,15 +654,19 @@ function renderFoldNode(
         onToggleFold()
       }}
     >
-      <span className={css.nodeHeader}>
-        <span className={css.nodeGlyph} aria-hidden="true"><FoldGlyph /></span>
-        <span className={NODE_TITLE_PLAIN}>
-          {t('tasksFoldCompleted', { count: node.count })}
+      <CardTop
+        kind="fold"
+        count={node.count}
+        depth={node.depth}
+        name={foldPreviews(node.previews)}
+        extraClass={css.cardNamePlain}
+      />
+      <CardBar state="done" stateWord={false}>
+        <span className={css.barActivity}>{t('tasksFoldExpand')}</span>
+        <span className={css.barFold} aria-hidden="true">
+          <IconChevronDownOutlineRegular size={12} />
         </span>
-      </span>
-      <span className={css.nodeMeta} title={foldPreviews(node.previews)}>
-        {`${t('tasksFoldExpand')} · ${foldPreviews(node.previews)}`}
-      </span>
+      </CardBar>
     </div>
   )
 }

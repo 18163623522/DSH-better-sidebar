@@ -125,7 +125,15 @@ describe('SubagentView live polling', () => {
       if (method === 'subagents.live') {
         const body = JSON.parse(String(init?.body)) as { rootSessionId?: string }
         liveCalls.push(body.rootSessionId ?? '')
-        return jsonResponse({ ok: true, value: { live: { a: { running: true }, b: { running: true } } } })
+        return jsonResponse({
+          ok: true,
+          value: {
+            live: {
+              a: { running: true, summary: { counts: [{ kind: 'read', count: 1 }], runningDetail: '' } },
+              b: { running: true },
+            },
+          },
+        })
       }
       if (method === 'jobs.list') return jsonResponse({ ok: true, value: { jobs: [] } })
       throw new Error(`unexpected fetch ${String(url)}`)
@@ -139,7 +147,11 @@ describe('SubagentView live polling', () => {
     await act(async () => { await Promise.resolve() })
     expect(liveCalls).toEqual(['root'])
     expect(historySpy).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('思考中…')
+    // The live map reached the cards: a running node's bar carries the sweep
+    // hook, and its merged activity line renders on the bar.
+    const bar = container.querySelector('[data-graph-node="a"] [data-running="true"]')
+    expect(bar).not.toBeNull()
+    expect(bar?.textContent).toBeTruthy()
 
     await act(async () => { await vi.advanceTimersByTimeAsync(3_000) })
     expect(liveCalls).toEqual(['root', 'root'])
@@ -235,7 +247,11 @@ describe('SubagentView live polling', () => {
       if (method === 'subagents.live') {
         const body = JSON.parse(String(init?.body)) as { rootSessionId?: string }
         liveCalls.push(body.rootSessionId ?? '')
-        const live = body.rootSessionId === 'root' ? { a: { running: true, text: 'hello' } } : {}
+        // `text` is the child's newest assistant line, which the card shows in
+        // its detail POPOVER; the bar shows the merged activity summary.
+        const live = body.rootSessionId === 'root'
+          ? { a: { running: true, summary: { counts: [{ kind: 'read', count: 1 }], runningDetail: 'hello' } } }
+          : {}
         return jsonResponse({ ok: true, value: { live } })
       }
       if (method === 'jobs.list') return jsonResponse({ ok: true, value: { jobs: [] } })
@@ -248,7 +264,8 @@ describe('SubagentView live polling', () => {
     )
     await act(async () => { await Promise.resolve() })
     expect(liveCalls).toEqual(['root'])
-    expect(container.textContent).toContain('hello')
+    const bar = container.querySelector('[data-graph-node="a"] [data-running="true"]')
+    expect(bar?.textContent).toContain('hello')
 
     // The tree is re-rooted under a new ancestor: old rows must not leak.
     store.set(reRootedSnapshot())

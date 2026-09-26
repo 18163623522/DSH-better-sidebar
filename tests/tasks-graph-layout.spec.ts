@@ -7,11 +7,7 @@
  * the width-aware solver.
  */
 import { describe, expect, it } from 'vitest'
-import type { SidebarChildLiveView } from '../src/context-types.ts'
 import {
-  GRAPH_GAP_Y,
-  GRAPH_LIVE_H,
-  GRAPH_LIVE_TAIL_H,
   GRAPH_NODE_H,
   GRAPH_NODE_W,
   GRAPH_PAD,
@@ -38,10 +34,17 @@ function agent(
 ): TasksAgentNode {
   return {
     kind: 'agent', id, ...(parentId === undefined ? {} : { parentId }),
+    depth: parentId === undefined ? 0 : 1,
     label: id, state: 'running', activity: 'running', current: false,
-    ...(live ? { live: { text: 'x' } } : {}),
+    ...(live ? { live: { running: true, text: 'x' } } : {}),
     ...extra,
   }
+}
+
+/** One running node's live view: a merged activity row (the bar's text). */
+const ACTIVITY = {
+  running: true,
+  summary: { counts: [{ kind: 'read' as const, count: 1 }], running: 'read' as const, runningDetail: 'x' },
 }
 
 /** The row index of one laid-out node. */
@@ -51,77 +54,25 @@ function layoutRow(layout: ReturnType<typeof layoutTasksGraph>, id: string): num
   return (box.y - GRAPH_PAD) / GRAPH_ROW_STRIDE
 }
 
-/** One running node's live view: a merged activity row, no text tail. */
-const ACTIVITY: SidebarChildLiveView = {
-  running: true,
-  summary: { counts: [{ kind: 'read', count: 1 }], running: 'read', runningDetail: 'x' },
-}
-
-describe('layoutTasksGraph', () => {
-  it('places the root on row 0 and children one row below', () => {
-    const nodes: TasksNode[] = [agent('root'), agent('a', 'root'), agent('b', 'root')]
-    const layout = layoutTasksGraph(nodes)
-    // A running agent reserves the live-line row (its "thinking" fallback).
-    expect(layout.boxes.get('root')).toMatchObject({ y: GRAPH_PAD, h: GRAPH_NODE_H + GRAPH_LIVE_H })
-    expect(layout.boxes.get('a')?.y).toBe(GRAPH_PAD + GRAPH_ROW_STRIDE)
-    expect(layout.boxes.get('b')?.y).toBe(GRAPH_PAD + GRAPH_ROW_STRIDE)
-  })
-
-  it('centers a parent over its children band', () => {
-    const nodes: TasksNode[] = [agent('root'), agent('a', 'root'), agent('b', 'root')]
-    const layout = layoutTasksGraph(nodes)
-    const a = layout.boxes.get('a')
-    const b = layout.boxes.get('b')
-    const root = layout.boxes.get('root')
-    expect(a).toBeDefined(); expect(b).toBeDefined(); expect(root).toBeDefined()
-    const bandCenter = (a!.x + b!.x + GRAPH_NODE_W) / 2
-    expect(root!.x + GRAPH_NODE_W / 2).toBeCloseTo(bandCenter, 5)
-  })
-
-  it('grows live rows and widens the canvas for deep/wide forests', () => {
-    const nodes: TasksNode[] = [
-      agent('root'), agent('a', 'root', true),
-      agent('a1', 'a'), agent('a2', 'a'), agent('a3', 'a'),
-    ]
-    const layout = layoutTasksGraph(nodes)
-    expect(layout.boxes.get('a')?.h).toBe(GRAPH_NODE_H + GRAPH_LIVE_H)
-    expect(layout.width).toBeGreaterThan(3 * GRAPH_NODE_W)
-    expect(layout.height).toBeGreaterThan(2 * (GRAPH_NODE_H + GRAPH_GAP_Y))
-  })
-
-  it('reserves the shared-task row a teammate card renders', () => {
-    // A non-running teammate with a task line renders two title lines + the
-    // meta line + the task row; the base card alone reserves 16px less, and
-    // the card (height auto) renders that much outside its own box — which is
-    // what the edges and the phase frames are placed from.
+describe('layout: card heights', () => {
+  it('reserves the state bar for every node kind, and the task row only for team members', () => {
     const nodes: TasksNode[] = [
       agent('root'),
-      agent('mate', 'root', false, { state: 'idle', tasks: [task('t1')] }),
+      agent('busy', 'root', false, { live: ACTIVITY }),
+      agent('owner', 'root', false, { tasks: [task('t1')] }),
     ]
     const layout = layoutTasksGraph(nodes)
-    expect(layout.boxes.get('mate')?.h).toBe(GRAPH_NODE_H + GRAPH_TASK_H)
-    // Without tasks the card keeps the base shape.
-    const plain = layoutTasksGraph([agent('root'), agent('mate', 'root', false, { state: 'idle' })])
-    expect(plain.boxes.get('mate')?.h).toBe(GRAPH_NODE_H)
-  })
-
-  it('reserves the live tail row only when the tail carries activity AND text', () => {
-    const nodes: TasksNode[] = [
-      agent('root'),
-      agent('tool-only', 'root', false, { live: ACTIVITY }),
-      agent('both', 'root', false, { live: { ...ACTIVITY, text: 'y' } }),
-    ]
-    const layout = layoutTasksGraph(nodes)
-    // One live row either way (the tool row, or the meta-styled thinking
-    // fallback); the flattened text row is the second one.
-    expect(layout.boxes.get('tool-only')?.h).toBe(GRAPH_NODE_H + GRAPH_LIVE_H)
-    expect(layout.boxes.get('both')?.h).toBe(GRAPH_NODE_H + GRAPH_LIVE_H + GRAPH_LIVE_TAIL_H)
+    // The merged activity lives in the bar, which every card renders: a
+    // running node and a settled one reserve exactly the same base height.
+    expect(layout.boxes.get('root')?.h).toBe(GRAPH_NODE_H)
+    expect(layout.boxes.get('busy')?.h).toBe(GRAPH_NODE_H)
+    expect(layout.boxes.get('owner')?.h).toBe(GRAPH_NODE_H + GRAPH_TASK_H)
   })
 
   it('keeps every card shape inside one row stride', () => {
     // The stride is the row pitch: a card taller than it would overlap the
     // next row (and its phase frame).
-    const tallest = GRAPH_NODE_H + GRAPH_LIVE_H + GRAPH_LIVE_TAIL_H + GRAPH_TASK_H
+    const tallest = GRAPH_NODE_H + GRAPH_TASK_H
     expect(GRAPH_ROW_STRIDE).toBeGreaterThanOrEqual(tallest)
     const nodes: TasksNode[] = [
       agent('root'),

@@ -66,9 +66,15 @@ const teamMutations: Array<{ method: string; body: Record<string, unknown> }> = 
 const fetchedMethods: string[] = []
 /** Job lists the stubbed `jobs.list` route answers with, keyed by OWNER session. */
 let jobsByOwner: Record<string, SidebarJobView[]> = {}
+/** The `subagents.live` payload the stub answers with (session id → live view). */
+let livePayload: Record<string, unknown> = {}
+/** The folded workflow runs the stub answers `workflows.list` with. */
+let runsPayload: unknown[] = []
 
 beforeEach(() => {
   teamPayload = { available: false }
+  livePayload = {}
+  runsPayload = []
   teamMutations.length = 0
   fetchedMethods.length = 0
   jobsByOwner = {
@@ -78,8 +84,8 @@ beforeEach(() => {
     const method = String(url).split('/').pop()
     fetchedMethods.push(method ?? '')
     const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-    if (method === 'subagents.live') return jsonResponse({ ok: true, value: { live: {} } })
-    if (method === 'workflows.list') return jsonResponse({ ok: true, value: { runs: [] } })
+    if (method === 'subagents.live') return jsonResponse({ ok: true, value: { live: livePayload } })
+    if (method === 'workflows.list') return jsonResponse({ ok: true, value: { runs: runsPayload } })
     if (method === 'teams.view') return jsonResponse({ ok: true, value: teamPayload })
     if (method === 'jobs.list') {
       return jsonResponse({ ok: true, value: { jobs: jobsByOwner[String(body.sessionId ?? '')] ?? [] } })
@@ -130,7 +136,29 @@ function snapshotWithChildren(count: number): SidebarSessionList {
   return { byId, projectionsBySession }
 }
 
-/** Flush the mount-time job reads (request → envelope → json → Promise.all). */
+/**
+ * A snapshot whose root ran one workflow with TWO phases (the experiments the
+ * status badge and the phase badge read). The members are ordinary catalog
+ * children, which the model re-parents under the run node.
+ */
+function snapshotWithRun(): SidebarSessionList {
+  const byId: Record<string, SidebarSessionSummary> = {
+    root: { id: 'root', displayTitle: '主会话', running: true },
+  }
+  const projectionsBySession: Record<string, SidebarProjectionSnapshot> = {}
+  const entries: SidebarSubagentCatalogEntry[] = [
+    { id: 'm1', createdAt: 1, mode: 'one-shot', label: '审计 A' },
+    { id: 'm2', createdAt: 2, mode: 'one-shot', label: '审计 B' },
+  ]
+  for (const entry of entries) {
+    byId[entry.id] = { id: entry.id, displayTitle: entry.id, origin: 'subagent', parentId: 'root', running: false }
+    projectionsBySession[entry.id] = { values: { subagentCatalog: [] }, state: 'ready', error: null }
+  }
+  projectionsBySession.root = { values: { subagentCatalog: entries }, state: 'ready', error: null }
+  return { byId, projectionsBySession }
+}
+
+
 async function flushJobs(): Promise<void> {
   for (let tick = 0; tick < 4; tick++) {
     await act(async () => { await Promise.resolve() })
@@ -510,6 +538,139 @@ describe('Tasks page: the shared task window', () => {
     await act(async () => { await Promise.resolve() })
     const update = teamMutations.find(entry => entry.method === 'teams.taskUpdate')
     expect(update?.body).toMatchObject({ action: 'reassign', owner: 'reviewer', expectedRevision: 7 })
+    unmount()
+  })
+
+  it('draws the two-segment card: kind badge + name on top, state bar below', async () => {
+    const store = makeStore(snapshotWithChildren(2))
+    const { container, unmount } = renderRoot(
+      createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
+    )
+    await flushJobs()
+    // The tree is folded by default: unfold so the settled children are cards.
+    const foldToggle = container.querySelector('button[aria-label="展开已完成的节点"]') as HTMLButtonElement
+    await act(async () => { foldToggle.click() })
+
+    const root = container.querySelector('[data-graph-node="root"]') as HTMLElement
+    expect(root.getAttribute('data-depth')).toBe('0')
+    // The root is the main agent, a child is a subagent — the page's own words.
+    expect(root.textContent).toContain('主代理')
+    const child = container.querySelector('[data-graph-node="child-0"]') as HTMLElement
+    expect(child.getAttribute('data-depth')).toBe('1')
+    expect(child.textContent).toContain('子代理')
+    // Both segments are present: the identity block and the state bar.
+    const bar = child.querySelector('[data-state]') as HTMLElement
+    expect(bar).not.toBeNull()
+    expect(bar.textContent).toContain('已完成')
+    unmount()
+  })
+
+  it('marks a running card with data-running (the sweep hook) and never a settled one', async () => {
+    livePayload = {
+      'child-0': {
+        running: true,
+        summary: { counts: [{ kind: 'read', count: 2 }], runningDetail: '' },
+      },
+    }
+    const store = makeStore(snapshotWithChildren(2))
+    const { container, unmount } = renderRoot(
+      createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
+    )
+    await flushJobs()
+    // The global fold is ON by default: unfold so the settled sibling is a card
+    // too (the running one is never a fold candidate).
+    const foldToggle = container.querySelector('button[aria-label="展开已完成的节点"]') as HTMLButtonElement
+    await act(async () => { foldToggle.click() })
+    const child = container.querySelector('[data-graph-node="child-0"]') as HTMLElement
+    const bar = child.querySelector('[data-state]') as HTMLElement
+    expect(bar.getAttribute('data-running')).toBe('true')
+    // The merged activity wording comes from the plugin's own copy when the
+    // host's chat namespace is absent (this harness attaches no locale).
+    expect(bar.textContent).toBeTruthy()
+    const settled = container.querySelector('[data-graph-node="child-1"]') as HTMLElement
+    expect(settled.querySelector('[data-state]')?.getAttribute('data-running')).toBeNull()
+    unmount()
+  })
+
+  it('folds one settled card into the aggregate from its bar, and expands it back', async () => {
+    const store = makeStore(snapshotWithChildren(3))
+    const { container, unmount } = renderRoot(
+      createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
+    )
+    await flushJobs()
+    // The global fold is ON by default, so the settled children are already
+    // aggregated; unfolding reveals them as individual cards again.
+    const foldToggle = container.querySelector('button[aria-label="展开已完成的节点"]') as HTMLButtonElement
+    await act(async () => { foldToggle.click() })
+    expect(container.querySelector('[data-graph-node="child-0"]')).not.toBeNull()
+
+    const chevron = container.querySelector(
+      '[data-graph-node="child-0"] button[aria-label="收进已完成聚合"]',
+    ) as HTMLButtonElement
+    expect(chevron).not.toBeNull()
+    await act(async () => { chevron.click() })
+    // The node left the canvas…
+    expect(container.querySelector('[data-graph-node="child-0"]')).toBeNull()
+    // …and the aggregate says how many it holds.
+    const aggregate = container.querySelector('[data-graph-node="fold:root"]') as HTMLElement
+    expect(aggregate).not.toBeNull()
+    expect(aggregate.textContent).toContain('1')
+
+    // Clicking the aggregate expands EVERYTHING (manual + global folds).
+    await act(async () => { aggregate.click() })
+    expect(container.querySelector('[data-graph-node="child-0"]')).not.toBeNull()
+    expect(container.querySelector('[data-graph-node="fold:root"]')).toBeNull()
+    unmount()
+  })
+
+  it('offers no fold chevron on a running card or on the current session', async () => {
+    livePayload = { 'child-0': { running: true, summary: { counts: [], runningDetail: '' } } }
+    const store = makeStore(snapshotWithChildren(2))
+    const { container, unmount } = renderRoot(
+      createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
+    )
+    await flushJobs()
+    const running = container.querySelector('[data-graph-node="child-0"]') as HTMLElement
+    expect(running.querySelector('button[aria-label="收进已完成聚合"]')).toBeNull()
+    // The root IS the current session: never foldable.
+    const root = container.querySelector('[data-graph-node="root"]') as HTMLElement
+    expect(root.querySelector('button[aria-label="收进已完成聚合"]')).toBeNull()
+    unmount()
+  })
+
+  it('badges a workflow run and its members with the phase they belong to', async () => {
+    runsPayload = [{
+      runId: 'run-1',
+      name: 'audit',
+      originSessionId: 'root',
+      status: 'running',
+      startedSeq: 1,
+      startedAt: 0,
+      phases: [
+        { title: '扫描', members: [{ childId: 'm1', label: '审计 A', seq: 2, phase: '扫描' }] },
+        { title: '复核', members: [{ childId: 'm2', label: '审计 B', seq: 3, phase: '复核' }] },
+      ],
+    }]
+    const store = makeStore(snapshotWithRun())
+    const { container, unmount } = renderRoot(
+      createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
+    )
+    await flushJobs()
+    // The run's members are settled, so the global fold has already gathered
+    // them: unfold to see the member cards themselves.
+    const foldToggle = container.querySelector('button[aria-label="展开已完成的节点"]') as HTMLButtonElement
+    await act(async () => { foldToggle.click() })
+    // The run node is a card of its own: kind badge 工作流 + its status bar.
+    const runNode = container.querySelector('[data-graph-node="run:run-1"]') as HTMLElement
+    expect(runNode).not.toBeNull()
+    expect(runNode.textContent).toContain('工作流')
+    expect(runNode.querySelector('[data-state]')).not.toBeNull()
+    // Each member card carries ITS phase badge (the second grouping axis).
+    const first = container.querySelector('[data-graph-node="m1"]') as HTMLElement
+    const second = container.querySelector('[data-graph-node="m2"]') as HTMLElement
+    expect(first.textContent).toContain('扫描')
+    expect(second.textContent).toContain('复核')
+    expect(first.getAttribute('data-depth')).toBe('2')
     unmount()
   })
 })

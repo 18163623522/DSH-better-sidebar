@@ -256,6 +256,12 @@ export function SubagentView(props: {
   const mode = modeOverride ?? prefsMode
 
   const [folded, setFolded] = useState(true)
+  /**
+   * Nodes the reader folded by hand from their own card bar. Kept apart from
+   * `folded` (the global rule) so the control cluster and a single card never
+   * fight: the aggregate's click clears BOTH, which is what "expand" means.
+   */
+  const [foldedIds, setFoldedIds] = useState<ReadonlySet<string>>(() => new Set())
   const [teamBoardCollapsed, setTeamBoardCollapsed] = useState(false)
   const [popover, setPopover] = useState<PagePopover | null>(null)
 
@@ -272,8 +278,9 @@ export function SubagentView(props: {
         teamMembers,
         teamTasks: teamView?.available === true ? teamView.team?.tasks ?? [] : [],
         folded,
+        foldedIds,
       })),
-    [byId, catalogs, rootId, sessionId, live, runs, teamMembers, teamView, folded],
+    [byId, catalogs, rootId, sessionId, live, runs, teamMembers, teamView, folded, foldedIds],
   )
 
   /**
@@ -336,6 +343,21 @@ export function SubagentView(props: {
       setPopover(null)
     }
   }, [openChild, openMain])
+
+  /** Fold one settled node into its parent's aggregate (its card's chevron). */
+  const foldNode = useCallback((node: TasksAgentNode): void => {
+    setFoldedIds(current => {
+      const next = new Set(current)
+      next.add(node.id)
+      return next
+    })
+  }, [])
+
+  /** Expand every fold: the global rule off AND the manual folds cleared. */
+  const expandFold = useCallback((): void => {
+    setFolded(false)
+    setFoldedIds(current => (current.size === 0 ? current : new Set()))
+  }, [])
 
   /** Open the shared task window from a board row (undefined = create). */
   const openTaskFromBoard = useCallback((
@@ -542,6 +564,8 @@ export function SubagentView(props: {
               onWorkflowInfo={(node, anchor) => { setPopover({ kind: 'workflow', nodeId: node.id, anchor }) }}
               onOpenTask={openTaskById}
               onToggleFold={() => { setFolded(current => !current) }}
+              onExpandFold={expandFold}
+              onFoldNode={foldNode}
               mode={mode}
               onModeChange={setModeOverride}
             />
