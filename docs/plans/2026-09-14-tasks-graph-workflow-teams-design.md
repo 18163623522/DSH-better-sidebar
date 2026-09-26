@@ -188,6 +188,17 @@ PR：[#680](https://github.com/omdsh-dev/DSH-better-sidebar/pull/680)（分支 `
 - `tests/bundle-route.spec.ts` 的 `CHUNK_NAMES` 期望回到 4 项；`tests/manifest-consistency.spec.ts` 的「每个 chunk 都被 `package.json#files` 覆盖」断言保留，列表继续从 `CHUNK_NAMES` 派生（不手抄）。
 - `README.md` 两处「视觉基座为 shadcn/ui + Tailwind v4」描述删除；`docs/external-plugin-guide.md` 删除 §12.3「在插件里用 Tailwind / shadcn/ui」整节（含 preflight 规避、令牌桥、静态面板零阴影三条）。
 
-### 验收（回退后，2026-09-21）
+## 本轮打磨（2026-09-27，`feat/tasks-graph-polish`）
+
+图模式（主显示模式）按用户 brief 换成两段式卡片：上段是类型徽章 + 相位徽标 + 名称 + 元信息，
+下段小条是状态点 + 状态词 + **主 Agent 同款合并活动行** + 已完成节点的折叠 chevron；
+运行中小条从左到右扫光；层级/分支与 workflow 相位各用一套令牌色阶分组；后台任务从插件自建的
+三条路由改成宿主客户端 `ctx.jobs`（推送 roster + 非消费观察流 + kill，`src/jobs-routes.ts` 已删除）；
+窄栏可读性按 a–f 六项逐一处理（卡片高度预算重算、内容包围盒居中、缩放手感、平移夹取、连线 stub 加粗、
+相位框配色）。**树模式保持原样**（只随共享数据类型做最小适配）。
+
+完整设计与偏差记录见 [2026-09-27-tasks-graph-polish.md](2026-09-27-tasks-graph-polish.md)。
+
+## 验收（回退后，2026-09-21）
 
 `pnpm typecheck` ✅ 0 错误；`pnpm lint` ✅ 0 错误；`pnpm vitest run` **133 文件通过 / 1410 用例通过 / 9 skipped / 0 失败**（回退前：4 个文件失败，其中 `theme.spec.ts`、`ui-foundation.spec.ts` 在收集期就因 `src/client/ui/theme.css` 缺失报 ENOENT，`ui-shadows.spec.ts` 2 例、`bundle-route.spec.ts` 1 例断言失败）。

@@ -597,7 +597,7 @@ describe('Tasks page: the shared task window', () => {
     expect(child.getAttribute('data-depth')).toBe('1')
     expect(child.textContent).toContain('子代理')
     // Both segments are present: the identity block and the state bar.
-    const bar = child.querySelector('[data-state]') as HTMLElement
+    const bar = child.querySelector('[data-card-bar]') as HTMLElement
     expect(bar).not.toBeNull()
     expect(bar.textContent).toContain('已完成')
     unmount()
@@ -620,13 +620,13 @@ describe('Tasks page: the shared task window', () => {
     const foldToggle = container.querySelector('button[aria-label="展开已完成的节点"]') as HTMLButtonElement
     await act(async () => { foldToggle.click() })
     const child = container.querySelector('[data-graph-node="child-0"]') as HTMLElement
-    const bar = child.querySelector('[data-state]') as HTMLElement
+    const bar = child.querySelector('[data-card-bar]') as HTMLElement
     expect(bar.getAttribute('data-running')).toBe('true')
     // The merged activity wording comes from the plugin's own copy when the
     // host's chat namespace is absent (this harness attaches no locale).
     expect(bar.textContent).toBeTruthy()
     const settled = container.querySelector('[data-graph-node="child-1"]') as HTMLElement
-    expect(settled.querySelector('[data-state]')?.getAttribute('data-running')).toBeNull()
+    expect(settled.querySelector('[data-card-bar]')?.getAttribute('data-running')).toBeNull()
     unmount()
   })
 
@@ -702,7 +702,7 @@ describe('Tasks page: the shared task window', () => {
     const runNode = container.querySelector('[data-graph-node="run:run-1"]') as HTMLElement
     expect(runNode).not.toBeNull()
     expect(runNode.textContent).toContain('工作流')
-    expect(runNode.querySelector('[data-state]')).not.toBeNull()
+    expect(runNode.querySelector('[data-card-bar]')).not.toBeNull()
     // Each member card carries ITS phase badge (the second grouping axis).
     const first = container.querySelector('[data-graph-node="m1"]') as HTMLElement
     const second = container.querySelector('[data-graph-node="m2"]') as HTMLElement

@@ -99,7 +99,9 @@ export function CardTop(props: {
         )}
       </span>
       <span className={clsx(css.cardName, props.extraClass)} title={props.name}>{props.name}</span>
-      {props.meta !== undefined && <span className={css.cardMeta} title={props.meta}>{props.meta}</span>}
+      {props.meta !== undefined && props.meta !== '' && (
+        <span className={css.cardMeta} title={props.meta}>{props.meta}</span>
+      )}
       {props.children}
     </span>
   )
@@ -125,8 +127,8 @@ export function CardBar(props: {
   return (
     <span
       className={css.cardBar}
+      data-card-bar={state}
       data-running={running === true ? 'true' : undefined}
-      data-state={state}
     >
       {props.children ?? (
         <>

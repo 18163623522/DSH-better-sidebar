@@ -40,7 +40,7 @@ import {
   type GraphBox,
 } from './tasks-graph-layout.ts'
 import {
-  agentMeta, foldPreviews, TaskLine, WorkflowGlyph, workflowMeta,
+  agentIdentity, agentMeta, foldPreviews, TaskLine, WorkflowGlyph, workflowMeta,
 } from './tasks-shared.tsx'
 import { CardBar, CardTop, phaseClass, type CardKind } from './tasks-card.tsx'
 import { doneActivityTitle, liveActivityLabel } from './process-labels.ts'
@@ -574,7 +574,7 @@ function renderAgentNode(
         depth={node.depth}
         {...(node.phase === undefined ? {} : { phase: node.phase })}
         name={node.label}
-        meta={agentMeta(node)}
+        meta={agentIdentity(node)}
       >
         <TaskLine tasks={node.tasks} onOpenTask={onOpenTask} />
       </CardTop>

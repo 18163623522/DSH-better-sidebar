@@ -121,6 +121,24 @@ export function agentMeta(node: TasksAgentNode): string {
   return mode === undefined ? state : `${mode} · ${state}`
 }
 
+/**
+ * The CARD's mono meta line: WHO the node is, never its state.
+ *
+ * The state belongs to the card's bottom bar (the state word sits next to the
+ * state dot there), so repeating it here would print "已完成" twice inside one
+ * 190px card — the densest complaint the readability pass had to fix. The
+ * accessible name keeps {@link agentMeta} (state included), because a screen
+ * reader never sees the bar's dot.
+ */
+export function agentIdentity(node: TasksAgentNode): string {
+  // The root's badge already reads 主代理: an identity line would repeat it.
+  if (node.parentId === undefined) return ''
+  if (node.team?.role === 'teammate' && node.team.model !== undefined && node.team.model !== '') {
+    return node.team.model
+  }
+  return modeLabel(node.mode) ?? ''
+}
+
 /** The mono meta line of a workflow run card: status · member tally. */
 export function workflowMeta(node: TasksWorkflowNode): string {
   const { run } = node
