@@ -260,7 +260,10 @@ export function registerNativeSurface(deps: NativeSurfaceDeps): () => void {
         disposers.push(ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register({
           name: 'sidebar.right.pane.tab.title',
           key: id,
-          inject: () => ({ records, service, descriptorId: injected.descriptorId }),
+          // The chip is drawn per session and BEFORE the body, so it needs its
+          // own session id: every session's tabs live in one registry, and a
+          // chip that guessed the session would show another one's title.
+          inject: (sessionId: string) => ({ records, service, descriptorId: injected.descriptorId, sessionId }),
         }, NativeTabTitle)))
       } catch (error) {
         for (const dispose of disposers) disposeSafely(dispose, `native tab slot "${id}"`)

@@ -10,6 +10,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 import { createNativeTabRecords, NativeTabBody, NativeTabTitle } from '../src/client/native/tab-adapter.tsx'
 import { registerNativeSurface } from '../src/client/native/index.ts'
+import { createNativeSurface } from '../src/client/native/surface.ts'
 import { createBetterSidebarService, type SidebarSurface } from '../src/client/service.ts'
 import { createSidebarStore, type SidebarTab } from '../src/client/state.ts'
 
@@ -19,6 +20,7 @@ describe('createNativeTabRecords', () => {
   it('mints a synthetic tab from the native record + params', () => {
     const records = createNativeTabRecords()
     const view = records.ensure({
+      sessionId: 's1',
       id: 'tab-1', kind: 'browser', title: 'Browser', params: { url: 'https://a.test', meta: { k: 1 } }, scope,
     })
     expect(view.tab).toMatchObject({ id: 'tab-1', type: 'browser', title: 'Browser', meta: { k: 1 } })
@@ -29,46 +31,46 @@ describe('createNativeTabRecords', () => {
   it('calls the descriptor factory once for a record that arrives without seed fields', () => {
     const records = createNativeTabRecords()
     const mint = vi.fn(() => ({ title: 'Side chat', meta: { autoCreate: true } }))
-    const view = records.ensure({ id: 'tab-2', kind: 'sidechat', title: 'Side Chat', params: undefined, scope, mint })
+    const view = records.ensure({ sessionId: 's1', id: 'tab-2', kind: 'sidechat', title: 'Side Chat', params: undefined, scope, mint })
     expect(mint).toHaveBeenCalledTimes(1)
     expect(view.tab).toMatchObject({ title: 'Side chat', meta: { autoCreate: true } })
     // A second render of the same record does not re-mint.
-    records.ensure({ id: 'tab-2', kind: 'sidechat', title: 'Side Chat', params: undefined, scope, mint })
+    records.ensure({ sessionId: 's1', id: 'tab-2', kind: 'sidechat', title: 'Side Chat', params: undefined, scope, mint })
     expect(mint).toHaveBeenCalledTimes(1)
   })
 
   it('refreshes the seed fields on navigation but keeps the record identity', () => {
     const records = createNativeTabRecords()
-    records.ensure({ id: 'tab-3', kind: 'editor', title: 'a.ts', params: { path: '/work/a.ts' }, scope })
-    records.update('tab-3', { title: 'renamed.ts' })
-    const view = records.ensure({ id: 'tab-3', kind: 'editor', title: 'b.ts', params: { path: '/work/b.ts' }, scope })
+    records.ensure({ sessionId: 's1', id: 'tab-3', kind: 'editor', title: 'a.ts', params: { path: '/work/a.ts' }, scope })
+    records.update('s1', 'tab-3', { title: 'renamed.ts' })
+    const view = records.ensure({ sessionId: 's1', id: 'tab-3', kind: 'editor', title: 'b.ts', params: { path: '/work/b.ts' }, scope })
     expect(view.tab).toMatchObject({ id: 'tab-3', path: '/work/b.ts', title: 'renamed.ts' })
   })
 
   it('tracks expansion per record and bumps its version', () => {
     const records = createNativeTabRecords()
-    records.ensure({ id: 'tab-4', kind: 'editor', title: 'Files', params: undefined, scope })
-    const before = records.versionOf('tab-4')
-    records.toggleExpanded('tab-4', '/work/src')
-    expect(records.get('tab-4')?.expanded).toEqual(['/work/src'])
-    expect(records.versionOf('tab-4')).toBeGreaterThan(before)
-    records.toggleExpanded('tab-4', '/work/src')
-    expect(records.get('tab-4')?.expanded).toEqual([])
+    records.ensure({ sessionId: 's1', id: 'tab-4', kind: 'editor', title: 'Files', params: undefined, scope })
+    const before = records.versionOf('s1', 'tab-4')
+    records.toggleExpanded('s1', 'tab-4', '/work/src')
+    expect(records.get('s1', 'tab-4')?.expanded).toEqual(['/work/src'])
+    expect(records.versionOf('s1', 'tab-4')).toBeGreaterThan(before)
+    records.toggleExpanded('s1', 'tab-4', '/work/src')
+    expect(records.get('s1', 'tab-4')?.expanded).toEqual([])
   })
 
   it('notifies subscribers and forgets a dropped record', () => {
     const records = createNativeTabRecords()
-    records.ensure({ id: 'tab-5', kind: 'terminal', title: 'Terminal', params: undefined, scope })
+    records.ensure({ sessionId: 's1', id: 'tab-5', kind: 'terminal', title: 'Terminal', params: undefined, scope })
     const listener = vi.fn()
     const off = records.subscribe(listener)
-    records.update('tab-5', { title: 'zsh' })
+    records.update('s1', 'tab-5', { title: 'zsh' })
     expect(listener).toHaveBeenCalledTimes(1)
-    expect(records.get('tab-5')?.tab.title).toBe('zsh')
-    records.drop('tab-5')
-    expect(records.has('tab-5')).toBe(false)
+    expect(records.get('s1', 'tab-5')?.tab.title).toBe('zsh')
+    records.drop('s1', 'tab-5')
+    expect(records.has('s1', 'tab-5')).toBe(false)
     off()
-    records.ensure({ id: 'tab-6', kind: 'terminal', title: 'Terminal', params: undefined, scope })
-    records.update('tab-6', { title: 'x' })
+    records.ensure({ sessionId: 's1', id: 'tab-6', kind: 'terminal', title: 'Terminal', params: undefined, scope })
+    records.update('s1', 'tab-6', { title: 'x' })
     expect(listener).toHaveBeenCalledTimes(2)
   })
 })
@@ -514,6 +516,7 @@ describe('NativeTabTitle (the chip glyph)', () => {
     service: ReturnType<typeof createBetterSidebarService>,
     info: unknown,
     descriptorId: string,
+    sessionId = 's1',
   ): { host: HTMLDivElement; unmount: () => void } => {
     const host = document.createElement('div')
     document.body.appendChild(host)
@@ -524,6 +527,7 @@ describe('NativeTabTitle (the chip glyph)', () => {
         records,
         service,
         descriptorId,
+        sessionId,
         useTabInfo: () => info as never,
       }))
     })
@@ -557,7 +561,7 @@ describe('NativeTabTitle (the chip glyph)', () => {
       icon: (size: number) => createElement('i', { 'data-stub-icon': size }),
       component: () => createElement('div'),
     })
-    records.ensure({ id: 'chip-1', kind: 'stub-tab', title: 'Stub', params: undefined, scope })
+    records.ensure({ sessionId: 's1', id: 'chip-1', kind: 'stub-tab', title: 'Stub', params: undefined, scope })
 
     const { host, unmount } = renderTitle(records, service, nativeInfo('chip-1', 'stub-tab', 'Stub'), 'stub-tab')
     const chip = host.querySelector('[aria-hidden="true"]')
@@ -578,6 +582,7 @@ describe('NativeTabTitle (the chip glyph)', () => {
       component: () => createElement('div'),
     })
     records.ensure({
+      sessionId: 's1',
       id: 'chip-2',
       kind: 'editor',
       title: 'notes.md',
@@ -598,11 +603,263 @@ describe('NativeTabTitle (the chip glyph)', () => {
   it('falls back to the title alone when the type is gone (unregistered descriptor)', () => {
     const records = createNativeTabRecords()
     const service = createBetterSidebarService(createSidebarStore())
-    records.ensure({ id: 'chip-3', kind: 'ghost', title: 'Ghost', params: undefined, scope })
+    records.ensure({ sessionId: 's1', id: 'chip-3', kind: 'ghost', title: 'Ghost', params: undefined, scope })
 
     const { host, unmount } = renderTitle(records, service, nativeInfo('chip-3', 'ghost', 'Ghost'), 'ghost')
     expect(host.querySelector('[aria-hidden="true"]')).toBeNull()
     expect(host.textContent).toBe('Ghost')
     unmount()
+  })
+})
+
+/**
+ * ONE NATIVE ID, ONE RECORD PER SESSION.
+ *
+ * The host's tab counter restarts in every session (`tab1`, `tab2`, …) and
+ * 0.1.7 keeps visited bodies MOUNTED through hiding, tab selection and Session
+ * switches (`SidebarTabDefinition.keepMounted`). Two sessions' `tab1` are
+ * therefore alive at the same time, and a registry keyed by the bare id hands
+ * one session's tree/edit state to the other — the chain #636/#661 reported.
+ * These cases pin the per-session identity and the reclaim of dead sessions.
+ */
+describe('createNativeTabRecords — per-seat-session identity', () => {
+  it('keeps two sessions\' same-named tab apart', () => {
+    const records = createNativeTabRecords()
+    const first = records.ensure({ sessionId: 's1', id: 'tab1', kind: 'editor', title: 'Files', params: undefined, scope })
+    records.toggleExpanded('s1', 'tab1', '/work/src')
+    const second = records.ensure({
+      sessionId: 's2', id: 'tab1', kind: 'editor', title: 'Files', params: undefined,
+      scope: { sessionId: 's2', cwd: '/other' },
+    })
+    expect(second).not.toBe(first)
+    expect(records.get('s1', 'tab1')?.expanded).toEqual(['/work/src'])
+    expect(records.get('s2', 'tab1')?.expanded, 'the entering session must not inherit').toEqual([])
+    expect(records.get('s2', 'tab1')?.scope.sessionId).toBe('s2')
+  })
+
+  it('patches and drops exactly one session\'s record', () => {
+    const records = createNativeTabRecords()
+    records.ensure({ sessionId: 's1', id: 'tab1', kind: 'editor', title: 'Files', params: undefined, scope })
+    records.ensure({ sessionId: 's2', id: 'tab1', kind: 'editor', title: 'Files', params: undefined, scope })
+    records.update('s2', 'tab1', { title: 'renamed in B' })
+    expect(records.get('s1', 'tab1')?.tab.title).toBe('Files')
+    expect(records.get('s2', 'tab1')?.tab.title).toBe('renamed in B')
+    records.drop('s1', 'tab1')
+    expect(records.has('s1', 'tab1')).toBe(false)
+    expect(records.has('s2', 'tab1')).toBe(true)
+  })
+
+  it('retain() reclaims the records of sessions that are gone', () => {
+    const records = createNativeTabRecords()
+    records.ensure({ sessionId: 's1', id: 'tab1', kind: 'editor', title: 'Files', params: undefined, scope })
+    records.ensure({ sessionId: 's2', id: 'tab1', kind: 'editor', title: 'Files', params: undefined, scope })
+    const versions = new Map<string, number>()
+    records.subscribe(() => { versions.set('seen', (versions.get('seen') ?? 0) + 1) })
+    records.retain(new Set(['s1']))
+    expect(records.has('s2', 'tab1')).toBe(false)
+    expect(records.has('s1', 'tab1'), 'a live session keeps its state').toBe(true)
+    expect(versions.get('seen'), 'a reclaim notifies the mounted bodies').toBe(1)
+    // An unchanged live set is not a change: no notify, no work.
+    records.retain(new Set(['s1']))
+    expect(versions.get('seen')).toBe(1)
+  })
+})
+
+/**
+ * The surface resolves a BARE tab id (the consumer contract) against a seat
+ * session: the mounted one when there is one, a unique match otherwise, and
+ * NOTHING when the id names a tab in several sessions — guessing would write
+ * into another conversation. A session that disappears takes its records with
+ * it, because a `keepMounted` body of a deleted session never unmounts.
+ */
+describe('createNativeSurface — session-scoped ids and reclaim', () => {
+  const fixture = (sessionIds: string[], mounted?: string) => {
+    const listListeners = new Set<() => void>()
+    const byId: Record<string, { cwd: string }> = {}
+    for (const id of sessionIds) byId[id] = { cwd: `/work/${id}` }
+    const calls: unknown[] = []
+    let mountedId = mounted
+    const controller = {
+      openTab: (kind: string, options?: unknown) => { calls.push({ op: 'openTab', kind, options }) },
+      openResource: (address: string, options?: unknown) => { calls.push({ op: 'openResource', address, options }) },
+      close: (tabId: string) => { calls.push({ op: 'close', tabId }) },
+      closeIn: (sessionId: string, tabId: string) => { calls.push({ op: 'closeIn', sessionId, tabId }) },
+      mounted: { getSnapshot: () => mountedId, subscribe: () => () => {} },
+    }
+    const ctx = {
+      sessions: {
+        list: {
+          subscribe: (listener: () => void) => { listListeners.add(listener); return () => { listListeners.delete(listener) } },
+          getSnapshot: () => ({ byId }),
+        },
+      },
+      get: (name: string) => (name === 'sidebarRight' ? controller : undefined),
+    } as never
+    return {
+      ctx,
+      calls,
+      setMounted: (id: string | undefined) => { mountedId = id },
+      removeSession: (id: string) => { delete byId[id]; for (const listener of [...listListeners]) listener() },
+    }
+  }
+
+  const seed = (records: ReturnType<typeof createNativeTabRecords>, sessionId: string, id: string) =>
+    records.ensure({ sessionId, id, kind: 'editor', title: 'Files', params: undefined, scope: { sessionId, cwd: '/work' } })
+
+  it('targets the session the caller names, never the same id in another one', () => {
+    const { ctx } = fixture(['s1', 's2'], 's1')
+    const records = createNativeTabRecords()
+    seed(records, 's1', 'tab1')
+    seed(records, 's2', 'tab1')
+    const surface = createNativeSurface(ctx, records)
+    expect(surface.update('tab1', { title: 'renamed in B' }, 's2')).toBe(true)
+    expect(records.get('s2', 'tab1')?.tab.title).toBe('renamed in B')
+    expect(records.get('s1', 'tab1')?.tab.title, 'the mounted seat is untouched').toBe('Files')
+  })
+
+  it('falls back to the mounted seat when no session is named', () => {
+    const { ctx } = fixture(['s1', 's2'], 's2')
+    const records = createNativeTabRecords()
+    seed(records, 's1', 'tab1')
+    seed(records, 's2', 'tab1')
+    const surface = createNativeSurface(ctx, records)
+    expect(surface.update('tab1', { title: 'on screen' })).toBe(true)
+    expect(records.get('s2', 'tab1')?.tab.title).toBe('on screen')
+    expect(records.get('s1', 'tab1')?.tab.title).toBe('Files')
+  })
+
+  it('refuses an ambiguous bare id instead of guessing a conversation', () => {
+    const { ctx } = fixture(['s1', 's2'], undefined)
+    const records = createNativeTabRecords()
+    seed(records, 's1', 'tab1')
+    seed(records, 's2', 'tab1')
+    const surface = createNativeSurface(ctx, records)
+    expect(surface.update('tab1', { title: 'nope' })).toBe(false)
+    expect(surface.has('tab1')).toBe(false)
+    // A unique match still resolves without a mounted seat.
+    seed(records, 's2', 'tab9')
+    expect(surface.has('tab9')).toBe(true)
+  })
+
+  it('closes one session\'s tab and reclaims a deleted session\'s records', () => {
+    // `s3` is the mounted seat; `s2` is a background session that will be
+    // deleted — the case no React unmount ever reports.
+    const { ctx, calls, removeSession } = fixture(['s1', 's2', 's3'], 's3')
+    const records = createNativeTabRecords()
+    seed(records, 's1', 'tab1')
+    seed(records, 's2', 'tab1')
+    const surface = createNativeSurface(ctx, records)
+    expect(surface.close('s1', 'tab1')).toEqual({ type: 'editor', title: 'Files' })
+    expect(calls, 'a background session closes through the per-session face').toEqual([{ op: 'closeIn', sessionId: 's1', tabId: 'tab1' }])
+    expect(records.has('s1', 'tab1')).toBe(false)
+    expect(records.has('s2', 'tab1')).toBe(true)
+    removeSession('s2')
+    expect(records.has('s2', 'tab1'), 'a gone session leaves no record behind').toBe(false)
+  })
+})
+
+/**
+ * CO-RESIDENT SEATS. With `keepMounted` the host keeps every visited body
+ * mounted, so two sessions draw the SAME native id at the same time and one
+ * unmounting no longer means its record is dead. These cases mount both seats
+ * together: neither inherits the other's exploration state, and one going away
+ * does not delete the other's record (the #636 chain).
+ */
+describe('NativeTabBody — co-resident seats', () => {
+  const mountSeat = (
+    records: ReturnType<typeof createNativeTabRecords>,
+    service: ReturnType<typeof createBetterSidebarService>,
+    sessionId: string,
+    id: string,
+  ) => {
+    const store = createSidebarStore()
+    store.setSession(sessionId)
+    const sessions = {
+      list: {
+        subscribe: () => () => {},
+        getSnapshot: () => ({ byId: { [sessionId]: { cwd: `/work/${sessionId}` } } }),
+      },
+    }
+    const ctx = { sessions } as never
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const info = {
+      tab: {
+        id,
+        kind: 'explorer',
+        title: 'Files',
+        contentId: `sidebar://${id}`,
+        visible: true,
+        navigation: { address: `sidebar://${id}`, params: undefined, revision: 0 },
+        signal: new AbortController().signal,
+      },
+    }
+    let root: Root | undefined
+    act(() => {
+      root = createRoot(host)
+      root.render(createElement(NativeTabBody, {
+        sessionId,
+        ctx,
+        store,
+        service,
+        records,
+        descriptorId: 'explorer',
+        useTabInfo: () => info,
+      }))
+    })
+    return {
+      host,
+      unmount: () => { act(() => { root?.unmount() }); host.remove() },
+    }
+  }
+
+  it('keeps each seat\'s exploration, and an unmount only drops its own', async () => {
+    const records = createNativeTabRecords()
+    const service = createBetterSidebarService(createSidebarStore())
+    service.registerTab({
+      id: 'explorer',
+      title: 'Files',
+      component: props => createElement('div', { 'data-seat': props.scope.sessionId },
+        createElement('span', { 'data-expanded': (props.expanded ?? []).join(',') }),
+        createElement('button', { 'data-toggle': props.scope.sessionId, onClick: () => props.onToggleDir?.('/work/src') })),
+    })
+    // BOTH seats name `tab1` — the host's counter restarts per session.
+    const first = mountSeat(records, service, 's1', 'tab1')
+    const second = mountSeat(records, service, 's2', 'tab1')
+
+    act(() => { first.host.querySelector<HTMLButtonElement>('[data-toggle="s1"]')!.click() })
+    expect(first.host.querySelector('[data-expanded]')?.getAttribute('data-expanded')).toBe('/work/src')
+    expect(second.host.querySelector('[data-expanded]')?.getAttribute('data-expanded'), 'the second seat must not inherit').toBe('')
+
+    act(() => { second.host.querySelector<HTMLButtonElement>('[data-toggle="s2"]')!.click() })
+    expect(first.host.querySelector('[data-expanded]')?.getAttribute('data-expanded'), 'and it must not overwrite the first').toBe('/work/src')
+    expect(second.host.querySelector('[data-expanded]')?.getAttribute('data-expanded')).toBe('/work/src')
+
+    // A Session switch remounts the body on a REAL host (measured), so an
+    // unmount is NOT a close: the record has to wait for the remount that
+    // brings the reader's exploration back.
+    second.unmount()
+    expect(records.has('s1', 'tab1'), 'the other seat keeps its record').toBe(true)
+    expect(records.get('s1', 'tab1')?.expanded).toEqual(['/work/src'])
+    expect(records.has('s2', 'tab1'), 'an unmount must not forget the state').toBe(true)
+
+    const again = mountSeat(records, service, 's2', 'tab1')
+    expect(
+      again.host.querySelector('[data-expanded]')?.getAttribute('data-expanded'),
+      'the remounted seat finds its own exploration again',
+    ).toBe('/work/src')
+    expect(
+      first.host.querySelector('[data-expanded]')?.getAttribute('data-expanded'),
+      'and the other seat is still untouched',
+    ).toBe('/work/src')
+
+    // Only a real close forgets a record.
+    records.drop('s2', 'tab1')
+    expect(records.has('s2', 'tab1')).toBe(false)
+    first.unmount()
+    expect(records.has('s1', 'tab1'), 'an unmount is not a close either').toBe(true)
+    records.drop('s1', 'tab1')
+    expect(records.has('s1', 'tab1')).toBe(false)
+    again.unmount()
   })
 })
