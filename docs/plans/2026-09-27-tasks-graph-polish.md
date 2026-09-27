@@ -156,6 +156,20 @@ client 半（src/client/）
 （控制条的折叠箭头与卡片逐节点按钮一致）。组件级守护见 `tests/tasks-page.spec.tsx`
 的「draws COLLAPSE and EXPAND with different glyphs」。
 
+### 3. 小条里「运行中」与「正在分析请求」没对齐 → 两者统一字体
+
+字体度量问题，不是布局问题：两者的行盒完全一致（都是 11px/14px、`align-items: center` 下
+同一位置），但 11px 下 sans 字族的 ascent/descent 是 **11/2**，而 mono 字族是 **10/3** ——
+基线因此低 1px，蓝字看起来就是没对齐。而中文在这个 mono 栈里本来就走同一个 CJK 回退字族
+（PingFang SC），mono 只改到句子里的拉丁片段，等于「半句等宽、整体低一像素」。
+
+修法是让两者共用小条自己的字族（`.barActivity` 不再声明 `font-family`）；机器文本的等宽语气
+留在它该在的地方（上方 meta 行、后台任务行、终端输出井）。`tests/theme.spec.ts` 增加守护：
+`.barActivity` 不得声明 `font-family`。
+
+真机证据：真实运行中卡片的小条（3× DPR 截图 `/tmp/dsh-selfcheck/17-bar-real.png`）两段文字
+同处一行，且两个 span 的 `font-family` 计算值完全相同（断言 `new Set(fonts).size === 1` 通过）。
+
 ## 实施偏差记录（写给复审）
 
 1. **`process-activity.ts` 是裁剪版而不是原样搬运**：本轮「阶段」= 徽标 + 颜色，逐阶段列表没有消费者，留着就是死代码。裁剪后 44 例 → 30 例（阶段相关用例随机制一起删除）。

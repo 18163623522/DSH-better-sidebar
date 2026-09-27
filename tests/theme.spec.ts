@@ -181,6 +181,18 @@ describe('skin contract: the plugin owns no color of its own', () => {
     expect(frames).toContain('transform: translateX(100%)')
   })
 
+  it('the running bar keeps its state word and activity on ONE font stack', () => {
+    // Reader report: 运行中 and 正在分析请求 sat at different heights. The
+    // cause is metric, not layout — at 11px the sans stack is ascent/descent
+    // 11/2 against the mono stack's 10/3, so a mono activity line rests 1px
+    // lower. Both texts must therefore inherit the bar's own font.
+    const styles = readFileSync(resolve(ROOT, 'src/client/tasks-graph.module.css'), 'utf8')
+    const block = /\.barActivity \{([\s\S]*?)\n\}/.exec(styles)?.[1]
+    if (block === undefined) throw new Error('the .barActivity rule must exist')
+    expect(block).not.toContain('font-family')
+    expect(block).not.toContain('--ds-font-family-code')
+  })
+
   it('the empty-pane welcome capsule follows the host guide recipe', () => {
     // The card is the same surface as DSH's own guide capsule ("pick what
     // opens here"), so this pins the shared geometry and the token-only
