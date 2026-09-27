@@ -87,6 +87,7 @@ interface NativeTabRegistry {
     id: string
     kind: string
     multiple?: boolean
+    keepMounted?: boolean
     patterns?: readonly string[]
     priority?: 'extension' | 'builtin' | 'fallback'
     canOpen?: (address: string) => boolean
@@ -280,6 +281,11 @@ export function registerNativeSurface(deps: NativeSurfaceDeps): () => void {
       const disposeType = tabs.register({
         id,
         kind: descriptor.id,
+        // 0.1.7: the host keeps a visited body MOUNTED through hiding,
+        // tab selection and Session switches, so the plugin's own React state
+        // (records, tree expansion, scroll, unsaved drafts) survives without
+        // the adapter faking it.
+        keepMounted: true,
         ...(isEditor
           ? {
             patterns: ['dsh-resource://file/**'],
@@ -345,6 +351,7 @@ export function registerNativeSurface(deps: NativeSurfaceDeps): () => void {
       const disposeType = tabs.register({
         id,
         kind: FILES_KIND,
+        keepMounted: true,
         priority: 'extension',
         title: () => t('files'),
         guide: [{
