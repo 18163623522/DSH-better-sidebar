@@ -201,10 +201,40 @@ async function selectConversation(page: Page, sessionId: string): Promise<void> 
   await expect.poll(() => onScreenSession(page), { timeout: 60_000 }).toBe(sessionId)
 }
 
+/**
+ * The plugin-side reads a reader would notice being repeated, by URL fragment.
+ * `keepMounted` is supposed to make a conversation switch a pure show/hide: the
+ * body stays up, so its already-loaded levels must NOT be fetched again.
+ *
+ * The root level IS re-fetched on every activation on purpose (the tree is the
+ * one view that has to show the disk as it is now), so it is excluded here and
+ * asserted separately; what this counts is the work a kept-alive body should
+ * never repeat.
+ */
+const REPEATABLE_READS = ['/sidebar/api/fs.tree', '/sidebar/api/fs.read']
+
 test('the explorer keeps its state across a tab switch and a conversation round trip', async ({ page }) => {
   const pageErrors: string[] = []
   page.on('pageerror', (error) => pageErrors.push(String(error)))
   page.on('console', (message) => { console.log('[page]', message.text()) })
+
+  // Count the plugin's own reads so "state survived" is not confused with
+  // "everything was silently reloaded". These routes are POSTs — the path
+  // being listed or read travels in the BODY, not the URL — so the body is
+  // what tells one level/file from another.
+  const reads: Array<{ url: string; path: string; at: number }> = []
+  page.on('request', (request) => {
+    const url = request.url()
+    if (!REPEATABLE_READS.some(fragment => url.includes(fragment))) return
+    const body = request.postData() ?? ''
+    const path = /"path"\s*:\s*"([^"]*)"/.exec(body)?.[1] ?? ''
+    reads.push({ url, path: decodeURIComponent(path), at: Date.now() })
+  })
+  const readsSince = (mark: number, match?: string): string[] =>
+    reads
+      .filter(entry => entry.at >= mark && (match === undefined || entry.path.includes(match)))
+      .map(entry => entry.path)
+
 
   await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded' })
   await expect(page.locator('[data-dsh-better-sidebar]')).toBeAttached({ timeout: 90_000 })
@@ -242,8 +272,36 @@ test('the explorer keeps its state across a tab switch and a conversation round 
   expect(afterTab.scrollTop, 'the scroll position survives a tab switch').toBe(SCROLL_TO)
   expect(afterTab.chip, 'the chip keeps its title across a tab switch').toBe(before.chip)
 
+  // ── A FILE open in conversation A: the resource question ──────────────────
+  // Opening a file in merged mode switches THIS tab to the editor, so the tree
+  // component unmounts by design (its scroll does not survive that, and never
+  // did). What must survive a CONVERSATION switch is the file itself: it stays
+  // open, and its bytes are not read again.
+  const fileMark = Date.now()
+  await page.locator(innerRow('alpha')).first().click({ position: { x: 8, y: 8 } })
+  await expect(
+    page.locator('[data-sidebar-right-panel]:visible .cm-editor').first(),
+    'the file must open in the plugin editor',
+  ).toBeVisible({ timeout: 30_000 })
+  expect(
+    readsSince(fileMark, 'inner.txt'),
+    'opening the file reads it exactly once',
+  ).toHaveLength(1)
+
+  // Back to the Files window and RE-BUILD the scroll offset: opening the file
+  // swapped this tab's content, so the tree remounted at the top (by design,
+  // unrelated to session retention). The round trip below must then preserve
+  // this second offset.
+  await page.locator('[data-sidebar-right-panel]:visible [role="tab"]').filter({ hasText: /Files|文件/ }).first().click()
+  await expect(page.locator(innerRow('alpha')).first()).toBeVisible({ timeout: 30_000 })
+  const bodyAgain = page.locator(TREE_BODY).first()
+  await bodyAgain.evaluate((el, top) => { el.scrollTop = top }, SCROLL_TO)
+  await expect.poll(() => bodyAgain.evaluate(el => el.scrollTop), { timeout: 10_000 }).toBe(SCROLL_TO)
+  const beforeTrip = await readState(page)
+  expect(beforeTrip.expandedDir, 'alpha is still expanded after the file round trip').toBe('alpha')
+
   // ── A conversation round trip: A → B → A ──────────────────────────────────
-  const firstConversationChip = afterTab.chip
+  const firstConversationChip = beforeTrip.chip
   await page.evaluate(() => console.log('[mark] switching-to-B', Date.now() % 1000000))
   const sessionB = await newConversation(page, sessionA)
   await page.evaluate(() => console.log('[mark] in-B', Date.now() % 1000000))
@@ -265,10 +323,41 @@ test('the explorer keeps its state across a tab switch and a conversation round 
   ).toBe(0)
   expect(sessionB, 'the lane must have left conversation A').not.toBe(sessionA)
   await page.waitForTimeout(1_500)
+  const backMark = Date.now()
   await page.evaluate(() => console.log('[mark] switching-back-to-A', Date.now() % 1000000))
   await selectConversation(page, sessionA!)
   await dismissOnboarding(page)
-  await openFiles(page)
+  // A's last active tab was the Files window (the lane returned to it to
+  // re-build the scroll offset), so that is where the seat must land.
+  await expect(
+    page.locator(innerRow('alpha')).first(),
+    'returning to A must land on the tab that was active',
+  ).toBeVisible({ timeout: 30_000 })
+
+  // The FILE opened in A is still open, and its bytes were NOT read again —
+  // the editor body stayed mounted, so it still holds them. (Its tab is not
+  // active on return, so it is asserted by opening it, which must be a plain
+  // show of already-held content.)
+  expect(
+    readsSince(backMark, 'inner.txt'),
+    'the file opened in A must not be re-read when the conversation comes back',
+  ).toEqual([])
+  const editorTab = page.locator('[data-sidebar-right-panel]:visible [role="tab"]').filter({ hasText: 'inner.txt' })
+  await expect(editorTab, 'the file opened in A is still open after the round trip').toHaveCount(1, { timeout: 30_000 })
+  await editorTab.first().click()
+  await expect(
+    page.locator('[data-sidebar-right-panel]:visible .cm-editor').first(),
+    'selecting it shows the editor without a new read',
+  ).toBeVisible({ timeout: 30_000 })
+  expect(
+    readsSince(backMark, 'inner.txt'),
+    'and showing it again still re-read nothing',
+  ).toEqual([])
+
+  // Back to the Files window for the remaining vector (its own tab is still
+  // there, and selecting it is a plain show — not a reload).
+  await page.locator('[data-sidebar-right-panel]:visible [role="tab"]').filter({ hasText: /Files|文件/ }).first().click()
+  await expect(page.locator(innerRow('alpha')).first()).toBeVisible({ timeout: 30_000 })
   await expect
     .poll(async () => (await readState(page)).expandedDir, { timeout: 30_000 })
     .toBe('alpha')
@@ -285,7 +374,7 @@ test('the explorer keeps its state across a tab switch and a conversation round 
   expect(
     afterRoundTrip.expandedDir,
     'the tree expansion survives a conversation round trip',
-  ).toBe(before.expandedDir)
+  ).toBe(beforeTrip.expandedDir)
   expect(
     afterRoundTrip.chip,
     'the tab chip survives a conversation round trip',
