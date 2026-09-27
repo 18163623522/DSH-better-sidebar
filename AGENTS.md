@@ -11,7 +11,7 @@
 - **代码改动必须走 PR**：非文档改动在 `feat/*` / `fix/*` 分支开发，`gh pr create` 发起，review 合并后进 main；**仅纯文档改动**（README / AGENTS.md / docs/）允许直推 main。
 - **挂载只走 `cordis.patch.yml` + profile 机制**（`~/.dsh/profiles/<profile>/`），插件作为独立包被 profile 引用，不反向侵入 DSH。
 - **市场受管安装约束**：`dependencies` / `peerDependencies` / `optionalDependencies` **一律不得出现 `cordis`**（按名硬拒，optional 无效），`scripts` 不得含 `preinstall` / `install` / `postinstall` / `prepare`。由 `tests/market-manifest.spec.ts` 守护。
-- 缺能力时用 DSH 现成只读/公开 API 或插件自有路由（如 `jobs.output` 事件回放：读会话事件日志而非动注册表）；做不到先向用户说明取舍，不改 DSH。
+- 缺能力时用 DSH 现成只读/公开 API 或插件自有路由（会话事件日志回放是既有手段之一，但后台任务已有宿主客户端 `ctx.jobs`，别再自建回放路由）；做不到先向用户说明取舍，不改 DSH。
 
 ---
 
@@ -39,7 +39,7 @@
 3. **会话格式 v3 → v4**（`packages/session/session-format-v3-to-v4`）：两处变化。
    - **`source.kind === 'plugin'` 被硬拒**（`message-sources.ts` 抛 `format v4 message requires a producer-owned source kind`），而插件的 sidechat 边界注入正是那个形状。改用 **`plugin:dsh-better-sidebar`**：与 DSH 自己的 v3→v4 迁移对历史行产出的 kind **逐字一致**（`producerKind()` 对未知插件名返回 `` `plugin:${plugin}` ``），所以新旧数据形状统一，**历史 sidechat 会话不会丢**。类型层面还需一条 `declare module '@deepseek-ai/dsh-llm'` 的 `MessageSourceMap` 增强（0.1.7 把它改成合并可扩展的封闭联合，没有共享 catch-all）。
    - **tool 结果消息重写**：`role: 'user'` + 嵌套 `type: 'tool-result'` 包装块 → `role: 'tool'` + **顶层** `content` / `isError` / `toolCallId`。插件的 4 个解析器原先靠 `candidate.type === 'tool-result'` 命中，在新形状下恒返回空串（**静默空白**）。现在四处都**同时接受新旧形状**（旧分支必须保留：历史日志里就是旧形状）。
-4. **客户端会话快照换字段**：`SessionListState.subagentsByParent` / `jobsBySession` 被 `projectionsBySession` 取代，且 **`setSubagentCatalogOpen` 这个按需观察 API 被整体删除**（0.1.7 在连接建立时一次性加载所有 Session 的 projection，所以那套 observe/unobserve 机制应当删除而不是改名）。子代理目录改读 `projectionsBySession[sid]?.values.subagentCatalog`（`{id, createdAt, mode: 'one-shot'|'continuable'|'unknown', label?}`，**注意 `unknown` 是新值**）；后台任务列表**没有替代字段**，改由插件新增的 `jobs.list` 路由读 `ctx.jobs.list(sessionId)`。同一版里 `ctx.jobs.list/get/read/kill` 的 caller 从 `Agent` 变成 `SessionId`（插件因此可以彻底不碰 `ctx.agents` 来调注册表）。
+4. **客户端会话快照换字段**：`SessionListState.subagentsByParent` / `jobsBySession` 被 `projectionsBySession` 取代，且 **`setSubagentCatalogOpen` 这个按需观察 API 被整体删除**（0.1.7 在连接建立时一次性加载所有 Session 的 projection，所以那套 observe/unobserve 机制应当删除而不是改名）。子代理目录改读 `projectionsBySession[sid]?.values.subagentCatalog`（`{id, createdAt, mode: 'one-shot'|'continuable'|'unknown', label?}`，**注意 `unknown` 是新值**）；后台任务列表**没有替代字段**，但 0.1.7 的 web profile 会挂载**客户端** `ctx.jobs` 服务（`@deepseek-ai/dsh-api-job-controller/client`，`web-app/cordis.patch.yml`），任务页直接读它——`state.getSnapshot()/subscribe()` 是整份快照（`{rows: 按被观察会话的 roster, observed: 按任务 id 的保留输出}`），`watchRows(sessionId)` 是按会话引用计数的推送 roster（空集合即该会话无任务），`observe(sessionId|undefined, jobId)` 是**非消费**的输出流（返回释放函数），`kill(sessionId, jobId)` 是注册表准入。插件因此**删掉了自建的 `jobs.list` / `jobs.output` / `jobs.kill` 三条路由**（`src/jobs-routes.ts` 已不存在），也不再用事件回放读模型已读的输出：那个 pane 从诞生起就受「不能碰模型 `job_output` 游标」的约束，宿主服务把这条约束变成了能力。同一版里 `ctx.jobs.list/get/read/kill` 的 caller 从 `Agent` 变成 `SessionId`（插件因此可以彻底不碰 `ctx.agents` 来调注册表）。
 
 ### 3.2 本版的能力让出与收敛
 

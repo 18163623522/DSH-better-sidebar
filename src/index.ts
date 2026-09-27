@@ -41,8 +41,9 @@ import { launchExternal } from './open-external.ts'
 import * as git from './git.ts'
 import { SettingsConflictError } from '@deepseek-ai/dsh-settings'
 import { AgentOpenRegistry, registerOpenTool, type AgentOpenRequest } from './agent-opens.ts'
-import { buildJobsApi, type SidebarJobsRoutes } from './jobs-routes.ts'
 import { buildSubagentLiveApi, type SidebarSubagentLiveRoutes } from './subagent-live-route.ts'
+import { buildTeamsApi, type SidebarTeamsRoutes } from './team-routes.ts'
+import { buildWorkflowsApi, type SidebarWorkflowRoutes } from './workflow-routes.ts'
 import { buildSidechatApi } from './sidechat-routes.ts'
 import { createAssistantLiveBuffer, type AssistantLiveBuffer } from './assistant-live.ts'
 import { readJsonBody, requireString, SidebarError, writeError, writeJson, writeOk } from './wire.ts'
@@ -262,16 +263,21 @@ function buildApi(
     const requested = typeof record?.worktree === 'string' && record.worktree !== '' ? record.worktree : undefined
     return { sessionId: base.sessionId, cwd: await git.resolveWorktree(base.cwd, requested) }
   }
-  // Background jobs: the LIST rides the harness's `session/jobs` push
-  // mirror, so these routes only replay output the model has read (from the
-  // session's own event log — no DSH source is touched, the model's
-  // job_output cursor is never consumed) and kill (the registry's stock
-  // API). A deployment without the jobs registry downgrades kill to a 503.
-  const jobsApi: SidebarJobsRoutes = buildJobsApi(ctx, resolved.readLimit)
   // Subagent live previews: one batch request instead of N per-child
   // `subagents.history` calls. The route degrades to a 503 when the host
   // subagent runtime is absent (the page has no topology to show anyway).
   const subagentLiveApi: SidebarSubagentLiveRoutes = buildSubagentLiveApi(ctx)
+  // Workflow runs: no service registry exists in DSH (runs are
+  // holder-owned), so the route folds the `tool-workflow/*` session events
+  // the tool's recorder appends — the same four types the official panel
+  // folds in the browser. A deployment that never runs workflows simply
+  // returns an empty list (absence is normal, never an error).
+  const workflowsApi: SidebarWorkflowRoutes = buildWorkflowsApi(ctx)
+  // Agent Teams (experimental layer): the routes degrade structurally —
+  // service absent → `{available:false}` and the client hides the block;
+  // the tree root leading no team → `{team:null}`. Mutations ride the
+  // service's own CAS result union (conflicts stay distinct).
+  const teamsApi: SidebarTeamsRoutes = buildTeamsApi(ctx)
   return {
     'session.cwd': async (payload) => {
       const { sessionId, cwd } = await cwdOf(payload)
@@ -471,19 +477,17 @@ function buildApi(
       const window = filtered.length > CHANGES_EVENTS_CAP ? filtered.slice(filtered.length - CHANGES_EVENTS_CAP) : filtered
       return { events: window, lastSeq: window.at(-1)?.seq ?? afterSeq }
     },
-    // Background jobs: list the caller's own jobs, read one job's output (a
-    // REPLAY of what the model has read so far, from the owner session's
-    // event log — the model's job_output cursor is never touched, so the
-    // human pane can never steal the agent's bytes), and kill one job. The
-    // list route exists because DSH 0.1.7 deleted the session/jobs push
-    // mirror the Tasks page used to read. Kill is fenced to the owning
-    // session by the jobs registry.
-    'jobs.list': (payload) => jobsApi.list(payload),
-    'jobs.output': (payload) => jobsApi.output(payload),
-    'jobs.kill': (payload) => jobsApi.kill(payload),
     // Subagent live previews: one batch request per refresh; the route folds
     // the newest text/tool activity of every running child in the tree.
     'subagents.live': (payload) => subagentLiveApi.live(payload),
+    // Workflow runs of the whole tree (folded from `tool-workflow/*`
+    // session events; empty list when the tree never ran one).
+    'workflows.list': (payload) => workflowsApi.list(payload),
+    // Agent Teams (experimental): the task board's create/CAS-update
+    // mutations. Reads ride the Lead Session's `agentTeam` projection, so
+    // there is no `teams.view` route (see src/team-routes.ts).
+    'teams.taskCreate': (payload) => teamsApi.taskCreate(payload),
+    'teams.taskUpdate': (payload) => teamsApi.taskUpdate(payload),
     // The side card preferences. The settings service is optional in the
     // composition; while absent the routes report undefined and the client
     // keeps the schema defaults. Writes are revision-guarded: a stale editor

@@ -409,7 +409,7 @@ ctx.effect(() => {
 |---|---|---|---|---|
 | `editor` | 10 | 否（按 path 去重） | 否 | 唯一「文件窗口」（编辑/预览 + 资源管理）。chrome 恒合并形态：路径输入框 + 编辑器控件 + 可开关内嵌文件树（全局搜索 `fs.search`；状态存 `tab.meta.treeOpen/treeWidth`）。`editorExplorer`：关（默认）= 按 path 新开，无路径窗口 = 纯资源管理器；开 = 树点击/Enter 经 `updateTab` 原地切换（id/meta 不变），无路径窗口 = 带 chrome 空窗口。树右键「在新 Tab 中打开」「在侧边打开」（pane 右侧 split）。新会话 seed 空文件窗口（`title:'Files'`）；旧 `explorer` tab 经 `sanitizeState` 迁移 |
 | `git` | 20 | 是 | 是（本轮文件操作数） | 「文件变动」统一 tab（id 保留 `git` 以兼容持久化布局）：**Git 视角**（原 Git 面板：staged/unstaged / 提交 / 历史 / worktree·子仓库选择）+ **本轮文件视角**（原 file-trace：模型读/写/编辑实时折叠，按文件分组、类型筛选）；会话事件经插件自有宿主路由 `changes.ops` 供给（live 日志优先、冷会话回放持久化记录，`afterSeq` 增量），badge 读 tab 轮询写入的同步缓存。两视角共用底部可拖拽预览面板（`tab.meta.lens/previewH` 持久化），diff 渲染统一走 `src/client/diff/`（`DiffRows`/`DiffFiles`：mod 配对 + 行内高亮 + 语法着色 + 上下文折叠）；Git 目标可展开为独立 diff tab（落进工作台的 diff 分栏） |
-| `subagent` | 30 | 是 | 否 | 子代理拓扑 |
+| `subagent` | 30 | 是 | 否 | 任务管理（工作流图/树、团队任务板、后台任务抽屉） |
 | `sidechat` | 35 | 否（`sidechat:<uuid>`，按 `meta.threadId` 去重） | 否 | 侧边对话（每对话一 Tab）：打开即建空线程（首条消息赢得标签并同步标题）；线程 = 插件自建子会话（种子继承父会话上下文，进行中回合以 `interrupted` 闭合；种子带合法 `subagent/descriptor`，SubagentView 按 `Side: ` 前缀过滤），`origin:'subagent'` 隐藏于主列表；走 `/sidebar/api/sidechat.*` 路由；头部菜单切换/重开（`parkSidechatReopen` + 确定性 id），关 Tab 释放 live agent；重开经 `collectOwnEvents` 回源到种子边界；「保存为新会话」= `session.fork`（`this` 敏感）。[设计文档](plans/2026-08-20-sidechat-tab-design.md) |
 | `diff` | -1 | 否（按 id 去重） | 是 | 差异查看（changes tab 的预览面板「展开为独立页签」触发，同一渲染栈） |
 
@@ -879,7 +879,7 @@ ctx.effect(() =>
 )
 ```
 
-> ⚠️ **`toggles` 的 key 必须是本插件 `PrefsSchema` 的字段**（`PrefsSchema` 已并入本插件 Loader 行的 `Config`；内置键：`autoOpenSubagent` / `autoOpenJobs` / `agentOpenTools` / `editorExplorer` / `workspaceFence` / `titleBarScheme` / `titleBarPresetId` / `customCss` / `titleBarCompat` / `titleBarStripPx` / `htmlViewerNoSandbox` / `htmlViewerDefaultUnsafe` / `tabsEnabled` / `viewersEnabled` / `pluginSettings`；**已删除**：`agentTerminalTools` / `terminalShell` / `terminalShellArgs` / `terminalFontFamily` / `terminalFontSize` / `bottomPanelAutoTerminal` / `browserNoSandbox` / `browserAllowedLoopback` / 三个按协议分流的旧外链接管键）。**v0.12.0 起设置 seam 已开放**：你自己的设置走 `pluginToggles`（声明式行）或 `render`（自定义面板），值持久化在 `pluginSettings[id]`——不再需要本插件的 schema 字段，也不再被 seam 丢弃。值须 JSON 可序列化（行控件只产出 string/number/boolean；自定义面板自行负责）。
+> ⚠️ **`toggles` 的 key 必须是本插件 `PrefsSchema` 的字段**（`PrefsSchema` 已并入本插件 Loader 行的 `Config`；内置键：`autoOpenSubagent` / `autoOpenJobs` / `tasksViewMode` / `mobileNoAutoOpen` / `mobileDefaultTree` / `agentOpenTools` / `editorExplorer` / `workspaceFence` / `titleBarScheme` / `titleBarPresetId` / `customCss` / `titleBarCompat` / `titleBarStripPx` / `htmlViewerNoSandbox` / `htmlViewerDefaultUnsafe` / `tabsEnabled` / `viewersEnabled` / `pluginSettings`；**已删除**：`agentTerminalTools` / `terminalShell` / `terminalShellArgs` / `terminalFontFamily` / `terminalFontSize` / `bottomPanelAutoTerminal` / `browserNoSandbox` / `browserAllowedLoopback` / 三个按协议分流的旧外链接管键）。**v0.12.0 起设置 seam 已开放**：你自己的设置走 `pluginToggles`（声明式行）或 `render`（自定义面板），值持久化在 `pluginSettings[id]`——不再需要本插件的 schema 字段，也不再被 seam 丢弃。值须 JSON 可序列化（行控件只产出 string/number/boolean；自定义面板自行负责）。
 
 ### 8.2 宿主设置表单（DSH 0.1.7+：`SettingsForms`）
 
