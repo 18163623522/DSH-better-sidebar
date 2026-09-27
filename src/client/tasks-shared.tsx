@@ -282,9 +282,22 @@ export function LiveLine(props: { live: SidebarChildLiveView | undefined }): Rea
   )
 }
 
-/** The fold aggregate's subtitle: up to two label previews joined by `/`. */
-export function foldPreviews(previews: readonly string[]): string {
-  return previews.join(' / ')
+/**
+ * The fold aggregate's name line: two label previews, plus `+N` when the group
+ * holds more.
+ *
+ * A roster aggregate can swallow dozens of members, and the card has one line
+ * for them. Naming two and saying how many are left over is what keeps that
+ * line honest at any size — the exact `+N` the team task line already uses,
+ * not a second convention. The group's total is also on the badge and the bar,
+ * so `+N` is a tail, never the only count.
+ *
+ * @param previews - member labels, in page order (see {@link TasksFoldNode.previews}).
+ * @param count - how many members the group holds in total.
+ */
+export function foldPreviews(previews: readonly string[], count: number): string {
+  const tail = count > previews.length ? ` +${count - previews.length}` : ''
+  return `${previews.join(' / ')}${tail}`
 }
 
 /**

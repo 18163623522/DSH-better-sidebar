@@ -809,6 +809,16 @@
   min-width: 0;
 }
 
+/* The task window's body: the window hands it the slack (FloatingWindow's
+   `fill` layout), and inside it the description / editor is the region that
+   grows. Everything else keeps its natural height so the action row and the
+   meta line never drift. */
+.taskBody {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 /* The task window's own head line (inside the floating window's scrolling
    body): state dot + subject + status Tag. Sentence case, unlike the node
    detail's letter-spaced uppercase `.popHead` band — this one labels a real
@@ -1035,8 +1045,12 @@
  * task / output wells beside it, and the body is the card's VALUE rung
  * (secondary) — a description is content, not a title, so the title keeps the
  * card's only primary ink. */
+/* The description: it FILLS the window (no 160px cap — that was the box that
+   left the rest of a resized window empty) and scrolls inside itself only when
+   the prose really is longer than the room. */
 .taskMarkdown {
-  max-height: 160px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 2px 0;
   font: var(--dsw-font-xxs-12);
@@ -1130,6 +1144,7 @@
 
 .taskTextarea {
   width: 100%;
+  flex: 1;
   min-height: 120px;
   padding: 6px 8px;
   border: 1px solid var(--dsw-alias-border-l2);
@@ -1152,11 +1167,19 @@
 
 /* The form's two field groups keep the card's OWN beat: 8px between groups
    against the 4px between a label and its control, so view and edit stack on
-   the same rhythm (the view's owner field carries the same 8px above it). */
+   the same rhythm (the view's owner field carries the same 8px above it).
+   The description group is the one that grows with the window. */
 .taskForm {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex: 1;
+  min-height: 0;
+}
+
+.taskForm > label:last-child {
+  flex: 1;
+  min-height: 0;
 }
 
 .taskField {
@@ -1169,6 +1192,15 @@
    form's own 8px group beat (4px card gap + 4px here). */
 .taskMarkdown + .taskField {
   margin-top: 4px;
+}
+
+/* The owner field is a fixed band under the description: it must not absorb
+   the window's slack (the prose is what grows). */
+.taskBody > .taskField,
+.taskBody > .jobPopMeta,
+.taskBody > .taskHeadRow,
+.taskBody > .teamNote {
+  flex: none;
 }
 
 .taskLabel {

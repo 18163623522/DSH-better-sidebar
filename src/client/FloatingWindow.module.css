@@ -77,6 +77,20 @@
   padding: 10px 12px 12px;
 }
 
+/* A body whose content should FILL the window instead of stacking from the top
+   (a form with one editable region, a detail view with prose): the caller's
+   children become a column and decide for themselves what takes the slack, so
+   dragging the window bigger grows the content rather than the empty space. */
+.bodyFill {
+  display: flex;
+  flex-direction: column;
+}
+
+.bodyFill > * {
+  flex: 1;
+  min-height: 0;
+}
+
 .footer {
   display: flex;
   align-items: center;

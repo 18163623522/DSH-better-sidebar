@@ -678,7 +678,7 @@ function renderFoldNode(
         count={node.count}
         foldKind={node.foldKind}
         depth={node.depth}
-        name={foldPreviews(node.previews)}
+        name={foldPreviews(node.previews, node.count)}
         extraClass={css.cardNamePlain}
       />
       <CardBar state={node.foldKind === 'idle' ? 'idle' : 'done'} stateWord={false}>

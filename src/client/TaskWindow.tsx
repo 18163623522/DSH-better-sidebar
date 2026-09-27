@@ -121,7 +121,7 @@ function TaskViewBody(props: {
           </>
         )}
       </div>
-      <div className={css.taskMarkdown}>
+      <div className={css.taskMarkdown} data-task-description>
         {body === ''
           ? <div className={css.popHint}>{t('teamTaskNoDescription')}</div>
           : (
@@ -316,6 +316,9 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
       initialSize={{ width: 460, height: 360 }}
       minSize={{ width: 320, height: 240 }}
       anchor={props.anchor}
+      // The description (or the editor) owns the window's slack: enlarging it
+      // gives the CONTENT more room instead of leaving a gap under it.
+      bodyLayout="fill"
       footer={(
         // The action row is the shell's FOOTER, so it never scrolls away from
         // the body it acts on. One state owner: `busy` and `armedDelete` are
@@ -436,6 +439,7 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
         </div>
       )}
     >
+      <div className={css.taskBody}>
       <div className={css.taskHeadRow}>
         {task !== undefined && <StateDot size={6} state={taskDotState(task)} />}
         <span className={css.popTitle} title={task?.subject ?? subject}>
@@ -466,6 +470,7 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
         )}
 
       {note !== undefined && <div className={css.teamNote}>{note}</div>}
+      </div>
     </FloatingWindow>
   )
 }

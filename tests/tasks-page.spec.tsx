@@ -723,6 +723,35 @@ describe('Tasks page: the shared task window', () => {
     await act(async () => { unmount() })
   })
 
+  it('hands the window slack to the description instead of leaving it empty', async () => {
+    withTeam({ tasks: [teamTask({ subject: '长描述', description: '第一行\n\n第二行' })] })
+    const store = makeStore(snapshotWithChildren(1))
+    const { container, unmount } = renderRoot(
+      createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
+    )
+    await act(async () => { await Promise.resolve() })
+    const row = container.querySelector('button[aria-label^="任务详情"]') as HTMLButtonElement
+    await act(async () => { row.click() })
+    const body = document.querySelector('[data-window-body]') as HTMLElement
+    // The body declares the FILL layout, so its child column (and the prose in
+    // it) grows with the window instead of stacking under a 160px box.
+    expect(body.getAttribute('data-window-body-layout')).toBe('fill')
+    const described = body.querySelector('[data-task-description]') as HTMLElement
+    expect(described).not.toBeNull()
+    expect(described.textContent).toContain('第一行')
+    expect(body.querySelector('textarea')).toBeNull()
+    // Editing swaps in the multi-line field INSIDE the same growing body (the
+    // action that switches modes lives in the shell's FOOTER, not the body).
+    const frame = document.querySelector('[data-floating-window]') as HTMLElement
+    const edit = [...frame.querySelectorAll('button')].find(button => button.textContent?.includes('编辑'))
+    await act(async () => { edit?.click() })
+    const area = body.querySelector('textarea') as HTMLTextAreaElement
+    expect(area).not.toBeNull()
+    expect(area.value).toBe('第一行\n\n第二行')
+    expect(document.querySelector('[data-floating-window]')).not.toBeNull()
+    await act(async () => { unmount() })
+  })
+
   it('closes the task window on Escape, never on an outside click', async () => {
     withTeam({ tasks: [teamTask()] })
     const store = makeStore(snapshotWithChildren(1))

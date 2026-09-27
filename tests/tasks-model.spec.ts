@@ -16,7 +16,9 @@ import type {
   SidebarSubagentCatalogEntry,
 } from '../src/context-types.ts'
 import type { TeamMemberRow } from '../src/client/team-projection.ts'
-import { taskBlocked, taskDotState, taskStatusLabel, taskTone } from '../src/client/tasks-shared.tsx'
+import {
+  foldPreviews, taskBlocked, taskDotState, taskStatusLabel, taskTone,
+} from '../src/client/tasks-shared.tsx'
 import type { SubagentCatalogView } from '../src/client/subagent-catalog.ts'
 import type { SidebarChildLiveView } from '../src/context-types.ts'
 import type { WorkflowRunView } from '../src/workflow-runs.ts'
@@ -245,6 +247,21 @@ describe('buildTasksModel', () => {
       foldKind: 'idle', count: 3, doneCount: 0, idleCount: 3, errorCount: 0,
       memberIds: ['m1', 'm2', 'm3'],
     })
+  })
+
+  it('names two members and counts the rest on the aggregate card', () => {
+    const mates = ['m1', 'm2', 'm3', 'm4', 'm5']
+    const model = buildTasksModel(input({
+      catalogs: {
+        root: catalog(mates.map(id => child(id))),
+        ...Object.fromEntries(mates.map(id => [id, catalog([])])),
+      },
+      byId: Object.fromEntries([['root', summary('root')], ...mates.map(id => [id, summary(id)])]),
+      teamMembers: mates.map(id => member({ id, name: id, status: 'idle' })),
+    }))
+    const fold = model.find(node => node.kind === 'fold')
+    expect(fold?.previews).toEqual(['m1', 'm2'])
+    expect(foldPreviews(fold?.previews ?? [], fold?.count ?? 0)).toBe('m1 / m2 +3')
   })
 
   it('keeps two idle team members visible (below the threshold)', () => {

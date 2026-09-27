@@ -83,6 +83,14 @@ export interface FloatingWindowProps {
    * caller scrolls it; the window owns its size and its overflow.
    */
   bodyRef?: RefObject<HTMLDivElement>
+  /**
+   * How the body stacks its children. `scroll` (default) flows them from the
+   * top inside the scrolling box — right for a log or a table. `fill` makes
+   * the body a column whose children stretch to the window's height — right
+   * for a detail view or a form, where the point of enlarging the window is
+   * more room for the content, not more empty space under it.
+   */
+  bodyLayout?: 'scroll' | 'fill'
   children: ReactNode
 }
 
@@ -143,7 +151,9 @@ function initialBox(
  * two drag gestures and the dismissal contract (close button + Escape only).
  */
 export function FloatingWindow(props: FloatingWindowProps): ReactNode {
-  const { title, onClose, initialSize, minSize, anchor, actions, footer, bodyRef, children } = props
+  const {
+    title, onClose, initialSize, minSize, anchor, actions, footer, bodyRef, bodyLayout, children,
+  } = props
   const min = useMemo(() => ({
     width: minSize?.width ?? DEFAULT_MIN_WIDTH,
     height: minSize?.height ?? DEFAULT_MIN_HEIGHT,
@@ -304,7 +314,12 @@ export function FloatingWindow(props: FloatingWindowProps): ReactNode {
           />
         </span>
       </div>
-      <div ref={bodyRef} className={css.body} data-window-body>
+      <div
+        ref={bodyRef}
+        className={bodyLayout === 'fill' ? `${css.body} ${css.bodyFill}` : css.body}
+        data-window-body
+        data-window-body-layout={bodyLayout ?? 'scroll'}
+      >
         {children}
       </div>
       {footer !== undefined && <div className={css.footer} data-window-footer>{footer}</div>}

@@ -117,8 +117,8 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
                 {t(folded ? 'tasksFoldExpand' : 'tasksFoldCollapse')}
               </span>
             </span>
-            <span className={css.treeMeta} title={foldPreviews(node.previews)}>
-              {foldPreviews(node.previews)}
+            <span className={css.treeMeta} title={foldPreviews(node.previews, node.count)}>
+              {foldPreviews(node.previews, node.count)}
             </span>
           </span>
         </div>
