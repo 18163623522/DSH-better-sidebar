@@ -34,6 +34,9 @@ vi.mock('../src/client/api.ts', () => ({
         { name: 'a.ts', path: '/tmp/a.ts', isDir: false },
       ],
     }),
+    // The tree reads the shared git-status store; a non-repo answer keeps
+    // every row plain (this spec is about the reveal scroll).
+    gitStatus: async () => ({ isRepo: false, entries: [] }),
   },
   downloadUrl: () => '/sidebar/file',
 }))

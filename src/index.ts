@@ -30,14 +30,13 @@ import {
 } from './config.ts'
 import { parentOf, requireAbsolute, listDirectory, rootLabel } from './fs-tree.ts'
 import { resolveSessionPath } from './session-path.ts'
-import { renameWorkspaceEntry, removeWorkspaceEntry, writeWorkspaceUpload } from './fs-operations.ts'
+import { mkdirWorkspaceEntry, renameWorkspaceEntry, removeWorkspaceEntry, writeWorkspaceUpload } from './fs-operations.ts'
 import { ensureWorkspacePath, ensureWorkspaceWritePath } from './path-security.ts'
 import { searchFiles } from './fs-search.ts'
 import { decodeHtmlUrl } from './html-route.ts'
 import { isTrustedApiRequest } from './trust-fence.ts'
 import { registerBundleRoute } from './bundle-route.ts'
 import { createDirectoryWatchers, type DirectoryWatchers } from './fs-watch.ts'
-import { launchExternal } from './open-external.ts'
 import * as git from './git.ts'
 import { SettingsConflictError } from '@deepseek-ai/dsh-settings'
 import { AgentOpenRegistry, registerOpenTool, type AgentOpenRequest } from './agent-opens.ts'
@@ -336,6 +335,17 @@ function buildApi(
         fence: fenceEnabledOf(getSettings),
       })
     },
+    // The tree's "new folder": one directory inside an existing row, with
+    // the same single-segment/existence/containment rules as rename.
+    'fs.mkdir': async (payload) => {
+      const { cwd } = await cwdOf(payload)
+      return mkdirWorkspaceEntry({
+        cwd,
+        path: requireString(payload, 'path'),
+        name: requireString(payload, 'name'),
+        fence: fenceEnabledOf(getSettings),
+      })
+    },
     // The tree row's delete (permanent — the host has no trash): recursive
     // for directories, unlinks a symlink row without touching its target.
     'fs.remove': async (payload) => {
@@ -518,19 +528,6 @@ function buildApi(
         }
         throw new SidebarError('settings-rejected', error instanceof Error ? error.message : String(error), 400)
       }
-    },
-    // External open for the file tree's "open with" menu: reveal a path in
-    // the OS file manager, or hand a custom-scheme URL (vscode://,
-    // cursor://, zed://, custom editors) to its registered handler. The
-    // client is a browser renderer where raw scheme navigation is
-    // unreliable, so the launch always goes through the host — the same
-    // fence as every other route, argv-only (no shell interpolation).
-    'open.external': (payload) => {
-      const record = payload as { action?: unknown } | null
-      const action = record?.action
-      if (action === 'reveal') return launchExternal('reveal', requireString(payload, 'path'))
-      if (action === 'url') return launchExternal('url', requireString(payload, 'url'))
-      throw new SidebarError('bad-request', 'action must be "reveal" or "url"')
     },
     // Side Chat: create a side-thread child seeded with the parent's full
     // log up to now, deliver follow-ups (cold-resuming when the thread's

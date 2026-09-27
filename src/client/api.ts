@@ -239,51 +239,6 @@ function gitPayload(scope: SessionScope, worktree: string | undefined, extra: Re
   return scopePayload(scope, { ...(worktree !== undefined && worktree !== '' ? { worktree } : {}), ...extra })
 }
 
-/** One external-open request from the file tree. */
-type OpenExternalPayload =
-  | { action: 'reveal'; path: string }
-  | { action: 'url'; url: string }
-
-/** The host route's success shape. */
-type OpenExternalResult = { started: boolean }
-
-/**
- * Remote VSCode-family URLs must be consumed on the browser/client machine:
- * the DSH host can be a headless remote server with no editor or DISPLAY.
- * Local editor URLs and reveal actions still belong to the host opener.
- */
-function shouldOpenExternalOnClient(payload: OpenExternalPayload): payload is { action: 'url'; url: string } {
-  if (payload.action !== 'url') return false
-  let parsed: URL
-  try {
-    parsed = new URL(payload.url)
-  } catch {
-    return false
-  }
-  return parsed.protocol !== 'http:'
-    && parsed.protocol !== 'https:'
-    && parsed.hostname === 'vscode-remote'
-    && parsed.pathname.startsWith('/ssh-remote+')
-}
-
-/**
- * Dispatch an external-open request to the correct machine. SSH remote-editor
- * URLs stay in the synchronous user-click chain and navigate the client so
- * its registered vscode:// / cursor:// handler can launch. Everything else
- * keeps using the DSH host route.
- */
-function openExternal(payload: OpenExternalPayload): Promise<OpenExternalResult> {
-  if (!shouldOpenExternalOnClient(payload)) {
-    return call<OpenExternalResult>('open.external', payload)
-  }
-  try {
-    window.location.assign(payload.url)
-    return Promise.resolve({ started: true })
-  } catch (error) {
-    return Promise.reject(error)
-  }
-}
-
 /** The sidebar API surface (session scope threaded through every call). */
 export const api = {
   sessionCwd: (scope: SessionScope, signal?: AbortSignal) =>
@@ -307,6 +262,11 @@ export const api = {
    *  row unlinks the link only). The UI confirms before calling this. */
   fsRemove: (scope: SessionScope, path: string) =>
     call<{ path: string }>('fs.remove', scopePayload(scope, { path })),
+  /** Create one directory row inside `path` (single-segment name; the server
+   *  refuses existing destinations, the workspace root, and — while the fence
+   *  is armed — anything resolving outside the workspace). */
+  fsMkdir: (scope: SessionScope, path: string, name: string) =>
+    call<{ path: string }>('fs.mkdir', scopePayload(scope, { path, name })),
   /** Upload one file's raw bytes into `dir` (keeps the folder tree via
    *  `relativePath`); the host streams it under the session workspace. */
   uploadFile: (scope: SessionScope, dir: string, relativePath: string, body: Blob, signal?: AbortSignal) =>
@@ -417,10 +377,6 @@ export const api = {
       patch,
       ...(expectedRevision !== undefined ? { expectedRevision } : {}),
     }),
-  /** External open for the file tree's "open with" menu. Remote SSH editor
-   *  URLs are launched on the browser/client machine; reveal and local URLs
-   *  keep using the host's platform opener. */
-  openExternal,
 }
 
 /** Absolute URL of the media route for one path (images only). */

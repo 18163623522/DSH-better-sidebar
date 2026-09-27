@@ -38,6 +38,9 @@ vi.mock('../src/client/api.ts', () => ({
     }),
     fsRename,
     fsRemove,
+    // The tree reads the shared git-status store; a non-repo answer keeps
+    // every row plain (this spec is about rename/delete).
+    gitStatus: async () => ({ isRepo: false, entries: [] }),
   },
   downloadUrl: () => '/sidebar/file',
   isOutsideWorkspaceMessage: () => false,

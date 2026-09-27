@@ -19,7 +19,6 @@ import {
 import { t } from '../locales.ts'
 import { openSidebarFile } from '../sidebar-file.ts'
 import { EditorHost } from '../EditorHost.tsx'
-import { OpenWithSettings } from '../open-with-settings.tsx'
 import { ChangesTab, opCountOf } from '../changes/ChangesTab.tsx'
 import { DiffTab } from '../DiffTab.tsx'
 import { SubagentView } from '../SubagentView.tsx'
@@ -45,9 +44,9 @@ export function builtinTabs(): readonly TabDescriptor[] {
       // vs per-path windows) renders as an iconed select row under the
       // editor card's gear in the Side card settings page, followed by the
       // workspace fence switch (the host's containment guard over every
-      // sidebar filesystem route); the "open with" configuration (SSH host +
-      // custom editors) is the custom panel BELOW those rows — the settings
-      // seam renders rows first, custom panel after.
+      // sidebar filesystem route). The old "open with" configuration panel
+      // (SSH host + custom editors) is gone: external opening is the host's
+      // own open-in-app capability now, with nothing to configure here.
       settings: {
         toggles: [{
           key: 'editorExplorer',
@@ -73,16 +72,14 @@ export function builtinTabs(): readonly TabDescriptor[] {
           title: () => t('settingsFenceTitle'),
           desc: () => t('settingsFenceDesc'),
         }],
-        render: ({ pluginSettings, updatePluginSetting }) => (
-          <OpenWithSettings pluginSettings={pluginSettings} updatePluginSetting={updatePluginSetting} />
-        ),
       },
-      component: ({ ctx, store, scope, tab, expanded, revealed, onToggleDir, onReferenceFile }) => (
+      component: ({ ctx, store, scope, tab, visible, expanded, revealed, onToggleDir, onReferenceFile }) => (
         <EditorHost
           ctx={ctx}
           store={store}
           scope={scope}
           tab={tab}
+          visible={visible}
           expanded={expanded ?? []}
           revealed={revealed ?? []}
           onToggleDir={onToggleDir ?? (() => { /* no-op */ })}

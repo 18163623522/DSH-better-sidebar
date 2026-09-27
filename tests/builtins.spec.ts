@@ -154,9 +154,9 @@ describe('built-in tab registrations', () => {
     // The workspace fence switch rides the same card as a plain boolean row.
     expect(toggles[1]?.title).toBeDefined()
     expect(toggles[1]?.desc).toBeDefined()
-    // The open-with configuration (SSH host + custom editors) is the custom
-    // panel rendered below the declarative rows.
-    expect(service.getTab('editor')?.settings?.render).toBeDefined()
+    // External opening is the host's own open-in-app capability now: the
+    // editor card has no custom settings panel left to render.
+    expect(service.getTab('editor')?.settings?.render).toBeUndefined()
   })
 
   it('every built-in tab carries the settings-surface icon', () => {

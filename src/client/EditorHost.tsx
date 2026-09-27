@@ -34,8 +34,7 @@ import { planFirstMatch, planFsReadOutcome, type EditorLoadAction } from './edit
 import { baseName } from './FileTree.tsx'
 import { createFrameBatcher } from './frame-batcher.ts'
 import { openSidebarFile } from './sidebar-file.ts'
-import { openWithSshActive, openWithUrl, parseOpenWithConfig, resolveOpenWithTargets } from './open-with.ts'
-import { updatePluginSettings } from './plugin-settings.ts'
+import { createOpenInApp } from './open-in-app.ts'
 import { TreePanel } from './TreePanel.tsx'
 import { t } from './locales.ts'
 import { relativeTo } from './paths.ts'
@@ -55,10 +54,6 @@ type EditorLoad =
 const TREE_WIDTH_DEFAULT = 240
 const TREE_WIDTH_MIN = 160
 const TREE_WIDTH_MAX = 480
-
-/** Stable empty blob for the editor pluginSettings read (a fresh `?? {}`
- *  would change identity every snapshot and loop useSyncExternalStore). */
-const EMPTY_PLUGIN_BLOB: Record<string, unknown> = {}
 
 /** The tab's persisted meta object (a malformed meta reads as empty). */
 function metaOf(tab: SidebarTab): Record<string, unknown> {
@@ -98,12 +93,16 @@ export function EditorHost(props: {
   store: SidebarStore
   scope: SessionScope
   tab: SidebarTab
+  /** Whether this tab is the active one with its panel open: a parked tab
+   *  must not keep polling (the workbench keeps every tab body mounted). */
+  visible?: boolean
   expanded: string[]
   revealed: string[]
   onToggleDir: (path: string) => void
   onReferenceFile: (path: string, isDir: boolean) => void
 }) {
   const { ctx, store, scope, tab, expanded, revealed, onToggleDir, onReferenceFile } = props
+  const visible = props.visible !== false
   const path = tab.path ?? ''
   const title = tab.title
   // A folder window: the model's `sidebar_open` (or any caller) opens a
@@ -135,16 +134,11 @@ export function EditorHost(props: {
     useCallback((callback: () => void) => store.subscribe(callback), [store]),
     useCallback(() => store.getSnapshot().prefs.editorExplorer, [store]),
   )
-  // The file tree's "open with" configuration (pluginSettings['editor']): a
-  // blob subscription, so a pin click or a settings-page edit re-renders the
-  // menu immediately. The parsed config also drives which targets are shown
-  // (SSH mode hides the host-local ones).
-  const editorBlob = useSyncExternalStore(
-    useCallback((callback: () => void) => store.subscribe(callback), [store]),
-    useCallback(() => store.getSnapshot().prefs.pluginSettings['editor'] ?? EMPTY_PLUGIN_BLOB, [store]),
-  )
-  const openWithConfig = useMemo(() => parseOpenWithConfig(editorBlob.openWith), [editorBlob])
-  const openWithTargets = useMemo(() => resolveOpenWithTargets(openWithConfig), [openWithConfig])
+  // The DSH-native "open with" capability (host open-in-app): one adapter per
+  // window, shared by every row menu below. The plugin no longer owns a
+  // target list, a URL vocabulary or a spawn route — the host reports which
+  // applications are actually installed for THIS path.
+  const openInApp = useMemo(() => createOpenInApp(ctx), [ctx])
   // A path-less tab shows the empty-state hint in merged mode — and in split
   // mode it is the standalone explorer (tree-only, see the render below). A
   // folder tab is a folder window in BOTH modes: the tree rooted at the
@@ -188,40 +182,6 @@ export function EditorHost(props: {
       }
       const { node, leafId } = insertLeafAt(state.bottomSplits, pane.id, 'row', fresh, false)
       return { ...state, bottomSplits: node, activePane: leafId }
-    })
-  }
-
-  /** The context menu's "open with" action: reveal the path in the OS file
-   *  manager, or hand the target's URL to its opener — local `file` URLs go
-   *  to the host's external opener, while the SSH-remote form for
-   *  VSCode-family editors launches on the browser/client machine (see
-   *  api.openExternal). Failures are logged only — a missing handler is the
-   *  OS's/browser's dialog, not a sidebar error. */
-  const openWith = (targetId: string, absolute: string): void => {
-    const target = openWithTargets.find(item => item.id === targetId)
-    if (target === undefined) return
-    if (target.kind === 'reveal') {
-      void api.openExternal({ action: 'reveal', path: absolute }).catch(
-        (error: unknown) => { console.error('open external failed', error) },
-      )
-      return
-    }
-    const url = openWithUrl(target, absolute, openWithConfig)
-    if (url === undefined) return
-    void api.openExternal({ action: 'url', url }).catch(
-      (error: unknown) => { console.error('open external failed', error) },
-    )
-  }
-
-  /** Toggle one target's pinned state. The write is serialized (see
-   *  plugin-settings.ts) and the menu re-renders when the store prefs land. */
-  const toggleOpenWithPin = (targetId: string): void => {
-    updatePluginSettings(store, 'editor', (blob) => {
-      const config = parseOpenWithConfig(blob.openWith)
-      const pinned = config.pinned.includes(targetId)
-        ? config.pinned.filter(id => id !== targetId)
-        : [...config.pinned, targetId]
-      return { ...blob, openWith: { ...config, pinned } }
     })
   }
 
@@ -384,6 +344,7 @@ export function EditorHost(props: {
       <div className={css.editor}>
         <TreePanel
           full
+          visible={visible}
           store={store}
           sessionId={scope.sessionId}
           cwd={folderRoot ?? scope.cwd}
@@ -393,11 +354,7 @@ export function EditorHost(props: {
           onOpenFile={openFile}
           onOpenFileNewTab={openFileNewTab}
           onOpenFileSide={openFileSide}
-          openWithTargets={openWithTargets}
-          openWithPinned={openWithConfig.pinned}
-          openWithSsh={openWithSshActive(openWithConfig)}
-          onOpenWith={openWith}
-          onToggleOpenWithPin={toggleOpenWithPin}
+          openInApp={openInApp}
           onReferenceFile={onReferenceFile}
           onPathRenamed={onPathRenamed}
           onPathDeleted={onPathDeleted}
@@ -509,6 +466,7 @@ export function EditorHost(props: {
               onPointerCancel={onResizeEnd}
             />
             <TreePanel
+              visible={visible}
               store={store}
               sessionId={scope.sessionId}
               cwd={scope.cwd}
@@ -518,11 +476,7 @@ export function EditorHost(props: {
               onOpenFile={openFile}
               onOpenFileNewTab={openFileNewTab}
               onOpenFileSide={openFileSide}
-              openWithTargets={openWithTargets}
-              openWithPinned={openWithConfig.pinned}
-              openWithSsh={openWithSshActive(openWithConfig)}
-              onOpenWith={openWith}
-              onToggleOpenWithPin={toggleOpenWithPin}
+              openInApp={openInApp}
               onReferenceFile={onReferenceFile}
               onPathRenamed={onPathRenamed}
               onPathDeleted={onPathDeleted}

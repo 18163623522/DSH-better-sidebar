@@ -182,6 +182,46 @@ export async function renameWorkspaceEntry(input: WorkspaceRenameInput): Promise
   return { path: safeDestination }
 }
 
+/** Inputs of one new directory row. */
+export interface WorkspaceMkdirInput {
+  /** The session workspace root; the new directory must stay inside it. */
+  cwd: string
+  /** Absolute path of the PARENT row as the tree displays it (a directory). */
+  path: string
+  /** The new directory's base name (single segment — mkdir never nests). */
+  name: string
+  /** Whether workspace containment is enforced (the `workspaceFence` setting; on by default). */
+  fence?: boolean
+}
+
+/**
+ * Create one directory inside an existing tree row: `<path>/<name>`.
+ * The name must be a single path segment; an existing destination is refused
+ * (mkdir would otherwise fail with EEXIST anyway, but the explicit check
+ * yields the same "already exists" sentence rename uses); the parent must
+ * resolve inside the (fence-checked) workspace.
+ *
+ * @throws SidebarError with a wire code for shape, containment and existence
+ * failures.
+ */
+export async function mkdirWorkspaceEntry(input: WorkspaceMkdirInput): Promise<{ path: string }> {
+  const { cwd, path, name, fence = true } = input
+  if (name === '' || name === '.' || name === '..' || name.includes('/') || name.includes('\\')) {
+    throw new SidebarError('bad-request', 'name must be a single path segment', 400)
+  }
+  const { absolute } = await resolveEntry(cwd, path, fence)
+  const destination = await ensureWorkspaceWritePath(cwd, join(absolute, name), fence)
+  if (await pathExists(destination)) {
+    throw new SidebarError('fs-error', `"${name}" already exists`, 409)
+  }
+  try {
+    await mkdir(destination)
+  } catch (error) {
+    throw new SidebarError('fs-error', `cannot create "${name}": ${error instanceof Error ? error.message : String(error)}`, 400)
+  }
+  return { path: destination }
+}
+
 /** Inputs of one tree-row delete. */
 export interface WorkspaceRemoveInput {
   /** The session workspace root; the removed entry must stay inside it. */

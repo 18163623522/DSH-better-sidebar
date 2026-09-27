@@ -69,26 +69,31 @@ export const zh = {
   editorEmptyHint: '从右侧文件树或上方路径输入框选择文件开始预览',
   openFileNewTab: '在新 Tab 中打开',
   openFileSide: '在侧边打开',
-  openWithMenu: '在应用中打开',
-  openWithSshSuffix: ' (SSH)',
-  pinOpenWith: '固定到菜单',
-  unpinOpenWith: '取消固定',
-  openWithExplorer: '资源管理器',
-  openWithVscode: 'VS Code',
-  openWithCursor: 'Cursor',
-  openWithZed: 'Zed',
-  openWithSettingsSshTitle: 'SSH 远端主机',
-  openWithSettingsSshDesc: '留空为本地工作区；填入 user@host 或 SSH 别名后，VSCode 系打开方式将改用 vscode-remote/ssh-remote 协议，资源管理器 / Zed / 非 VSCode 系自定义编辑器将从菜单隐藏',
-  openWithSettingsSshPlaceholder: 'user@host 或 SSH 别名',
-  openWithSettingsCustomTitle: '自定义编辑器',
-  openWithSettingsCustomDesc: '名称 + URL 模板（{path} 占位符）+ 是否 VSCode 系；SSH 模式下仅 VSCode 系可打开远端',
-  openWithSettingsAdd: '添加',
-  openWithSettingsName: '名称',
-  openWithSettingsTemplate: '如 cursor://file/{path}',
-  openWithSettingsFamily: 'VSCode 系',
-  openWithSettingsFamilyDesc: '该编辑器使用 VSCode 的 URL 协议（支持 SSH 远端打开）',
-  openWithSettingsRemove: '删除',
-  openWithSettingsInvalidHint: '名称或模板（需含 {path} 且以 scheme:// 开头）未填写的编辑器不会出现在菜单中',
+  openInApp: '打开方式',
+  openInAppDefault: '用默认应用打开',
+  openInAppEmpty: '没有可用于打开它的应用',
+  openInAppFailed: '无法打开：{path}',
+  revealInFileManager: '在文件管理器中显示',
+  filesSelected: '已选择 {count} 项',
+  clearSelection: '取消选择',
+  copyPaths: '复制路径',
+  deleteSelected: '删除所选',
+  deleteSelectedTitle: '删除选中的 {count} 项？',
+  deleteSelectedDesc: '这些文件与文件夹将被永久删除，无法恢复。',
+  newFolder: '新建文件夹',
+  newFolderPlaceholder: '文件夹名称',
+  newFolderInvalid: '文件夹名称无效',
+  filesTruncated: '该目录条目过多，仅显示前一部分',
+  gitStatusModified: '已修改',
+  gitStatusAdded: '新增',
+  gitStatusDeleted: '已删除',
+  gitStatusUntracked: '未跟踪',
+  gitStatusRenamed: '已重命名',
+  gitStatusConflict: '有冲突',
+  changesClean: '工作区没有变更',
+  changesNoHistory: '还没有提交历史',
+  changesStageFailed: '暂存失败：{message}',
+  changesOpGone: '该操作已不在会话记录中',
   newTab: '新建标签页',
   brokenSymlink: '失效的软链接',
   close: '关闭',
@@ -131,7 +136,6 @@ export const zh = {
   error: '加载失败',
   retry: '重试',
   notRepo: '当前目录不是 git 仓库',
-  noChanges: '没有变更',
   statusTruncated: '变更过多，仅显示前 2000 条',
   stage: '暂存',
   unstage: '取消暂存',
@@ -554,26 +558,31 @@ export const en: Record<keyof typeof zh, string> = {
   editorEmptyHint: 'Pick a file from the tree panel or the path input above to start previewing',
   openFileNewTab: 'Open in New Tab',
   openFileSide: 'Open to the Side',
-  openWithMenu: 'Open with',
-  openWithSshSuffix: ' (SSH)',
-  pinOpenWith: 'Pin to menu',
-  unpinOpenWith: 'Unpin',
-  openWithExplorer: 'File Manager',
-  openWithVscode: 'VS Code',
-  openWithCursor: 'Cursor',
-  openWithZed: 'Zed',
-  openWithSettingsSshTitle: 'SSH remote host',
-  openWithSettingsSshDesc: 'Empty = local workspace; with a user@host or SSH alias, VSCode-family openers switch to the vscode-remote/ssh-remote protocol and the File Manager / Zed / non-VSCode-family custom editors are hidden from the menu',
-  openWithSettingsSshPlaceholder: 'user@host or SSH alias',
-  openWithSettingsCustomTitle: 'Custom editors',
-  openWithSettingsCustomDesc: 'Name + URL template ({path} placeholder) + VSCode-family flag; in remote mode only VSCode-family editors can open a remote path',
-  openWithSettingsAdd: 'Add',
-  openWithSettingsName: 'Name',
-  openWithSettingsTemplate: 'e.g. cursor://file/{path}',
-  openWithSettingsFamily: 'VSCode-family',
-  openWithSettingsFamilyDesc: 'This editor speaks the VSCode URL dialect (supports SSH-remote opens)',
-  openWithSettingsRemove: 'Remove',
-  openWithSettingsInvalidHint: 'Editors with a missing name or a template without {path} / scheme:// are not shown in the menu',
+  openInApp: 'Open with',
+  openInAppDefault: 'Open with default app',
+  openInAppEmpty: 'No application can open it',
+  openInAppFailed: 'Could not open: {path}',
+  revealInFileManager: 'Reveal in File Manager',
+  filesSelected: '{count} selected',
+  clearSelection: 'Clear selection',
+  copyPaths: 'Copy paths',
+  deleteSelected: 'Delete selected',
+  deleteSelectedTitle: 'Delete {count} selected items?',
+  deleteSelectedDesc: 'These files and folders will be permanently deleted. This cannot be undone.',
+  newFolder: 'New folder',
+  newFolderPlaceholder: 'Folder name',
+  newFolderInvalid: 'Invalid folder name',
+  filesTruncated: 'This folder has too many entries; only the first ones are shown',
+  gitStatusModified: 'Modified',
+  gitStatusAdded: 'Added',
+  gitStatusDeleted: 'Deleted',
+  gitStatusUntracked: 'Untracked',
+  gitStatusRenamed: 'Renamed',
+  gitStatusConflict: 'Conflicted',
+  changesClean: 'No changes in the working tree',
+  changesNoHistory: 'No commits yet',
+  changesStageFailed: 'Staging failed: {message}',
+  changesOpGone: 'This operation is no longer in the session log',
   newTab: 'New tab',
   brokenSymlink: 'Broken symlink',
   close: 'Close',
@@ -616,7 +625,6 @@ export const en: Record<keyof typeof zh, string> = {
   error: 'Failed to load',
   retry: 'Retry',
   notRepo: 'This directory is not a git repository',
-  noChanges: 'No changes',
   statusTruncated: 'Too many changes; showing the first 2,000 entries',
   stage: 'Stage',
   unstage: 'Unstage',
@@ -1069,6 +1077,21 @@ export function attachLocale(service: {
  * @returns the translated text, or undefined when unavailable.
  */
 export function chatT(key: string, params?: Record<string, string | number>): string | undefined {
+  return hostT('chat', key, params)
+}
+
+/**
+ * Translate a key in one of the HOST's own locale namespaces. Same contract
+ * and same deliberately-untyped seam as {@link chatT} — the plugin reads host
+ * wording it would otherwise have to duplicate across 20 dictionaries (the
+ * chat activity line, the open-in-app application names).
+ *
+ * @param ns - host namespace (e.g. `'open-in-app'`).
+ * @param key - full namespace key (e.g. `'app.vscode'`).
+ * @param params - `{name}` placeholders to interpolate (the host does this).
+ * @returns the translated text, or undefined when unavailable.
+ */
+export function hostT(ns: string, key: string, params?: Record<string, string | number>): string | undefined {
   const service = localeService
   if (service === undefined) return undefined
   try {
@@ -1076,7 +1099,7 @@ export function chatT(key: string, params?: Record<string, string | number>): st
     // reference (`const bind = service.bind; bind('chat')`) throws
     // "Cannot read properties of undefined (reading 'bound')" — caught by the
     // real-host mount lane, invisible to closure fakes in unit tests.
-    const translate = service.bind?.('chat')
+    const translate = service.bind?.(ns)
     if (typeof translate !== 'function') return undefined
     const text = translate(key, params)
     return typeof text === 'string' && text !== '' && text !== key ? text : undefined
