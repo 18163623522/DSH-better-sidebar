@@ -3,7 +3,7 @@
 > [!IMPORTANT]
 > **Built on DSH's native sidebar API** (since v0.19.0): the right column *is* DSH's own sidebar — the plugin registers every tab type as a native tab (no right panel of its own anymore) and keeps only its self-drawn bottom workbench and the `ctx.betterSidebar` service open to every plugin.
 >
-> **Since v0.21.1 the host support floor is DSH `0.1.7-rc.1+`** (peer floor `^0.1.7-rc.1`; this version *is* npm's `latest`). DSH 0.1.7 ships a complete document preview of its own, so the plugin hands every read-only preview (spreadsheets / PDF / images / Office) back to the built-in and keeps only Markdown / HTML and the editable code editor. **Hosts on 0.1.6-alpha.2 or earlier should pin `dsh-better-sidebar@0.19.1`** — the DSH-to-plugin version table is in [Installation](#-installation).
+> **Since v0.21.1 the host support floor is DSH `0.1.7-rc.1+`** (peer floor `^0.1.7-rc.1`; v0.22.0 *is* npm's `latest`). DSH 0.1.7 ships a complete document preview of its own, so the plugin hands every read-only preview (spreadsheets / PDF / images / Office) back to the built-in and keeps only Markdown / HTML and the editable code editor. **Hosts on 0.1.6-alpha.2 or earlier should pin `dsh-better-sidebar@0.19.1`** — the DSH-to-plugin version table is in [Installation](#-installation).
 
 <!-- Hero -->
 <div align="center">
@@ -14,7 +14,7 @@
   <a href="https://github.com/omdsh-dev/DSH-better-sidebar/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/omdsh-dev/DSH-better-sidebar" /></a>
   <a href="https://opensource.org/licenses/MIT"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" /></a>
   <a href="https://dshfind.com/en/plugins/omdsh-dev/DSH-better-sidebar?ref=badge"><img alt="dshfind" src="https://dshfind.com/api/badge/omdsh-dev/DSH-better-sidebar?lang=en" /></a><br /><br />
-  <a href="https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions"><img alt="Supported DSH versions (v0.21.1): 0.1.7-rc.1+" src="https://img.shields.io/badge/DSH-0.1.7--rc.1%2B-4d6bfe" /></a>
+  <a href="https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions"><img alt="Supported DSH versions (v0.22.0): 0.1.7-rc.1+" src="https://img.shields.io/badge/DSH-0.1.7--rc.1%2B-4d6bfe" /></a>
   <a href="https://github.com/topics/dsh-better-sidebar"><img alt="Plugin ecosystem: GitHub topic dsh-better-sidebar" src="https://img.shields.io/badge/plugin%20ecosystem-topic%20dsh--better--sidebar-4d6bfe" /></a><br /><br />
   <img alt="File management" src="https://img.shields.io/badge/-File%20management-4d6bfe" /> <img alt="Edit &amp; preview" src="https://img.shields.io/badge/-Edit%20%26%20preview-4d6bfe" /> <img alt="Bottom workbench" src="https://img.shields.io/badge/-Bottom%20workbench-4d6bfe" /> <img alt="Changes" src="https://img.shields.io/badge/-Changes-4d6bfe" /> <img alt="Background tasks" src="https://img.shields.io/badge/-Background%20tasks-4d6bfe" /> <img alt="Side Chat" src="https://img.shields.io/badge/-Side%20Chat-4d6bfe" /> <img alt="Plugin integration" src="https://img.shields.io/badge/-Plugin%20integration-4d6bfe" /><br /><br />
   <b>A dual workbench (right sidebar + bottom panel)</b> that opens its <code>ctx.betterSidebar</code> service to every plugin —<br />
@@ -62,15 +62,15 @@ What this plugin adds on top of DSH's stock sidebar:
 **Prerequisites**: DSH installed (`dsh web` boots), Node.js ≥ 20, pnpm ≥ 10.
 
 **Supported DSH versions**:
-<a href="https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions"><img alt="Supported DSH versions (v0.21.1): 0.1.7-rc.1+" src="https://img.shields.io/badge/DSH-0.1.7--rc.1%2B-4d6bfe" /></a>
+<a href="https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions"><img alt="Supported DSH versions (v0.22.0): 0.1.7-rc.1+" src="https://img.shields.io/badge/DSH-0.1.7--rc.1%2B-4d6bfe" /></a>
 
-> 📌 **Channel and support line**: `v0.21.1` is the **stable release** (npm `latest`) and targets DSH **0.1.7-rc.1+** only. **Pin the DSH version exactly**: `npm i -g @deepseek-ai/dsh@0.1.7-rc.1` (rc.1 rides npm's `next` dist-tag). **Hosts on DSH 0.1.6-alpha.2 or earlier should pin `dsh-better-sidebar@0.19.1`** — 0.1.7's breakage (the settings-service rewrite, the icon-export renames, session format v3→v4) is large enough that this version ships no compatibility layer.
+> 📌 **Channel and support line**: `v0.22.0` is the **stable release** (npm `latest`) and targets DSH **0.1.7-rc.1+** only. **Pin the DSH version exactly**: `npm i -g @deepseek-ai/dsh@0.1.7-rc.1` (rc.1 rides npm's `next` dist-tag). **Hosts on DSH 0.1.6-alpha.2 or earlier should pin `dsh-better-sidebar@0.19.1`** — 0.1.7's breakage (the settings-service rewrite, the icon-export renames, session format v3→v4) is large enough that this version ships no compatibility layer.
 
 > 🧭 **Pick the plugin version that matches your DSH**:
 >
 > | Your DSH | Install command | Version / peer declared |
 > | --- | --- | --- |
-> | **0.1.7-rc.1+** (including a later 0.1.7 stable) | `dsh plugin --profile web add dsh-better-sidebar@latest` | **0.21.1**, `^0.1.7-rc.1` |
+> | **0.1.7-rc.1+** (including a later 0.1.7 stable) | `dsh plugin --profile web add dsh-better-sidebar@latest` | **0.22.0**, `^0.1.7-rc.1` |
 > | 0.1.7-alpha.1 / 0.1.7-alpha.2 | **nothing to install** — move DSH to rc.1 first, then run the row above:<br>`npm i -g @deepseek-ai/dsh@0.1.7-rc.1` | — |
 > | 0.1.6-alpha.2 and earlier, `0.1.5-rc.*` (including the 0.1.5-rc.3 that is npm's `latest`) | `dsh plugin --profile web add dsh-better-sidebar@0.19.1` | **0.19.1**, `^0.1.5-rc.1` |
 > | `0.1.5-alpha.2` | `dsh plugin --profile web add dsh-better-sidebar@0.19.0-alpha.1` | `^0.1.5-alpha.2` |
@@ -106,7 +106,7 @@ If anything fails, check the troubleshooting table in the README at https://gith
 dsh plugin --profile web add dsh-better-sidebar@latest
 ```
 
-or bump the version in `~/.dsh/profiles/web/package.json` to the matching npm version (`"^0.21.1"`) and run `pnpm install`. Then hard-refresh the browser (Cmd/Ctrl+Shift+R) — client changes do not need a DSH restart.
+or bump the version in `~/.dsh/profiles/web/package.json` to the matching npm version (`"^0.22.0"`) and run `pnpm install`. Then hard-refresh the browser (Cmd/Ctrl+Shift+R) — client changes do not need a DSH restart.
 
 </details>
 
@@ -144,7 +144,7 @@ To debug local changes or track the dev branch, point the dependency at a local 
 5. Restart DSH and hard-refresh
 ```
 
-Update: `git pull && pnpm install && pnpm build` → just hard-refresh the browser (client changes hot-reload; only host-half changes need a DSH restart). To switch back to the npm channel, restore the matching npm version (`"^0.21.1"`) and re-run `pnpm install`.
+Update: `git pull && pnpm install && pnpm build` → just hard-refresh the browser (client changes hot-reload; only host-half changes need a DSH restart). To switch back to the npm channel, restore the matching npm version (`"^0.22.0"`) and re-run `pnpm install`.
 
 </details>
 
@@ -199,7 +199,22 @@ WeChat / QQ group QR codes will live here. After uploading the QR images (drag t
   <a href="https://github.com/user-attachments/assets/946f7028-4967-461e-a750-d1b5056b62d0"><img width="33%" alt="Service API base screenshot" src="https://github.com/user-attachments/assets/946f7028-4967-461e-a750-d1b5056b62d0" /></a>
 </div>
 
-**Supported DSH versions**: <a href="https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions"><img alt="Supported DSH versions (v0.21.1): 0.1.7-rc.1+" src="https://img.shields.io/badge/DSH-0.1.7--rc.1%2B-4d6bfe" /></a> · full release history on the [Releases](https://github.com/omdsh-dev/DSH-better-sidebar/releases) page
+**Supported DSH versions**: <a href="https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions"><img alt="Supported DSH versions (v0.22.0): 0.1.7-rc.1+" src="https://img.shields.io/badge/DSH-0.1.7--rc.1%2B-4d6bfe" /></a> · full release history on the [Releases](https://github.com/omdsh-dev/DSH-better-sidebar/releases) page
+
+### v0.22.0
+
+> 📦 **Stable release** (npm `latest`): the support line is **unchanged** — DSH **0.1.7-rc.1+** only (peer floor `^0.1.7-rc.1`, CI pins `@deepseek-ai/dsh@0.1.7-rc.1`), so v0.21.1 users can upgrade straight away. **Hosts on DSH 0.1.6-alpha.2 or earlier keep pinning v0.19.1.**
+
+- 🧩 **The Tasks page is now a workflow graph** (the primary view): the session tree renders as layered nodes joined by bezier edges — drag to pan, wheel-zoom to the cursor, fit to the content box, a control cluster bottom-right (graph/tree toggle + fold switch + zoom + fit); the **classic indented tree is kept** (keyboard-navigable) and both modes share one view model, so fold state and team enrichment never drift apart.
+- 🃏 **Two-segment node cards**: the top segment is the kind badge (main agent / subagent / teammate / workflow / completed aggregate) + phase badge + name + meta; the bottom bar is the state dot + state word + **the same merged activity line the main agent shows** (concurrent tools grouped and counted, with the running call's detail — wording from the host's `chat` namespace) + a fold button on finished nodes; a running bar is swept across its **whole** width (disabled under `prefers-reduced-motion`). 8px-rounded, hierarchy carried by a faint top-segment tint only, the session you are on wearing a heavier accent border.
+- 🔀 **Workflow runs enter the graph**: runs folded from `tool-workflow/*` events (the same events the official panel folds) hang under their origin agent, with member agents re-parented below and boxed per phase with matching badges; members with no catalog row are synthesized from the run's own data, so a finished run still shows who took part.
+- 🗂 **Folding split into two groups that say what they hold**: `✓ N completed` (including failures, called out as `N failed`) and `N idle` (teammates that finished a turn and can be called back at any moment) are **two separate rows**; the manual fold button always works, the automatic rule only sweeps idle members once there are 3 or more, and an aggregate's name line reads "first two names + `+N`".
+- 🪟 **Two persistent floating windows** (extracted into a reusable `FloatingWindow`): background-job output and the shared task's detail/edit surface — draggable, resizable from every edge, a self-scrolling body, dismissed only by the close button or Escape (no outside click / blur / anchor observer); the task window hands its spare height to the description, so enlarging it gives the content room, and the action row is pinned to the bottom.
+- 👥 **Agent Teams board (experimental layer)**: members enrich their nodes and an always-visible strip lists the roster and shared tasks; the state machine follows the host (pending → claim → in progress → complete → reopen) with reassign / edit / two-step delete, and stale CAS revisions get their own notice; member activity is overlaid from `subagents.live`'s `running` flag.
+- 🔄 **Background jobs now read the host's client `ctx.jobs`** (a pushed roster plus a non-consuming output stream and `kill`): the plugin deleted its own `jobs.list` / `jobs.output` / `jobs.kill` routes and the event-replay mirror, never touching the model's `job_output` cursor; output streams in a persistent floating window with tail-follow, and the drawer auto-collapses at 8+ agents.
+- 🛠 **DSH 0.1.7 data-plane rewrite**: upstream deleted the three `agentTeams.remoteView`-style Remote methods → team reads moved to the Lead Session's **`agentTeam` Session projection** (push-based; the `teams.view` route and its 5-second poll are gone); the two write routes stay, with rejections moved from a result union to a thrown `TeamError` and a stale revision mapped to a 409 `team-conflict`. **The bug this fixed in the wild**: on 0.1.7 the team strip never rendered at all (the route answered `remoteView is not a function`, and the page degraded silently).
+- 🐛 **Four defects caught on a real host, all green in unit tests**: the per-node fold button did nothing (blocked by the automatic rule's guards); an idle card never drew a fold button; claiming a task mislabelled it "blocked"; and "complete" on a queued task always failed (a claim comes first).
+- 🎨 **Narrow panes and mobile settings**: card and row metrics re-tuned for the native right sidebar's narrow width; the settings page gained a **Mobile** group — on a narrow viewport (≤768px) the Tasks page no longer auto-opens and defaults to the tree view.
 
 ### v0.21.1
 

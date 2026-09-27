@@ -2,6 +2,26 @@
 
 > 本文档收录 dsh-better-sidebar 的完整发布历史（最新版摘要见 [README](README.md)；同步发布于 [GitHub Releases](https://github.com/omdsh-dev/DSH-better-sidebar/releases)）。
 
+### v0.22.0
+
+> 📦 **正式版**（npm `latest`）：仅支持 **DSH 0.1.7-rc.1+**（peer 下限 `^0.1.7-rc.1`，CI 钉 `@deepseek-ai/dsh@0.1.7-rc.1`）——本版没有动支持线，0.21.1 的用户直接升级即可。**DSH 0.1.6-alpha.2 及更早仍请固定 v0.19.1**。主内容是把任务管理页从「子代理拓扑」重做成**工作流图**，并在随后几轮里按真机反馈打磨；期间 DSH 0.1.7 删掉了 Agent Teams 的 Remote 方法，团队与后台任务两个数据面随之改写。
+
+- 🧩 **任务管理页 = 工作流图（全新主显示模式）**：会话树渲染为分层节点 + 贝塞尔连线的画布——拖拽平移、滚轮缩放到光标、内容包围盒居中适配（双击背景重新适配）、右下角控制条（图/树切换 + 折叠开关 + 缩放 + 适配）。**经典缩进树保留**（键盘可导航），两种模式共享同一个视图模型，折叠状态与团队富化不会视觉漂移；默认视图走设置里的偏好。
+- 🃏 **双段式节点卡**：上段 = 类型徽章（主代理 / 子代理 / 成员 / 工作流 / 已完成聚合）+ 相位徽标 + 名称 + 元信息；下段小条 = 状态点 + 状态词 + **主 Agent 同款合并活动行**（并发工具按类别归并 + 计数 + 最新在跑那条的细节，措辞直接取宿主 `chat` 命名空间的词条）+ 已完成节点的折叠 chevron。运行中小条从左到右**完整扫过**（1.5s，令牌渐变，`prefers-reduced-motion` 下关闭）。卡片 8px 圆角、只用上段极淡底色表达层级、当前会话用加粗 accent 描边。
+- 🔀 **工作流 run 入图**：宿主侧从 `tool-workflow/*` 会话事件折叠出 run（与官方 workflow-run 面板同一批事件），run 挂在发起代理下、成员 agent 重新挂到 run 节点下并按相位分框、同色相位徽标；catalog 里没有的成员用 run 自身数据合成占位节点，所以跑完的 run 仍能看到它的成员。
+- 🗂 **折叠分两组，各自说清自己是什么**：`✓ N 已完成`（已完成 + 出错，失败会单独报 `出错 N`）与 `N 个待命`（跑完一轮、随时可被叫起来的 teammate）是**两行**；**手动 chevron 永远有效**（不设阈值），**自动聚合**只在「待命成员 ≥3」时收空闲成员——1~2 个待命成员就是这个团队的工作集，而且它们的卡上会挂任务行。聚合卡名字行写「前两个名字 + `+N`」，点聚合全部展开。
+- 🪟 **两个常驻浮动窗**（抽出可复用的 `FloatingWindow`）：后台任务输出与共享任务详情/编辑都在其中——可拖拽、可四边拉伸、内容区自滚动、只靠关闭按钮或 Escape 结束时消失（外部点击、失焦、锚点离屏都不关）。任务窗把窗口余量交给描述区（编辑态交给多行输入框），拉大窗口是给内容更多空间而不是留白；动作行固定在 footer，长描述不会把按钮推出视野。
+- 👥 **Agent Teams 任务板（实验层）**：团队成员富化到对应节点上、常驻任务条列出成员与共享任务；任务状态机跟随宿主（待办 → 认领 → 进行中 → 完成 → 重开）+ 改派 / 编辑 / 两击删除，CAS 过期修订单独提示（别人改过 → 已刷新）。**成员活动由 `subagents.live` 的 running 叠加**，不是在客户端猜。
+- 🔄 **后台任务改读宿主客户端服务**：0.1.7 的 web profile 挂载客户端 `ctx.jobs`（推送 roster + 非消费输出流 + kill），插件因此删掉自建的 `jobs.list` / `jobs.output` / `jobs.kill` 三条路由与事件回放镜像，也彻底不碰模型 `job_output` 游标（宿主把这层约束变成了能力）。输出改在常驻浮动窗里流式显示并尾随，代理数 ≥ 8 时抽屉自动折叠。
+- 🛠 **DSH 0.1.7 的两处数据面重写**：① 团队读——0.1.6 的 `agentTeams.remoteView` 三个 Remote 方法被上游删除，插件改为读 Lead Session 的 **`agentTeam` Session projection**（与 `subagentCatalog` 同源、推送式），删掉 `teams.view` 路由与 5 秒轮询；写路径保留两条路由（`createTask` / `updateTask`），拒绝从「返回联合」变为「抛 `TeamError`」，`TEAM_TASK_STALE_REVISION` 映射成 409 `team-conflict`。② 后台任务——见上一条。**修掉的真实故障**：0.1.7 上团队条从来不渲染（路由报 `remoteView is not a function`，页面静默无提示）。
+- 🐛 **真机抓到的四个缺陷**（单测都绿的）：
+  - 逐节点折叠按钮点了没反应——它被**自动**折叠的守卫卡住了（`isAutoFoldable` 要求非成员且是叶子），而按钮是**手动**触发，现在两种触发各有各的守卫；
+  - 「待命」的卡片**从来不画**折叠按钮（chevron 的渲染条件写死成「已完成/出错」），现在「不在执行」即提供；
+  - 认领任务后标签变「阻塞」——`ready` 的语义只是「待办且无未完成 blocker 可认领」，对所有非 pending 任务都是 false，现在收敛成唯一规则 `taskBlocked/taskStatusLabel/taskTone/taskDotState`；
+  - 任务窗「完成」在队列中的任务上必失败——宿主状态机要求先认领，动作行现在跟随状态。
+- 🎨 **窄屏与手机设置**：卡片/行距/字号按原生右侧栏的窄宽重新定档（内容包围盒居中、缩放夹取、平移边界、相位框配色、连线 stub 加粗、卡片高度预算重算）；设置页新增**手机**分组——窄屏（≤768px）时新任务页不再自动弹出、任务管理页默认走树状图。
+- 📐 **基线**：`@deepseek-ai/dsh-*` 钉版与支持线**不变**（0.1.7-rc.1，peer `^0.1.7-rc.1`）。新增词条若干（含 `teamTaskClaim` / `tasksFoldIdle` / `taskWindowCreate` / `tasksStateProvisioning` 等）×20 份词典；设计文档见 [docs/plans/2026-09-14-tasks-graph-workflow-teams-design.md](docs/plans/2026-09-14-tasks-graph-workflow-teams-design.md)、[2026-09-27-tasks-graph-polish.md](docs/plans/2026-09-27-tasks-graph-polish.md)、[2026-09-27-floating-window-mobile-settings.md](docs/plans/2026-09-27-floating-window-mobile-settings.md)、[2026-09-27-agent-teams-dsh-0.1.7-adaptation.md](docs/plans/2026-09-27-agent-teams-dsh-0.1.7-adaptation.md)（含实施偏差与已知限制）。
+
 ### v0.20.0（开发线，**从未发布**）
 
 > 🚫 **这一版没有发布到 npm**（npm 上 `latest` 仍是 v0.19.1）：它原本是 0.1.6-alpha.2 线的正式版，开发完成后被 0.21 线直接取代，所以下面这些变更实际随 **v0.21.1** 一起发布。原本的定位：仅支持 **DSH 0.1.6-alpha.2+**（peer 下限 `^0.1.6-alpha.2`，CI 钉 `@deepseek-ai/dsh@0.1.6-alpha.2`）。**这是一次破坏性变更版**：0.1.5-rc.* 用户请固定 `dsh-better-sidebar@0.19.1`。适配记录见 [docs/plans/2026-09-21-dsh-0.1.6-alpha.2-adaptation.md](docs/plans/2026-09-21-dsh-0.1.6-alpha.2-adaptation.md)。
