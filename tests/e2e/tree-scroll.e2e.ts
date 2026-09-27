@@ -14,11 +14,19 @@
  * Determinism: the workspace is seeded wide enough that the tree overflows;
  * every wait is on a DOM/poll marker; the suite is serial.
  */
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test'
 import { PAGE_URL, createHostApi, hostRpc, sendFirstMessage } from './host'
+
+/** Git must not pick up the developer's identity/config inside the lane. */
+const GIT_ENV = {
+  ...process.env,
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_CONFIG_SYSTEM: '/dev/null',
+}
 
 /** This lane's own workspace (lanes run serially against one server). */
 const WORKSPACE_PATH = process.env.DSH_E2E_SCROLL_WORKSPACE ?? join(tmpdir(), 'dsh-e2e-scroll-workspace')
@@ -64,6 +72,28 @@ async function seedSessions(): Promise<void> {
     mkdirSync(join(WORKSPACE_PATH, dir), { recursive: true })
     writeFileSync(join(WORKSPACE_PATH, dir, 'inner.txt'), `${dir} inner\n`)
   }
+  // A git repo with ONE staged change: the changes tab needs somewhere to put
+  // an unsaved commit message, and staging is what enables its commit button.
+  // Idempotent: the lane's workspace persists between local runs, so an
+  // existing repo is reset rather than re-initialised (and `rm -rf .git` would
+  // be the only way to make a fresh `git init` + first commit work again).
+  const git = (...args: string[]): void => { execFileSync('git', args, { cwd: WORKSPACE_PATH, env: GIT_ENV }) }
+  if (!existsSync(join(WORKSPACE_PATH, '.git'))) git('init', '-q')
+  git('config', 'user.email', 'lane@example.test')
+  git('config', 'user.name', 'retention lane')
+  git('add', '-A')
+  // The first commit may have nothing to record (a re-run of a clean repo).
+  const dirty = execFileSync('git', ['status', '--porcelain'], { cwd: WORKSPACE_PATH, env: GIT_ENV }).toString()
+  if (dirty.trim() !== '') git('commit', '-qm', 'seed', '--no-verify')
+  appendFileSync(join(WORKSPACE_PATH, 'seed-000.txt'), 'staged change\n')
+  git('add', 'seed-000.txt')
+
+  // A LINKED worktree: it gives the changes tab a second checkout to choose
+  // from, which is the state #712 parked in a module-level map. Created last so
+  // the staged change above belongs to the primary checkout only.
+  const linkedPath = join(WORKSPACE_PATH, 'linked-checkout')
+  if (!existsSync(linkedPath)) git('worktree', 'add', '-q', '-b', 'lane-linked', linkedPath)
+
   const workspace = await hostRpc<{ workspace: { workspaceId: string } }>(api, 'workspace.create', { path: WORKSPACE_PATH })
   const workspaceId = workspace.value.workspace.workspaceId
   // ONE conversation is enough: the round trip creates its own second one
@@ -288,6 +318,47 @@ test('the explorer keeps its state across a tab switch and a conversation round 
     'opening the file reads it exactly once',
   ).toHaveLength(1)
 
+  // ── An UNSAVED EDIT in conversation A (the worst loss is data) ────────────
+  // #712 parked drafts in a module-level map; this branch claims `keepMounted`
+  // makes that unnecessary because the body never unmounts. That claim was
+  // never exercised — the draft is the one loss a reader cannot re-derive.
+  const DRAFT = 'edited by the retention lane'
+  const content = page.locator('[data-sidebar-right-panel]:visible .cm-content').first()
+  await content.click()
+  await page.keyboard.press('ControlOrMeta+End')
+  await page.keyboard.type(`\n${DRAFT}`)
+  await expect(content, 'the typing must land in the live document').toContainText(DRAFT)
+  const draftDoc = async (): Promise<string> =>
+    page.locator('[data-sidebar-right-panel]:visible .cm-content').first().innerText()
+
+  // ── An UNSAVED COMMIT MESSAGE (the other typed-state loss) ────────────────
+  const COMMIT_MSG = 'fix: an unsaved message from the lane'
+  await page.locator('[data-dockkit-add-tab]').first().click()
+  await expect(page.locator(GUIDE)).toBeVisible({ timeout: 30_000 })
+  await page.locator('[data-sidebar-right-panel]:visible [data-sidebar-right-guide-entry="git"]').click()
+  const commitBox = page.locator('[data-sidebar-right-panel]:visible')
+    .getByRole('textbox', { name: /Commit message/i }).first()
+  await expect(commitBox, 'the changes tab must render its commit box').toBeVisible({ timeout: 30_000 })
+  await commitBox.fill(COMMIT_MSG)
+  await expect(commitBox).toHaveValue(COMMIT_MSG)
+
+  // ── A CHOSEN WORKTREE (the third painted-state loss #712 covered) ─────────
+  // The lane's linked checkout is the non-auto choice: picking it must survive
+  // the round trip, not be re-derived from the inventory. Paths are compared
+  // through `realpathSync` because macOS /var is a symlink to /private/var and
+  // git reports the resolved form.
+  const linkedPath = realpathSync(join(WORKSPACE_PATH, 'linked-checkout'))
+  const worktreeSelect = page.locator('[data-sidebar-right-panel]:visible select')
+    .filter({ has: page.locator('option') }).first()
+  await expect(worktreeSelect, 'the changes tab must offer its worktree selector').toBeVisible({ timeout: 30_000 })
+  const linkedOption = await worktreeSelect.locator('option').evaluateAll(
+    (options, path) => options.some(option => (option as HTMLOptionElement).value === path),
+    linkedPath,
+  )
+  expect(linkedOption, 'the linked worktree must appear in the selector').toBe(true)
+  await worktreeSelect.selectOption(linkedPath)
+  await expect(worktreeSelect).toHaveValue(linkedPath)
+
   // Back to the Files window and RE-BUILD the scroll offset: opening the file
   // swapped this tab's content, so the tree remounted at the top (by design,
   // unrelated to session retention). The round trip below must then preserve
@@ -327,12 +398,30 @@ test('the explorer keeps its state across a tab switch and a conversation round 
   await page.evaluate(() => console.log('[mark] switching-back-to-A', Date.now() % 1000000))
   await selectConversation(page, sessionA!)
   await dismissOnboarding(page)
-  // A's last active tab was the Files window (the lane returned to it to
-  // re-build the scroll offset), so that is where the seat must land.
+  // A's tab strip comes back with every tab it had (Files / the file / the
+  // changes window) — asserted by the strip below, since the ACTIVE tab is
+  // whichever the lane last showed.
+  // The changes tab is where the unsaved message lives: it is the other claim
+  // `keepMounted` makes on #712's behalf.
+  const changesTab = page.locator('[data-sidebar-right-panel]:visible [role="tab"]').filter({ hasText: /Changes|文件变动/ })
+  await expect(changesTab, 'the changes tab survives the round trip').toHaveCount(1, { timeout: 30_000 })
+  await changesTab.first().click()
+  const backCommitBox = page.locator('[data-sidebar-right-panel]:visible')
+    .getByRole('textbox', { name: /Commit message/i }).first()
+  await expect(backCommitBox, 'the changes tab still renders its commit box').toBeVisible({ timeout: 30_000 })
   await expect(
-    page.locator(innerRow('alpha')).first(),
-    'returning to A must land on the tab that was active',
-  ).toBeVisible({ timeout: 30_000 })
+    backCommitBox,
+    'an unsaved commit message survives the conversation round trip',
+  ).toHaveValue(COMMIT_MSG)
+  await expect(
+    page.locator('[data-sidebar-right-panel]:visible select').first(),
+    'the chosen worktree survives the conversation round trip',
+  ).toHaveValue(linkedPath)
+  // And the tree's own tab is still there too.
+  await expect(
+    page.locator('[data-sidebar-right-panel]:visible [role="tab"]').filter({ hasText: /Files|文件/ }),
+    'the files tab survives the round trip',
+  ).toHaveCount(1, { timeout: 30_000 })
 
   // The FILE opened in A is still open, and its bytes were NOT read again —
   // the editor body stayed mounted, so it still holds them. (Its tab is not
@@ -353,6 +442,14 @@ test('the explorer keeps its state across a tab switch and a conversation round 
     readsSince(backMark, 'inner.txt'),
     'and showing it again still re-read nothing',
   ).toEqual([])
+
+  // THE DRAFT: the typing from before the switch must still be in the document.
+  // This is the claim `keepMounted` makes on #712's behalf, and the only loss
+  // here that a reader cannot recover by looking again.
+  expect(
+    await draftDoc(),
+    'an unsaved edit survives the conversation round trip',
+  ).toContain(DRAFT)
 
   // Back to the Files window for the remaining vector (its own tab is still
   // there, and selecting it is a plain show — not a reload).
