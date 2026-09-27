@@ -20,6 +20,9 @@ import type {
   SidebarSessionSummary,
   SidebarSubagentAddress,
   SidebarSubagentCatalogEntry,
+  SidebarTeamMemberProjection,
+  SidebarTeamProjection,
+  SidebarTeamTaskView,
 } from '../src/context-types.ts'
 
 /** A subscribable sessions-list snapshot (mirror of the runtime list feed). */
@@ -102,18 +105,29 @@ function jsonResponse(value: unknown): Response {
   return { ok: true, status: 200, json: async () => value } as unknown as Response
 }
 
-let teamPayload: unknown = { available: false }
+/** A failed `/sidebar/api` envelope (the wire shape `readEnvelope` parses). */
+function jsonError(status: number, code: string, message: string): Response {
+  return {
+    ok: false, status, json: async () => ({ ok: false, error: { code, message } }),
+  } as unknown as Response
+}
+
+/** The Lead Session's `agentTeam` projection the board reads (undefined = none). */
+let teamProjection: SidebarTeamProjection | undefined
 const teamMutations: Array<{ method: string; body: Record<string, unknown> }> = []
 const fetchedMethods: string[] = []
 /** The `subagents.live` payload the stub answers with (session id → live view). */
 let livePayload: Record<string, unknown> = {}
 /** The folded workflow runs the stub answers `workflows.list` with. */
 let runsPayload: unknown[] = []
+/** A write rejection the stub answers `teams.taskUpdate` with (undefined = ok). */
+let writeRejection: { status: number; code: string; message: string } | undefined
 
 beforeEach(() => {
-  teamPayload = { available: false }
+  teamProjection = undefined
   livePayload = {}
   runsPayload = []
+  writeRejection = undefined
   teamMutations.length = 0
   fetchedMethods.length = 0
   jobsFake = makeJobsService()
@@ -128,17 +142,17 @@ beforeEach(() => {
     const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
     if (method === 'subagents.live') return jsonResponse({ ok: true, value: { live: livePayload } })
     if (method === 'workflows.list') return jsonResponse({ ok: true, value: { runs: runsPayload } })
-    if (method === 'teams.view') return jsonResponse({ ok: true, value: teamPayload })
     if (method === 'teams.taskCreate' || method === 'teams.taskUpdate') {
       teamMutations.push({ method: method ?? '', body })
+      if (writeRejection !== undefined) {
+        return jsonError(writeRejection.status, writeRejection.code, writeRejection.message)
+      }
+      // 0.1.7 hands back the COMMITTED view (no result union any more).
       return jsonResponse({
         ok: true,
         value: {
-          ok: true,
-          value: {
-            id: 't9', revision: 9, subject: body.subject ?? 'x', description: body.description ?? '',
-            status: 'pending', blockedBy: [], writeScopes: [], ready: true, writeScopeWarnings: [],
-          },
+          id: 't9', revision: 9, subject: body.subject ?? 'x', description: body.description ?? '',
+          status: 'pending', blockedBy: [], writeScopes: [], ready: true, writeScopeWarnings: [],
         },
       })
     }
@@ -171,7 +185,11 @@ function snapshotWithChildren(count: number): SidebarSessionList {
     entries.push({ id, createdAt: 1_000 + index, mode: 'one-shot', label: `子代理 ${index}` })
     projectionsBySession[id] = { values: { subagentCatalog: [] }, state: 'ready', error: null }
   }
-  projectionsBySession.root = { values: { subagentCatalog: entries }, state: 'ready', error: null }
+  projectionsBySession.root = {
+    values: { subagentCatalog: entries, ...(teamProjection === undefined ? {} : { agentTeam: teamProjection }) },
+    state: 'ready',
+    error: null,
+  }
   return { byId, projectionsBySession }
 }
 
@@ -193,7 +211,11 @@ function snapshotWithRun(): SidebarSessionList {
     byId[entry.id] = { id: entry.id, displayTitle: entry.id, origin: 'subagent', parentId: 'root', running: false }
     projectionsBySession[entry.id] = { values: { subagentCatalog: [] }, state: 'ready', error: null }
   }
-  projectionsBySession.root = { values: { subagentCatalog: entries }, state: 'ready', error: null }
+  projectionsBySession.root = {
+    values: { subagentCatalog: entries, ...(teamProjection === undefined ? {} : { agentTeam: teamProjection }) },
+    state: 'ready',
+    error: null,
+  }
   return { byId, projectionsBySession }
 }
 
@@ -349,6 +371,36 @@ describe('Tasks page interactions', () => {
   })
 })
 
+/**
+ * The Lead Session's projection for one test run: members + tasks, or absent
+ * (`withTeam(null)`) when the tree leads no team. A task omitted from `tasks`
+ * is not on the board at all.
+ */
+function withTeam(input: {
+  members?: SidebarTeamMemberProjection[]
+  tasks?: SidebarTeamTaskView[]
+} | null = {}): void {
+  if (input === null) {
+    teamProjection = undefined
+    return
+  }
+  teamProjection = {
+    members: input.members ?? [
+      { id: 'root', name: 'lead', role: 'lead', phase: 'active' },
+      { id: 'child-0', name: 'writer', role: 'teammate', phase: 'active' },
+    ],
+    tasks: input.tasks ?? [],
+  }
+}
+
+/** One shared task row. */
+function teamTask(over: Partial<SidebarTeamTaskView> = {}): SidebarTeamTaskView {
+  return {
+    id: 't1', revision: 1, subject: '收窄卡片', description: '细节', status: 'in_progress',
+    blockedBy: [], writeScopes: [], ready: true, writeScopeWarnings: [], ...over,
+  }
+}
+
 describe('Tasks page graph interactions and team board', () => {
   it('activates a graph node after a background pointerdown (no click theft)', async () => {
     const navigation: NavigationSpy = { opened: [] }
@@ -395,59 +447,50 @@ describe('Tasks page graph interactions and team board', () => {
   })
 
   it('shows the team board without any click when the root leads a team', async () => {
-    teamPayload = {
-      available: true,
-      team: {
-        members: [
-          { id: 'root', name: 'lead', role: 'lead', status: 'running', diagnostics: [] },
-          { id: 'child-0', name: 'writer', role: 'teammate', status: 'idle', model: 'glm-5.3', diagnostics: [] },
-        ],
-        tasks: [{
-          id: 't1', revision: 1, subject: '收窄卡片', description: '', status: 'in_progress',
-          blockedBy: [], writeScopes: [], ready: true, writeScopeWarnings: [],
-        }],
-      },
-    }
+    withTeam({ tasks: [teamTask()] })
     const store = makeStore(snapshotWithChildren(1))
     const { container, unmount } = renderRoot(
       createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
     )
     await act(async () => { await Promise.resolve() })
     // Visible by default: header, members and the task row (no chip to click).
+    expect(container.querySelector('[data-team-board]')).not.toBeNull()
     expect(container.textContent).toContain('团队任务板')
     expect(container.textContent).toContain('lead')
     expect(container.textContent).toContain('writer')
     expect(container.textContent).toContain('收窄卡片')
     unmount()
   })
+
+  it('draws no team surface at all when the root leads no team', async () => {
+    withTeam(null)
+    const store = makeStore(snapshotWithChildren(1))
+    const { container, unmount } = renderRoot(
+      createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
+    )
+    await act(async () => { await Promise.resolve() })
+    expect(container.querySelector('[data-team-board]')).toBeNull()
+    expect(container.textContent).not.toContain('团队任务板')
+    unmount()
+  })
 })
 
 describe('Tasks page: owned tasks, host-primitive controls, draggable output', () => {
-  /** A team payload whose only task is owned by the child agent. */
-  function teamWithOwnedTask(): unknown {
-    return {
-      available: true,
-      team: {
-        members: [
-          { id: 'root', name: 'lead', role: 'lead', status: 'running', diagnostics: [] },
-          { id: 'child-0', name: 'writer', role: 'teammate', status: 'running', model: 'glm-5.3', diagnostics: [] },
-        ],
-        tasks: [
-          {
-            id: 't1', revision: 1, subject: '收窄卡片与图标化', description: '细节', status: 'in_progress',
-            ownerName: 'writer', blockedBy: [], writeScopes: [], ready: true, writeScopeWarnings: [],
-          },
-          {
-            id: 't2', revision: 2, subject: '补点击回归', description: '', status: 'pending',
-            ownerName: 'writer', blockedBy: ['t1'], writeScopes: [], ready: false, writeScopeWarnings: [],
-          },
-        ],
-      },
-    }
+  /** A board whose two tasks are both owned by the child agent. */
+  function teamWithOwnedTask(): void {
+    withTeam({
+      tasks: [
+        teamTask({ subject: '收窄卡片与图标化', ownerName: 'writer' }),
+        teamTask({
+          id: 't2', revision: 2, subject: '补点击回归', description: '', status: 'pending',
+          ownerName: 'writer', blockedBy: ['t1'], ready: false,
+        }),
+      ],
+    })
   }
 
   it('renders the owned task on its agent node', async () => {
-    teamPayload = teamWithOwnedTask()
+    teamWithOwnedTask()
     const store = makeStore(snapshotWithChildren(1))
     const { container, unmount } = renderRoot(
       createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
@@ -463,7 +506,7 @@ describe('Tasks page: owned tasks, host-primitive controls, draggable output', (
   })
 
   it('opens the shared task window from a board row (markdown first, no native select)', async () => {
-    teamPayload = teamWithOwnedTask()
+    teamWithOwnedTask()
     const store = makeStore(snapshotWithChildren(1))
     const { container, unmount } = renderRoot(
       createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
@@ -473,7 +516,7 @@ describe('Tasks page: owned tasks, host-primitive controls, draggable output', (
     const row = container.querySelector('button[aria-label^="任务详情"]') as HTMLButtonElement
     expect(row).not.toBeNull()
     await act(async () => { row.click() })
-    const dialog = document.querySelector('[role="dialog"]') as HTMLElement
+    const dialog = document.querySelector('[data-floating-window]') as HTMLElement
     expect(dialog).not.toBeNull()
     // View mode first: the description renders as markdown, edited only on demand.
     expect(dialog.textContent).toContain('细节')
@@ -489,7 +532,7 @@ describe('Tasks page: owned tasks, host-primitive controls, draggable output', (
   })
 
   it('creates a task through the dialog (host Input + modal) and posts the CAS-free create', async () => {
-    teamPayload = teamWithOwnedTask()
+    teamWithOwnedTask()
     const store = makeStore(snapshotWithChildren(1))
     const { container, unmount } = renderRoot(
       createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
@@ -506,7 +549,7 @@ describe('Tasks page: owned tasks, host-primitive controls, draggable output', (
       setter?.call(field, '新任务标题')
       field.dispatchEvent(new Event('input', { bubbles: true }))
     })
-    const dialog = document.querySelector('[role="dialog"]') as HTMLElement
+    const dialog = document.querySelector('[data-floating-window]') as HTMLElement
     expect(dialog).not.toBeNull()
     const save = [...dialog.querySelectorAll('button')].find(button => button.textContent?.includes('新建任务'))
     expect(save).toBeDefined()
@@ -552,25 +595,17 @@ describe('Tasks page: owned tasks, host-primitive controls, draggable output', (
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     })
     expect(document.querySelector('[data-floating-window]')).toBeNull()
-    unmount()
+    await act(async () => { unmount() })
   })
 })
 
 describe('Tasks page: the shared task window', () => {
   it('opens from an agent node task line and saves a multi-line edit', async () => {
-    teamPayload = {
-      available: true,
-      team: {
-        members: [
-          { id: 'root', name: 'lead', role: 'lead', status: 'running', diagnostics: [] },
-          { id: 'child-0', name: 'writer', role: 'teammate', status: 'running', model: 'glm-5.3', diagnostics: [] },
-        ],
-        tasks: [{
-          id: 't1', revision: 4, subject: '收窄卡片', description: '第一行\n\n- 第二行', status: 'in_progress',
-          ownerName: 'writer', blockedBy: [], writeScopes: [], ready: true, writeScopeWarnings: [],
-        }],
-      },
-    }
+    withTeam({
+      tasks: [teamTask({
+        revision: 4, description: '第一行\n\n- 第二行', ownerName: 'writer',
+      })],
+    })
     const store = makeStore(snapshotWithChildren(1))
     const { container, unmount } = renderRoot(
       createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
@@ -580,7 +615,7 @@ describe('Tasks page: the shared task window', () => {
     const taskLine = node.querySelector('[role="button"]') as HTMLElement
     expect(taskLine).not.toBeNull()
     await act(async () => { taskLine.click() })
-    const dialog = document.querySelector('[role="dialog"]') as HTMLElement
+    const dialog = document.querySelector('[data-floating-window]') as HTMLElement
     expect(dialog).not.toBeNull()
     expect(dialog.textContent).toContain('收窄卡片')
     // Markdown view renders the multi-line body before any editing.
@@ -605,20 +640,14 @@ describe('Tasks page: the shared task window', () => {
   })
 
   it('reassigns the owner straight from the window (CAS on the current revision)', async () => {
-    teamPayload = {
-      available: true,
-      team: {
-        members: [
-          { id: 'root', name: 'lead', role: 'lead', status: 'running', diagnostics: [] },
-          { id: 'child-0', name: 'writer', role: 'teammate', status: 'running', diagnostics: [] },
-          { id: 'child-1', name: 'reviewer', role: 'teammate', status: 'idle', diagnostics: [] },
-        ],
-        tasks: [{
-          id: 't1', revision: 7, subject: '收窄卡片', description: '', status: 'pending',
-          ownerName: 'writer', blockedBy: [], writeScopes: [], ready: true, writeScopeWarnings: [],
-        }],
-      },
-    }
+    withTeam({
+      members: [
+        { id: 'root', name: 'lead', role: 'lead', phase: 'active' },
+        { id: 'child-0', name: 'writer', role: 'teammate', phase: 'active' },
+        { id: 'child-1', name: 'reviewer', role: 'teammate', phase: 'active' },
+      ],
+      tasks: [teamTask({ revision: 7, description: '', status: 'pending', ownerName: 'writer' })],
+    })
     const store = makeStore(snapshotWithChildren(2))
     const { container, unmount } = renderRoot(
       createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
@@ -626,7 +655,7 @@ describe('Tasks page: the shared task window', () => {
     await act(async () => { await Promise.resolve() })
     const row = container.querySelector('button[aria-label^="任务详情"]') as HTMLButtonElement
     await act(async () => { row.click() })
-    const dialog = document.querySelector('[role="dialog"]') as HTMLElement
+    const dialog = document.querySelector('[data-floating-window]') as HTMLElement
     const reviewer = [...dialog.querySelectorAll('button')].find(button => button.textContent === 'reviewer')
     expect(reviewer).toBeDefined()
     await act(async () => { reviewer?.click() })
@@ -634,6 +663,86 @@ describe('Tasks page: the shared task window', () => {
     const update = teamMutations.find(entry => entry.method === 'teams.taskUpdate')
     expect(update?.body).toMatchObject({ action: 'reassign', owner: 'reviewer', expectedRevision: 7 })
     unmount()
+  })
+
+  it('follows the board state machine: claim a queued task, complete a claimed one', async () => {
+    withTeam({ tasks: [teamTask({ revision: 4, subject: '收窄卡片', description: '', status: 'pending' })] })
+    const store = makeStore(snapshotWithChildren(1))
+    const { container, unmount } = renderRoot(
+      createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
+    )
+    await act(async () => { await Promise.resolve() })
+    const row = container.querySelector('button[aria-label^="任务详情"]') as HTMLButtonElement
+    await act(async () => { row.click() })
+    const dialog = document.querySelector('[data-floating-window]') as HTMLElement
+    // The action row is the shell's FOOTER (outside the scrolling body), so it
+    // stays put while a long description scrolls.
+    const footer = dialog.querySelector('[data-window-footer]') as HTMLElement
+    expect(footer).not.toBeNull()
+    const button = (label: string): HTMLButtonElement =>
+      [...footer.querySelectorAll('button')].find(candidate => candidate.textContent?.includes(label)) as HTMLButtonElement
+
+    // A QUEUED task cannot be completed — the service enforces
+    // pending → claim → in_progress → complete, so the window offers claim.
+    expect(button('完成')).toBeUndefined()
+    const claim = button('认领')
+    expect(claim).toBeDefined()
+
+    // A stale revision is a REAL failure the reader must see: 0.1.7 throws a
+    // typed rejection, the host maps it to `team-conflict` (409).
+    writeRejection = { status: 409, code: 'team-conflict', message: 'stale team task "t1" revision 4' }
+    await act(async () => { claim.click() })
+    await act(async () => { await Promise.resolve() })
+    expect(teamMutations.at(-1)?.body).toMatchObject({ action: 'claim', expectedRevision: 4 })
+    expect(dialog.textContent).toContain('已被他人修改')
+    // The window stays open on the failed write: nothing was committed.
+    expect(document.querySelector('[data-floating-window]')).not.toBeNull()
+
+    // A clean write clears the note.
+    writeRejection = undefined
+    await act(async () => { claim.click() })
+    await act(async () => { await Promise.resolve() })
+    expect(dialog.textContent).not.toContain('已被他人修改')
+    await act(async () => { unmount() })
+  })
+
+  it('refuses to claim a task whose blockers are still open', async () => {
+    withTeam({ tasks: [teamTask({ revision: 2, ready: false, status: 'pending' })] })
+    const store = makeStore(snapshotWithChildren(1))
+    const { container, unmount } = renderRoot(
+      createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
+    )
+    await act(async () => { await Promise.resolve() })
+    const row = container.querySelector('button[aria-label^="任务详情"]') as HTMLButtonElement
+    await act(async () => { row.click() })
+    const dialog = document.querySelector('[data-floating-window]') as HTMLElement
+    const claim = [...dialog.querySelectorAll('[data-window-footer] button')]
+      .find(candidate => candidate.textContent?.includes('认领')) as HTMLButtonElement
+    // `claim` would be refused with TEAM_TASK_BLOCKED, so it never leaves.
+    expect(claim.disabled).toBe(true)
+    await act(async () => { unmount() })
+  })
+
+  it('closes the task window on Escape, never on an outside click', async () => {
+    withTeam({ tasks: [teamTask()] })
+    const store = makeStore(snapshotWithChildren(1))
+    const { container, unmount } = renderRoot(
+      createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
+    )
+    await act(async () => { await Promise.resolve() })
+    const row = container.querySelector('button[aria-label^="任务详情"]') as HTMLButtonElement
+    await act(async () => { row.click() })
+    // The window portals to the body: query the DOCUMENT, not the page root.
+    expect(document.querySelector('[data-floating-window]')).not.toBeNull()
+    await act(async () => {
+      document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    })
+    expect(document.querySelector('[data-floating-window]')).not.toBeNull()
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(document.querySelector('[data-floating-window]')).toBeNull()
+    await act(async () => { unmount() })
   })
 
   it('draws the two-segment card: kind badge + name on top, state bar below', async () => {

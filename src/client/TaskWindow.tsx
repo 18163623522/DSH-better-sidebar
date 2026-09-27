@@ -4,41 +4,40 @@
  * popover) opens THIS component — pointer targets stay thin, the window owns
  * the behaviour.
  *
- * Shape: a non-fullscreen, DRAGGABLE card (never a modal dialog). Details
- * render as multi-line MARKDOWN by default; 编辑 switches the same card into
- * multi-line editing, so reading and writing never jump between surfaces.
+ * Shape: the plugin's shared {@link FloatingWindow} — a draggable, resizable,
+ * body-portaled card with a title bar and a fixed action row, NOT a popover.
+ * A task edit is a sustained interaction (a long markdown description), so it
+ * gets the same lifecycle a watched job output gets: it survives clicking
+ * elsewhere and only the close button or Escape ends it. Details render as
+ * multi-line MARKDOWN; 编辑 switches the same window into multi-line editing,
+ * and the footer keeps its actions while the body scrolls.
  * Actions: owner reassignment (Pills, CAS-immediate), edit/save, reopen or
  * complete, and a two-step delete.
  *
- * Host primitives everywhere (Button / Input / Pill / Tag / StateDot) plus
- * the plugin's own `MultilineField` (the host set ships no multi-line input)
- * and the shared `MarkdownText` renderer with the plugin's copy labels.
+ * Host primitives everywhere (Button / Input / Pill / Tag / StateDot) plus the
+ * plugin's own `MultilineField` (the host set ships no multi-line input) and
+ * the shared `MarkdownText` renderer with the plugin's copy labels.
  */
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import {
-  Button, IconCheckOutlineRegular, IconCloseOutlineRegular, IconEditOutlineRegular,
+  Button, IconCheckOutlineRegular, IconEditOutlineRegular,
   IconRefreshOutlineRegular, IconTrashOutlineRegular, Input, MarkdownText, Pill, StateDot, Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { SidebarTeamMemberView, SidebarTeamTaskView } from '../context-types.ts'
+import type { SidebarTeamTaskView } from '../context-types.ts'
 import { api } from './api.ts'
 import { markdownTextProps } from './markdown-labels.tsx'
-import { AnchoredPopover } from './AnchoredPopover.tsx'
-import { t, type CopyKey } from './locales.ts'
+import { FloatingWindow } from './FloatingWindow.tsx'
+import { taskBlocked, taskDotState, taskStatusLabel, taskTone } from './tasks-shared.tsx'
+import type { TeamMemberRow } from './team-projection.ts'
+import { t } from './locales.ts'
 import css from './tasks-graph.module.css'
 
-/** One mutation outcome (the host route's own union). */
-type MutationResult = { ok: true } | { ok: false; error: { code: string; message: string } }
+/** The wire code of a stale-revision write (see src/team-routes.ts). */
+const CONFLICT_CODE = 'team-conflict'
 
-/** The task status label key. */
-function taskStatusKey(status: SidebarTeamTaskView['status']): CopyKey {
-  switch (status) {
-    case 'pending': return 'teamTaskPending'
-    case 'in_progress': return 'teamTaskInProgress'
-    case 'completed': return 'teamTaskCompleted'
-    case 'deleted': return 'teamTaskDeleted'
-  }
-}
+/** One mutation outcome: success, or a rejection the window must report. */
+type MutationOutcome = { ok: true } | { ok: false; code?: string; message: string }
 
 /**
  * The plugin's own multi-line input: the host primitive set ships no
@@ -59,7 +58,7 @@ export function MultilineField(props: {
       rows={props.rows ?? 7}
       placeholder={props.placeholder}
       aria-label={props.label}
-      data-popover-no-drag
+      data-window-no-drag
       onChange={(event) => { props.onChange?.(event.target.value) }}
     />
   )
@@ -67,7 +66,7 @@ export function MultilineField(props: {
 
 /** The owner picker (Pills; CAS-immediate, so it is never a draft field). */
 function OwnerPicker(props: {
-  members: readonly SidebarTeamMemberView[]
+  members: readonly TeamMemberRow[]
   owner: string | undefined
   disabled: boolean
   onPick(owner: string): void
@@ -97,10 +96,14 @@ function OwnerPicker(props: {
   )
 }
 
-/** The read-only body: markdown description, meta, owner picker. */
+/**
+ * The read-only body: the owner line and the markdown description. The status
+ * and the owner NAME live in the window's own head row (see `TaskWindow`); this
+ * body carries the editable owner picker beside the prose it belongs to.
+ */
 function TaskViewBody(props: {
   task: SidebarTeamTaskView
-  teammates: readonly SidebarTeamMemberView[]
+  teammates: readonly TeamMemberRow[]
   busy: boolean
   onReassign(owner: string): void
 }): ReactNode {
@@ -108,16 +111,6 @@ function TaskViewBody(props: {
   const body = task.description.trim()
   return (
     <>
-      <div className={css.jobPopTitle}>
-        <StateDot
-          size={6}
-          state={task.status === 'completed' ? 'done' : task.ready ? 'ongoing' : 'warning'}
-        />
-        <span className={css.popTitle} title={task.subject}>{task.subject}</span>
-        <Tag tone={task.status === 'completed' ? 'success' : task.ready ? 'info' : 'warning'}>
-          {t(task.ready ? taskStatusKey(task.status) : 'teamTaskBlocked')}
-        </Tag>
-      </div>
       <div className={css.jobPopMeta}>
         <span className={css.popKey}>{t('teamTaskOwner')}</span>
         <span className={css.jobPopValue}>{task.ownerName ?? t('teamTaskUnowned')}</span>
@@ -175,7 +168,7 @@ function TaskEditBody(props: {
 }): ReactNode {
   const subjectHintId = useId()
   return (
-    <div className={css.taskForm} data-popover-no-drag>
+    <div className={css.taskForm} data-window-no-drag>
       <label className={css.taskField}>
         <span className={css.taskLabel}>{t('teamTaskSubject')}</span>
         <Input
@@ -210,16 +203,20 @@ export interface TaskWindowProps {
   rootId: string
   /** The task under view/edit; undefined = create mode. */
   task: SidebarTeamTaskView | undefined
-  members: readonly SidebarTeamMemberView[]
-  /** Re-pull `teams.view` after a mutation (the parent owns the poller). */
-  onChanged(): void
+  members: readonly TeamMemberRow[]
+  /** Where the window first appears (the row that opened it). */
+  anchor?: HTMLElement | null
   /** Close the window (the caller's popover state). */
   onClose(): void
 }
 
-/** The task window content (the caller supplies the popover shell). */
+/**
+ * The ONE task window: the plugin's floating shell wrapping the view/edit body
+ * and the action row, so reading, writing and the mutation state all stay in
+ * one component.
+ */
 export function TaskWindow(props: TaskWindowProps): ReactNode {
-  const { rootId, task, members, onChanged, onClose } = props
+  const { rootId, task, members, onClose } = props
   const creating = task === undefined
   const [editing, setEditing] = useState(creating)
   const [subject, setSubject] = useState(task?.subject ?? '')
@@ -230,7 +227,7 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
   const [note, setNote] = useState<string | undefined>(undefined)
   const [armedDelete, setArmedDelete] = useState(false)
 
-  // Re-seed the draft when the caller swaps the subject task: the poller
+  // Re-seed the draft when the caller swaps the subject task: the projection
   // hands us fresh revisions, and unsaved text must not leak across tasks.
   // Keyed by id on purpose — a same-id revision bump must NOT clobber the
   // reader's in-flight edit (the seed rides a render-time ref so the effect
@@ -257,7 +254,7 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
 
   /** Run one CAS mutation with the shared busy/conflict handling. */
   const mutate = async (
-    action: () => Promise<MutationResult>,
+    action: () => Promise<MutationOutcome>,
     options: { close?: boolean } = {},
   ): Promise<void> => {
     if (busy) return
@@ -265,16 +262,21 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
     setNote(undefined)
     try {
       const result = await action()
-      if (!result.ok) {
-        setNote(result.error.code === 'team-task-conflict'
-          ? t('teamTaskConflict')
-          : t('teamTaskError', { message: result.error.message }))
-      } else {
+      if (result.ok) {
         if (options.close === true) onClose()
         else setEditing(false)
+        // No refresh call: the board is read off the Lead Session's
+        // projection, so a committed revision lands in this window's props
+        // by itself.
+      } else {
+        setNote(result.code === CONFLICT_CODE
+          ? t('teamTaskConflict')
+          : t('teamTaskError', { message: result.message }))
       }
-      onChanged()
     } catch (error) {
+      // `writeTask` turns every WIRE failure into a result above; this arm is
+      // for a programming error or a caller bug, which must not turn into an
+      // unhandled rejection inside a click handler.
       setNote(t('teamTaskError', { message: error instanceof Error ? error.message : String(error) }))
     } finally {
       setBusy(false)
@@ -308,19 +310,140 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
   }
 
   return (
-    <div className={css.popCard} data-popover-handle>
-      <div className={css.popHead}>
-        <span>{creating ? t('teamTaskCreate') : editing ? t('teamTaskEdit') : t('teamTaskDetail')}</span>
-        <span className={css.popHeadActions} data-popover-no-drag>
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<IconCloseOutlineRegular size={12} />}
-            aria-label={t('teamTaskCancel')}
-            title={t('teamTaskCancel')}
-            onClick={onClose}
-          />
+    <FloatingWindow
+      title={creating ? t('taskWindowCreate') : t('taskWindowDetail')}
+      onClose={onClose}
+      initialSize={{ width: 460, height: 360 }}
+      minSize={{ width: 320, height: 240 }}
+      anchor={props.anchor}
+      footer={(
+        // The action row is the shell's FOOTER, so it never scrolls away from
+        // the body it acts on. One state owner: `busy` and `armedDelete` are
+        // the mutation state above, not a second copy.
+        <div className={css.jobPopActions}>
+          {editing
+            ? (
+              <>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon={<IconCheckOutlineRegular size={12} />}
+                  disabled={busy || subject.trim() === ''}
+                  onClick={save}
+                >
+                  {creating ? t('teamTaskCreate') : t('teamTaskSave')}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => {
+                    if (creating) onClose()
+                    else if (task !== undefined) {
+                      setSubject(task.subject)
+                      setDescription(task.description)
+                      setSubjectTouched(false)
+                      setEditing(false)
+                    }
+                  }}
+                >
+                  {t('teamTaskCancel')}
+                </Button>
+              </>
+            )
+            : task === undefined ? null : (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  icon={<IconEditOutlineRegular size={12} />}
+                  onClick={() => { setEditing(true) }}
+                >
+                  {t('teamTaskEdit')}
+                </Button>
+                {/*
+                  The board's state machine, in the window: pending → claim →
+                  in_progress → complete → completed → reopen. 0.1.7's service
+                  REJECTS `complete` on a queued task ("only an in-progress
+                  task can complete"), so the primary action has to follow the
+                  transition rather than promise one that cannot happen. One
+                  primary per window: it is the affirmative change, so 编辑
+                  stays a plain outline and 删除 keeps the danger ink.
+                */}
+                {task.status === 'completed'
+                  ? (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      icon={<IconRefreshOutlineRegular size={12} />}
+                      disabled={busy}
+                      onClick={() => void mutate(() => api.teamsTaskUpdate(rootId, {
+                        taskId: task.id, expectedRevision: task.revision, action: 'reopen',
+                      }))}
+                    >
+                      {t('teamTaskReopen')}
+                    </Button>
+                  )
+                  : task.status === 'pending'
+                    ? (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        icon={<IconCheckOutlineRegular size={12} />}
+                        // Claiming is refused while a blocker is open
+                        // (`TEAM_TASK_BLOCKED`); the Tag beside the subject
+                        // already says why, so the button just says "not yet".
+                        disabled={busy || taskBlocked(task)}
+                        title={taskBlocked(task) ? t('teamTaskBlocked') : undefined}
+                        onClick={() => void mutate(() => api.teamsTaskUpdate(rootId, {
+                          taskId: task.id, expectedRevision: task.revision, action: 'claim',
+                        }))}
+                      >
+                        {t('teamTaskClaim')}
+                      </Button>
+                    )
+                    : (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        icon={<IconCheckOutlineRegular size={12} />}
+                        disabled={busy}
+                        onClick={() => void mutate(() => api.teamsTaskUpdate(rootId, {
+                          taskId: task.id, expectedRevision: task.revision, action: 'complete',
+                        }))}
+                      >
+                        {t('teamTaskComplete')}
+                      </Button>
+                    )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={clsx(css.taskDanger, armedDelete && css.taskDangerArmed)}
+                  icon={<IconTrashOutlineRegular size={12} />}
+                  disabled={busy}
+                  onClick={() => {
+                    if (!armedDelete) { setArmedDelete(true); return }
+                    setArmedDelete(false)
+                    void mutate(() => api.teamsTaskUpdate(rootId, {
+                      taskId: task.id, expectedRevision: task.revision, action: 'delete',
+                    }), { close: true })
+                  }}
+                >
+                  {armedDelete ? t('teamTaskDeleteConfirm') : t('teamTaskDelete')}
+                </Button>
+              </>
+            )}
+        </div>
+      )}
+    >
+      <div className={css.taskHeadRow}>
+        {task !== undefined && <StateDot size={6} state={taskDotState(task)} />}
+        <span className={css.popTitle} title={task?.subject ?? subject}>
+          {task === undefined ? t('taskWindowCreate') : task.subject}
         </span>
+        {task !== undefined && (
+          <Tag tone={taskTone(task)}>{taskStatusLabel(task)}</Tag>
+        )}
       </div>
 
       {editing || task === undefined
@@ -343,110 +466,6 @@ export function TaskWindow(props: TaskWindowProps): ReactNode {
         )}
 
       {note !== undefined && <div className={css.teamNote}>{note}</div>}
-
-      <div className={css.jobPopActions} data-popover-no-drag>
-        {editing
-          ? (
-            <>
-              <Button
-                variant="primary"
-                size="sm"
-                icon={<IconCheckOutlineRegular size={12} />}
-                disabled={busy || subject.trim() === ''}
-                onClick={save}
-              >
-                {creating ? t('teamTaskCreate') : t('teamTaskSave')}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={busy}
-                onClick={() => {
-                  if (creating) onClose()
-                  else if (task !== undefined) {
-                    setSubject(task.subject)
-                    setDescription(task.description)
-                    setSubjectTouched(false)
-                    setEditing(false)
-                  }
-                }}
-              >
-                {t('teamTaskCancel')}
-              </Button>
-            </>
-          )
-          : task === undefined ? null : (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                icon={<IconEditOutlineRegular size={12} />}
-                onClick={() => { setEditing(true) }}
-              >
-                {t('teamTaskEdit')}
-              </Button>
-              {/* One primary per card: the affirmative state change (完成 /
-                  重新打开) is it, so 编辑 stays a plain outline and 删除 keeps
-                  the danger ink beside it. */}
-              {task.status === 'completed'
-                ? (
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    icon={<IconRefreshOutlineRegular size={12} />}
-                    disabled={busy}
-                    onClick={() => void mutate(() => api.teamsTaskUpdate(rootId, {
-                      taskId: task.id, expectedRevision: task.revision, action: 'reopen',
-                    }))}
-                  >
-                    {t('teamTaskReopen')}
-                  </Button>
-                )
-                : (
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    icon={<IconCheckOutlineRegular size={12} />}
-                    disabled={busy}
-                    onClick={() => void mutate(() => api.teamsTaskUpdate(rootId, {
-                      taskId: task.id, expectedRevision: task.revision, action: 'complete',
-                    }))}
-                  >
-                    {t('teamTaskComplete')}
-                  </Button>
-                )}
-              <Button
-                variant="outline"
-                size="sm"
-                className={clsx(css.taskDanger, armedDelete && css.taskDangerArmed)}
-                icon={<IconTrashOutlineRegular size={12} />}
-                disabled={busy}
-                onClick={() => {
-                  if (!armedDelete) { setArmedDelete(true); return }
-                  setArmedDelete(false)
-                  void mutate(() => api.teamsTaskUpdate(rootId, {
-                    taskId: task.id, expectedRevision: task.revision, action: 'delete',
-                  }), { close: true })
-                }}
-              >
-                {armedDelete ? t('teamTaskDeleteConfirm') : t('teamTaskDelete')}
-              </Button>
-            </>
-          )}
-      </div>
-    </div>
-  )
-}
-
-/**
- * The task window inside its draggable popover shell — the single entry point
- * every task surface uses (board row, node task line, node detail list).
- */
-export function TaskPopover(props: TaskWindowProps & { anchor: HTMLElement | null }): ReactNode {
-  const { anchor, onClose, ...windowProps } = props
-  return (
-    <AnchoredPopover anchor={anchor} onClose={onClose} draggable width={430}>
-      {anchor === null ? null : <TaskWindow {...windowProps} onClose={onClose} />}
-    </AnchoredPopover>
+    </FloatingWindow>
   )
 }

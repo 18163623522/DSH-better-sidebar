@@ -48,19 +48,58 @@ export function stateLabel(state: TasksNodeState): string {
   return t(key)
 }
 
+/**
+ * The two facts every task display rule reads. Deliberately NARROWER than
+ * either carrier (`TasksNodeTask` on the graph, `SidebarTeamTaskView` in the
+ * board and the task window) so one rule serves all of them — the window sees
+ * a `deleted` status the graph never draws, and only the shared rule needs to
+ * know that a deleted task is not "blocked".
+ */
+export interface TaskStatusFacts {
+  status: 'pending' | 'in_progress' | 'completed' | 'deleted'
+  ready: boolean
+}
+
 /** The task status label key. */
-export function taskStatusKey(status: TasksNodeTask['status']): CopyKey {
+export function taskStatusKey(status: TaskStatusFacts['status']): CopyKey {
   switch (status) {
     case 'pending': return 'teamTaskPending'
     case 'in_progress': return 'teamTaskInProgress'
     case 'completed': return 'teamTaskCompleted'
+    case 'deleted': return 'teamTaskDeleted'
   }
 }
 
+/**
+ * Whether a shared task is HELD UP by its blockers.
+ *
+ * The service's `ready` flag means exactly one thing: "a pending task whose
+ * every blocker completed, so it can be CLAIMED". It is therefore false for
+ * every task that is not queued — which makes `!ready` the wrong test for
+ * "blocked": a claimed task (in_progress) and a finished one both report
+ * `ready: false`, and reading the flag alone labelled a task that is actively
+ * being worked on as 阻塞 (reproduced on the real board: claiming a task made
+ * its Tag flip from 待办 to 阻塞).
+ */
+export function taskBlocked(task: TaskStatusFacts): boolean {
+  return task.status === 'pending' && !task.ready
+}
+
+/** The status word of a task row: its own status, or 阻塞 when held up. */
+export function taskStatusLabel(task: TaskStatusFacts): string {
+  return t(taskBlocked(task) ? 'teamTaskBlocked' : taskStatusKey(task.status))
+}
+
+/** The tone of a task's status Tag (or dot) — the same three-way rule. */
+export function taskTone(task: TaskStatusFacts): 'success' | 'info' | 'warning' {
+  if (task.status === 'completed') return 'success'
+  return taskBlocked(task) ? 'warning' : 'info'
+}
+
 /** The host StateDot semantic of a task row/line. */
-export function taskDotState(task: TasksNodeTask): StateDotState {
+export function taskDotState(task: TaskStatusFacts): StateDotState {
   if (task.status === 'completed') return 'done'
-  return task.ready ? 'ongoing' : 'warning'
+  return taskBlocked(task) ? 'warning' : 'ongoing'
 }
 
 /** First `limit` characters with an ellipsis when truncated. */
@@ -108,17 +147,17 @@ export function modeLabel(mode: TasksAgentNode['mode']): string | undefined {
 /**
  * The mono meta line of an agent card — at most two short tokens:
  * - the topology root: 主代理 · 状态
- * - a teammate with a known model: 模型 · 状态
- * - any other agent: 模式 · 状态
+ * - any other agent: 模式 · 状态 (a teammate without a catalog mode falls back
+ *   to its team role, the one durable identity the roster still carries — the
+ *   `agentTeam` projection has no model field to print, see team-projection.ts)
  */
 export function agentMeta(node: TasksAgentNode): string {
   const state = stateLabel(node.state)
   if (node.parentId === undefined) return `${t('subagentMainAgent')} · ${state}`
-  if (node.team?.role === 'teammate' && node.team.model !== undefined && node.team.model !== '') {
-    return `${node.team.model} · ${state}`
-  }
   const mode = modeLabel(node.mode)
-  return mode === undefined ? state : `${mode} · ${state}`
+  if (mode !== undefined) return `${mode} · ${state}`
+  const fallback = node.team === undefined ? undefined : teamRoleLabel(node.team)
+  return fallback === undefined ? state : `${fallback} · ${state}`
 }
 
 /**
@@ -133,10 +172,17 @@ export function agentMeta(node: TasksAgentNode): string {
 export function agentIdentity(node: TasksAgentNode): string {
   // The root's badge already reads 主代理: an identity line would repeat it.
   if (node.parentId === undefined) return ''
-  if (node.team?.role === 'teammate' && node.team.model !== undefined && node.team.model !== '') {
-    return node.team.model
-  }
-  return modeLabel(node.mode) ?? ''
+  const mode = modeLabel(node.mode)
+  if (mode !== undefined) return mode
+  return node.team === undefined ? '' : teamRoleLabel(node.team) ?? ''
+}
+
+/** The roster row's own identity word (the fallback for a modelless teammate). */
+function teamRoleLabel(team: NonNullable<TasksAgentNode['team']>): string | undefined {
+  if (team.role === 'lead') return undefined
+  if (team.phase === 'provisioning') return t('tasksStateProvisioning')
+  if (team.phase === 'failed') return t('tasksStateError')
+  return t('tasksKindTeammate')
 }
 
 /** The mono meta line of a workflow run card: status · member tally. */

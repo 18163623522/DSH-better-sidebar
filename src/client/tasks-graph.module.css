@@ -788,17 +788,6 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* The chip's own 10px padding would inset its glyph from the card's right
-   content edge; pull the box back by 8px so the × lands on the text axis. */
-.popHeadActions {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  margin-right: -8px;
-  text-transform: none;
-  letter-spacing: 0;
-}
-
 /* The action bar closes EVERY card the same way: one l1 rule above, one 8px
    beat, and the primary action left to fill whatever the row gives it. */
 .popFoot {
@@ -820,6 +809,24 @@
   min-width: 0;
 }
 
+/* The task window's own head line (inside the floating window's scrolling
+   body): state dot + subject + status Tag. Sentence case, unlike the node
+   detail's letter-spaced uppercase `.popHead` band — this one labels a real
+   subject rather than a card's section. */
+.taskHeadRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-bottom: 8px;
+}
+
+.taskHeadRow .popTitle {
+  flex: 1;
+  font: var(--dsw-font-xs-13);
+  color: var(--dsw-alias-label-primary);
+}
+
 .jobPopMeta {
   display: flex;
   align-items: center;
@@ -838,14 +845,13 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+/* The action row of a floating window. It is the shell's FOOTER, which already
+   draws the body/footer boundary, so it carries no rule of its own. */
 .jobPopActions {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--dsw-alias-border-l1);
 }
 
 /* The follow-tail switch is the action bar's left cell; the host Switch draws
@@ -940,7 +946,7 @@
 
 /* A section inside a card opens with the family's one hairline: 8px of air on
    both sides of the rule (the card's own 4px gap plus 4px here, and the 8px
-   padding below), exactly the beat `.jobPopActions` closes a card with. */
+   padding below), the same beat the window footers' own rule uses. */
 .popSection {
   margin-top: 4px;
   padding-top: 8px;

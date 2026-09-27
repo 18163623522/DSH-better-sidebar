@@ -14,8 +14,9 @@ import {
 import type {
   SidebarSessionSummary,
   SidebarSubagentCatalogEntry,
-  SidebarTeamMemberView,
 } from '../src/context-types.ts'
+import type { TeamMemberRow } from '../src/client/team-projection.ts'
+import { taskBlocked, taskDotState, taskStatusLabel, taskTone } from '../src/client/tasks-shared.tsx'
 import type { SubagentCatalogView } from '../src/client/subagent-catalog.ts'
 import type { SidebarChildLiveView } from '../src/context-types.ts'
 import type { WorkflowRunView } from '../src/workflow-runs.ts'
@@ -49,9 +50,9 @@ function run(over: Partial<WorkflowRunView> = {}): WorkflowRunView {
   }
 }
 
-/** A team member view. */
-function member(over: Partial<SidebarTeamMemberView> = {}): SidebarTeamMemberView {
-  return { id: 'x', name: 'n', role: 'teammate', status: 'running', diagnostics: [], ...over }
+/** A derived roster row (the shape ./team-projection.ts hands the model). */
+function member(over: Partial<TeamMemberRow> = {}): TeamMemberRow {
+  return { id: 'x', name: 'n', role: 'teammate', phase: 'active', status: 'running', diagnostics: [], ...over }
 }
 
 /** A base input; override per test. */
@@ -131,18 +132,27 @@ describe('buildTasksModel', () => {
     expect(existing?.parentId).toBe('run:run-1')
   })
 
-  it('enriches teammates and the lead from the team view', () => {
+  it('enriches teammates and the lead from the roster projection', () => {
     const model = buildTasksModel(input({
       catalogs: { root: catalog([child('w', { label: 'writer' })]) },
       byId: { root: summary('root'), w: summary('w') },
       teamMembers: [
         member({ id: 'root', name: 'lead', role: 'lead' }),
-        member({ id: 'w', name: 'writer', model: 'glm-5.3', status: 'idle' }),
+        member({ id: 'w', name: 'writer', phase: 'active', status: 'idle' }),
       ],
     }))
     expect(agents(model).find(node => node.id === 'root')?.team?.role).toBe('lead')
     const w = agents(model).find(node => node.id === 'w')
-    expect(w?.team).toMatchObject({ role: 'teammate', name: 'writer', model: 'glm-5.3' })
+    expect(w?.team).toMatchObject({ role: 'teammate', name: 'writer', phase: 'active', status: 'idle' })
+  })
+
+  it('gives a provisioning teammate the running node state', () => {
+    const model = buildTasksModel(input({
+      catalogs: { root: catalog([child('w')]) },
+      byId: { root: summary('root'), w: summary('w') },
+      teamMembers: [member({ id: 'w', phase: 'provisioning', status: 'provisioning' })],
+    }))
+    expect(agents(model).find(node => node.id === 'w')?.state).toBe('running')
   })
 
   it('folds settled leaves per parent and keeps running/teammate/current rows', () => {
@@ -253,5 +263,36 @@ describe('buildTasksModel: duplicate workflow members', () => {
     }))
     const ghost = model.find(node => node.id === 'ghost')
     expect(ghost).toMatchObject({ parentId: 'run:run-1', synthesized: true })
+  })
+})
+
+describe('shared task status rule (taskBlocked / taskStatusLabel / taskTone)', () => {
+  const facts = (status: 'pending' | 'in_progress' | 'completed', ready: boolean) => ({ status, ready })
+
+  it('calls a queued task with an open blocker blocked', () => {
+    expect(taskBlocked(facts('pending', false))).toBe(true)
+    expect(taskStatusLabel(facts('pending', false))).toBe('Blocked')
+    expect(taskTone(facts('pending', false))).toBe('warning')
+  })
+
+  it('never calls a CLAIMED task blocked, even though the service reports ready:false', () => {
+    // The board's `ready` flag means "a pending task clear to claim": it is
+    // false for every non-pending task, which is exactly how a task being
+    // actively worked on got labelled 阻塞 on the real board.
+    expect(taskBlocked(facts('in_progress', false))).toBe(false)
+    expect(taskStatusLabel(facts('in_progress', false))).toBe('In progress')
+    expect(taskTone(facts('in_progress', false))).toBe('info')
+  })
+
+  it('never calls a finished task blocked', () => {
+    expect(taskBlocked(facts('completed', false))).toBe(false)
+    expect(taskStatusLabel(facts('completed', false))).toBe('Completed')
+    expect(taskTone(facts('completed', false))).toBe('success')
+  })
+
+  it('reads a claimable queued task as pending, not blocked', () => {
+    expect(taskStatusLabel(facts('pending', true))).toBe('Pending')
+    expect(taskTone(facts('pending', true))).toBe('info')
+    expect(taskDotState(facts('pending', true))).toBe('ongoing')
   })
 })

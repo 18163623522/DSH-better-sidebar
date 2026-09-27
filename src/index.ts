@@ -483,9 +483,9 @@ function buildApi(
     // Workflow runs of the whole tree (folded from `tool-workflow/*`
     // session events; empty list when the tree never ran one).
     'workflows.list': (payload) => workflowsApi.list(payload),
-    // Agent Teams (experimental): the root-led team's roster + task board,
-    // and the task board's create/CAS-update mutations.
-    'teams.view': (payload) => teamsApi.view(payload),
+    // Agent Teams (experimental): the task board's create/CAS-update
+    // mutations. Reads ride the Lead Session's `agentTeam` projection, so
+    // there is no `teams.view` route (see src/team-routes.ts).
     'teams.taskCreate': (payload) => teamsApi.taskCreate(payload),
     'teams.taskUpdate': (payload) => teamsApi.taskUpdate(payload),
     // The side card preferences. The settings service is optional in the

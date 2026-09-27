@@ -161,9 +161,6 @@ beforeEach(() => {
     if (method === 'workflows.list') {
       return jsonResponse({ ok: true, value: { runs: [] } })
     }
-    if (method === 'teams.view') {
-      return jsonResponse({ ok: true, value: { available: false } })
-    }
     throw new Error(`unexpected fetch ${String(url)}`)
   })
   Object.defineProperty(globalThis.navigator, 'language', { value: 'zh-CN', configurable: true })

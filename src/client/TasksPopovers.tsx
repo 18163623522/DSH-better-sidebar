@@ -30,7 +30,8 @@ import { Button, IconRightUpOutlineRegular, StateDot, Tag } from '@deepseek-ai/d
 import type { SidebarSubagentAddress } from '../context-types.ts'
 import type { TasksAgentNode, TasksWorkflowNode } from './tasks-model.ts'
 import {
-  AgentGlyph, WorkflowGlyph, flatten, modeLabel, nodeDotState, taskDotState, taskStatusKey, workflowStatusKey,
+  AgentGlyph, WorkflowGlyph, flatten, modeLabel, nodeDotState, taskDotState,
+  taskStatusLabel, taskTone, workflowStatusKey,
 } from './tasks-shared.tsx'
 import { liveActivityLabel } from './process-labels.ts'
 import { t, type CopyKey } from './locales.ts'
@@ -103,9 +104,6 @@ export function AgentNodePopover(props: {
             {node.team.role === 'lead' ? 'lead' : node.team.name}
           </PopRow>
         )}
-        {node.team?.model !== undefined && (
-          <PopRow label={t('tasksNodeModel')} mono>{node.team.model}</PopRow>
-        )}
         {(liveTool !== undefined || liveText !== undefined) && (
           <PopRow label={t('tasksNodeActivity')} mono>{liveTool ?? liveText}</PopRow>
         )}
@@ -129,9 +127,7 @@ export function AgentNodePopover(props: {
               >
                 <StateDot state={taskDotState(task)} size={6} />
                 <span className={css.popListLabel}>{task.subject}</span>
-                <Tag tone={task.status === 'completed' ? 'success' : task.ready ? 'info' : 'warning'}>
-                  {t(taskStatusKey(task.status))}
-                </Tag>
+                <Tag tone={taskTone(task)}>{taskStatusLabel(task)}</Tag>
               </Button>
             ))}
           </div>

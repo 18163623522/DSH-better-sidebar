@@ -9,13 +9,14 @@
  * - WORKFLOW RUNS: the host folds `tool-workflow/*` session events of the
  *   whole tree (workflows.list); a run hangs under its origin agent with its
  *   member agents re-parented below it and phase frames behind them;
- * - AGENT TEAMS (experimental host layer): when the root leads a team, the
- *   roster enriches matching nodes and a header chip opens the shared task
- *   board popover (CAS operations); without the layer the UI hides itself
- *   entirely;
+ * - AGENT TEAMS (experimental host layer): when the root leads a team, its
+ *   `agentTeam` Session projection feeds the always-visible team strip and
+ *   enriches the matching nodes; the projection is absent without the layer,
+ *   so the whole surface hides itself with no banner and no polling;
  * - BACKGROUND JOBS: a bottom drawer replaces the old in-page section and
- *   auto-collapses once the tree has many agents; job output opens as an
- *   anchored popover (event replay — never the model's cursor).
+ *   auto-collapses once the tree has many agents; job output opens as a
+ *   persistent floating window (the host's own client jobs service — never
+ *   the model's cursor).
  *
  * Node click jumps straight into the transcript (root → main session); the
  * ⓘ button opens the detail popover. Completed leaf agents fold into one
@@ -46,9 +47,10 @@ import {
   rootAncestor,
 } from './subagent-detect.ts'
 import { subagentCatalogs } from './subagent-catalog.ts'
+import { teamMembersOf, teamProjectionOf } from './team-projection.ts'
 import { treeSessionIds } from './subagent-lineage.ts'
 import { orderJobs, type TreeJob } from './subagent-jobs.ts'
-import { api, type TeamsViewResult } from './api.ts'
+import { api } from './api.ts'
 import { usePolling } from './use-polling.ts'
 import { useNarrowViewport } from './breakpoints.ts'
 import {
@@ -62,7 +64,7 @@ import { JobsDrawer, JobOutputWindow } from './JobsDrawer.tsx'
 import { AnchoredPopover } from './AnchoredPopover.tsx'
 import { AgentNodePopover, WorkflowNodePopover } from './TasksPopovers.tsx'
 import { TeamBoard } from './TeamBoard.tsx'
-import { TaskPopover } from './TaskWindow.tsx'
+import { TaskWindow } from './TaskWindow.tsx'
 import type { SidebarStore } from './state.ts'
 import type { WorkflowRunView } from '../workflow-runs.ts'
 import legacy from './SubagentView.module.css'
@@ -131,31 +133,6 @@ function useWorkflowRuns(rootId: string | undefined, active: boolean): readonly 
     immediate: true,
   })
   return runs
-}
-
-/** The team view of the tree's root (poll-driven, structurally degraded). */
-function useTeamView(
-  rootId: string | undefined,
-  active: boolean,
-): { view: TeamsViewResult | undefined; refresh(): void } {
-  const [view, setView] = useState<TeamsViewResult | undefined>(undefined)
-  const [epoch, setEpoch] = useState(0)
-  useEffect(() => { setView(undefined) }, [rootId])
-  const poll = useCallback(async (signal: AbortSignal): Promise<void> => {
-    if (rootId === undefined) return
-    const result = await api.teamsView(rootId, signal)
-    if (!signal.aborted) setView(result)
-    // `epoch` is the manual-refresh trigger: bumping it changes the task
-    // identity, which restarts the poller with an immediate tick.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rootId, epoch])
-  usePolling(rootId !== undefined && active, poll, {
-    intervalMs: TELEMETRY_POLL_MS,
-    mode: 'self-scheduling',
-    immediate: true,
-  })
-  const refresh = useCallback((): void => { setEpoch(current => current + 1) }, [])
-  return { view, refresh }
 }
 
 /**
@@ -233,11 +210,16 @@ export function SubagentView(props: {
   const rootSummary = rootId === undefined ? undefined : byId[rootId]
   const live = useSubagentLive(rootId, active)
   const runs = useWorkflowRuns(rootId, active)
-  const team = useTeamView(rootId, active)
-  const teamView = team.view
+  // The root-led team, straight off the SAME snapshot the catalogs come from
+  // (see team-projection.ts): undefined = no team here (no experimental layer,
+  // or the root is not a Lead), which is exactly the "hide the strip" state.
+  const team = useMemo(
+    () => teamProjectionOf(list.projectionsBySession, rootId),
+    [list.projectionsBySession, rootId],
+  )
   const teamMembers = useMemo(
-    () => (teamView?.available === true ? teamView.team?.members ?? [] : []),
-    [teamView],
+    () => teamMembersOf(team, live, byId),
+    [team, live, byId],
   )
 
   // The default view mode comes from the side card prefs (settings select);
@@ -277,11 +259,11 @@ export function SubagentView(props: {
         live,
         runs,
         teamMembers,
-        teamTasks: teamView?.available === true ? teamView.team?.tasks ?? [] : [],
+        teamTasks: team?.tasks ?? [],
         folded,
         foldedIds,
       })),
-    [byId, catalogs, rootId, sessionId, live, runs, teamMembers, teamView, folded, foldedIds],
+    [byId, catalogs, rootId, sessionId, live, runs, teamMembers, team, folded, foldedIds],
   )
 
   /**
@@ -439,19 +421,18 @@ export function SubagentView(props: {
   const popoverContent = ((): ReactNode => {
     if (popover === null) return null
     if (popover.kind === 'task') {
-      if (teamView?.available !== true || teamView.team === null || rootId === undefined) return null
+      if (team === undefined || rootId === undefined) return null
       const task = popover.taskId === undefined
         ? undefined
-        : teamView.team.tasks.find(candidate => candidate.id === popover.taskId)
+        : team.tasks.find(candidate => candidate.id === popover.taskId)
       // A task that vanished (deleted elsewhere) closes the window instead of
       // showing a stale card.
       if (popover.taskId !== undefined && task === undefined) return null
       return (
-        <TaskPopover
+        <TaskWindow
           rootId={rootId}
           task={task}
-          members={teamView.team.members}
-          onChanged={team.refresh}
+          members={teamMembers}
           onClose={closePopover}
           anchor={popover.anchor}
         />
@@ -529,15 +510,14 @@ export function SubagentView(props: {
           disabled={rootId === undefined}
           onClick={() => {
             if (rootId !== undefined) refresh(rootId)
-            team.refresh()
           }}
         />
       </div>
-      {rootId !== undefined && teamView?.available === true && teamView.team !== null && (
+      {rootId !== undefined && team !== undefined && (
         <TeamBoard
           rootId={rootId}
-          members={teamView.team.members}
-          tasks={teamView.team.tasks}
+          members={teamMembers}
+          tasks={team.tasks}
           onOpenTask={openTaskFromBoard}
           collapsed={teamBoardCollapsed}
           onToggleCollapsed={() => { setTeamBoardCollapsed(current => !current) }}

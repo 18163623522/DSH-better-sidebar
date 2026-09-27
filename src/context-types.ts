@@ -352,22 +352,37 @@ export interface SidebarAgentPresetsService {
 /**
  * The experimental Agent Teams service face (`ctx.agentTeams`, mounted only
  * when the deployment loads `dsh-experimental-agent-team-profile`; absent →
- * `ctx.get` returns undefined and the Teams block hides). Only the
- * browser-facing Remote vocabulary the Tasks page needs is mirrored —
- * structurally, so the plugin never imports the experimental package.
+ * `ctx.get` returns undefined and the Teams block hides).
+ *
+ * Only the WRITE half is mirrored here. DSH 0.1.7 deleted the 0.1.6
+ * `remoteView` / `remoteCreateTask` / `remoteUpdateTask` trio (the browser UI
+ * that consumed it went away with `ctx.remote`) and moved the board's READ
+ * path onto the Lead Session's `agentTeam` projection — which the client
+ * already receives in `SessionListState.projectionsBySession`. So the reads
+ * never touch this service any more; the two remaining calls each need the
+ * exact live Lead Agent as their authority credential, hence the host routes.
+ *
+ * Rejections are THROWN now, not returned: `createTask` / `updateTask` hand
+ * back the committed view, and a stale revision throws a `TeamError`
+ * (`HarnessError` subclass, `code === 'TEAM_TASK_STALE_REVISION'`) instead of
+ * resolving the 0.1.6 `TeamTaskMutationResult` union.
  */
 export interface SidebarAgentTeamsService {
   /** The agent's team membership, or undefined for a non-team/stale agent. */
   tryMembership(agent: unknown): unknown
-  /** The point-in-time team snapshot the official panel renders. */
-  remoteView(agent: unknown): Promise<{ members: SidebarTeamMemberView[]; tasks: SidebarTeamTaskView[] }>
   /** Create one shared task (CAS-free; ids are server-issued). */
-  remoteCreateTask(agent: unknown, req: SidebarCreateTeamTaskRequest): Promise<SidebarTeamTaskMutationResult>
-  /** Compare-and-set mutation of one shared task (stale revision → conflict). */
-  remoteUpdateTask(agent: unknown, req: SidebarUpdateTeamTaskRequest): Promise<SidebarTeamTaskMutationResult>
+  createTask(agent: unknown, req: SidebarCreateTeamTaskRequest): Promise<SidebarTeamTaskView>
+  /** Compare-and-set mutation of one shared task (stale revision → throws). */
+  updateTask(agent: unknown, req: SidebarUpdateTeamTaskRequest): Promise<SidebarTeamTaskView>
 }
 
-/** One team member as the runtime-enriched view reports it. */
+/**
+ * One team member as the runtime-enriched `listMembers` view reports it.
+ * NOT consumed by this plugin any more (the projection below carries the
+ * durable half and the live channel carries activity, see
+ * ./client/team-projection.ts); kept as the mirror of the service's own
+ * vocabulary so a future reader does not re-derive it.
+ */
 export interface SidebarTeamMemberView {
   /** The member's session id (the teammate's child session under the lead). */
   id: string
@@ -379,6 +394,33 @@ export interface SidebarTeamMemberView {
   context?: 'fresh' | 'fork'
   model?: string
   diagnostics: string[]
+}
+
+/**
+ * One durable roster row of the Lead Session's `agentTeam` projection. Phase
+ * is the DURABLE lifecycle (the Lead row is always `active`); turn activity is
+ * overlaid from the session's own status (see ./client/team-projection.ts).
+ */
+export interface SidebarTeamMemberProjection {
+  /** The member's session id (the teammate's child session under the lead). */
+  id: string
+  name: string
+  role: 'lead' | 'teammate'
+  phase: 'provisioning' | 'active' | 'failed'
+  /** The provisioning failure, when the durable row records one. */
+  error?: string
+}
+
+/**
+ * The Lead Session's published team state: durable roster identities and
+ * phases, member errors, the non-deleted task views (0.1.6's `TeamView` shape,
+ * enriched per task exactly like the service's own views), and the first
+ * rejected Team record when the board had to stop at its last valid state.
+ */
+export interface SidebarTeamProjection {
+  members: readonly SidebarTeamMemberProjection[]
+  tasks: readonly SidebarTeamTaskView[]
+  failure?: string
 }
 
 /** One shared task-board row (durable fields plus derived readiness). */
@@ -415,10 +457,11 @@ export interface SidebarUpdateTeamTaskRequest {
   owner?: string
 }
 
-/** Browser task-mutation result (stale revisions kept distinct, passthrough). */
-export type SidebarTeamTaskMutationResult =
-  | { ok: true; value: SidebarTeamTaskView }
-  | { ok: false; error: { code: 'team-task-conflict' | 'team-rejected'; message: string } }
+/** What a team-task write hands back: the committed view (0.1.7 shape). */
+export interface SidebarTeamTaskMutationResult {
+  ok: true
+  value: SidebarTeamTaskView
+}
 
 /** The host session-title service face (mirror of the sessionTitle service). */
 export interface SidebarSessionTitleService {
@@ -478,7 +521,11 @@ export interface SidebarSessionList {
 
 /** One session's projection values, as the client snapshot publishes them. */
 export interface SidebarProjectionSnapshot {
-  values: { subagentCatalog?: readonly SidebarSubagentCatalogEntry[] }
+  values: {
+    subagentCatalog?: readonly SidebarSubagentCatalogEntry[]
+    /** The Lead Session's team board (only the team's Lead carries one). */
+    agentTeam?: SidebarTeamProjection
+  }
   state: 'idle' | 'loading' | 'ready' | 'error'
   error: { code?: string; message?: string } | null
 }

@@ -12,8 +12,6 @@ import type {
   SidebarCreateTeamTaskRequest,
   SidebarChildLiveView,
   SidebarSessionEvent,
-  SidebarTeamMemberView,
-  SidebarTeamTaskMutationResult,
   SidebarTeamTaskView,
   SidebarUpdateTeamTaskRequest,
 } from '../context-types.ts'
@@ -109,19 +107,24 @@ export type SubagentLiveResult = { live: Record<string, SidebarChildLiveView> }
 /** The `workflows.list` response: the tree's folded workflow runs. */
 export type WorkflowsListResult = { runs: WorkflowRunView[] }
 
-/** The `teams.view` response (structural degradation contract). */
-export type TeamsViewResult =
-  | { available: false }
-  | { available: true; team: { members: SidebarTeamMemberView[]; tasks: SidebarTeamTaskView[] } | null }
-
 /** The `teams.taskCreate` request payload (minus the rootSessionId). */
 export type TeamsTaskCreateRequest = SidebarCreateTeamTaskRequest
 
 /** The `teams.taskUpdate` request payload (minus the rootSessionId). */
 export type TeamsTaskUpdateRequest = SidebarUpdateTeamTaskRequest
 
-/** The task-mutation result union (CAS conflict stays distinct). */
-export type TeamsTaskMutationResult = SidebarTeamTaskMutationResult
+/**
+ * One team-task write as CALLERS consume it. The board's READ path has no
+ * route at all (it rides the Lead Session's `agentTeam` projection, see
+ * team-projection.ts), and a rejected write is a RESULT rather than an
+ * exception: the route answers 409 `team-conflict` for a stale revision and
+ * 400 `team-error` otherwise, {@link writeTask} turns that failed envelope
+ * back into `{ok:false, code, message}`, and the task window routes on the
+ * code (a stale revision deserves its own wording, not "operation failed").
+ */
+export type TeamsTaskMutationResult =
+  | { ok: true; value: SidebarTeamTaskView }
+  | { ok: false; code?: string; message: string }
 
 /**
  * Parse one `/sidebar` JSON response envelope into its value. A non-ok
@@ -155,6 +158,29 @@ async function call<T>(method: string, payload: Record<string, unknown>, signal?
     throw new SidebarApiError('network', error instanceof Error ? error.message : String(error))
   }
   return readEnvelope<T>(response)
+}
+
+/**
+ * One team-task write with the rejection turned back into a RESULT. Every
+ * other `/sidebar/api` caller lets a failed envelope throw (that is what
+ * {@link readEnvelope} is for); here the route's error CODE is data the task
+ * window needs — `team-conflict` means "someone changed this task, refresh",
+ * which is a different sentence from every other failure.
+ * @param method - `teams.taskCreate` or `teams.taskUpdate`.
+ * @param payload - the request plus its `rootSessionId`.
+ */
+async function writeTask(
+  method: string,
+  payload: Record<string, unknown>,
+): Promise<TeamsTaskMutationResult> {
+  try {
+    return { ok: true, value: await call<SidebarTeamTaskView>(method, payload) }
+  } catch (error) {
+    if (error instanceof SidebarApiError) {
+      return { ok: false, code: error.code, message: error.message }
+    }
+    throw error
+  }
 }
 
 /**
@@ -348,19 +374,12 @@ export const api = {
    */
   workflowsList: (rootSessionId: string, signal?: AbortSignal) =>
     call<WorkflowsListResult>('workflows.list', { rootSessionId }, signal),
-  /**
-   * The team led by the tree's root agent (experimental Agent Teams layer):
-   * `{available:false}` hides the whole block; `{team:null}` means the root
-   * leads no team. Poll-driven (the official panel is manual-refresh too).
-   */
-  teamsView: (rootSessionId: string, signal?: AbortSignal) =>
-    call<TeamsViewResult>('teams.view', { rootSessionId }, signal),
   /** Create one shared task on the root-led team. */
   teamsTaskCreate: (rootSessionId: string, req: TeamsTaskCreateRequest) =>
-    call<TeamsTaskMutationResult>('teams.taskCreate', { rootSessionId, ...req }),
-  /** CAS-mutate one shared task; conflicts ride the returned union. */
+    writeTask('teams.taskCreate', { rootSessionId, ...req }),
+  /** CAS-mutate one shared task; a stale revision yields `team-conflict`. */
   teamsTaskUpdate: (rootSessionId: string, req: TeamsTaskUpdateRequest) =>
-    call<TeamsTaskMutationResult>('teams.taskUpdate', { rootSessionId, ...req }),
+    writeTask('teams.taskUpdate', { rootSessionId, ...req }),
   /** Create a Side Chat thread: a child session seeded with the parent's
    *  full log up to now. Empty question = immediate create (Codex-style):
    *  the thread opens empty, the first prompt carries the boundary. */

@@ -17,6 +17,7 @@ export type SidebarErrorCode =
   | 'git-error'
   | 'job-error'
   | 'team-error'
+  | 'team-conflict'
   | 'sidechat-error'
   | 'subagents-unavailable'
   | 'settings-rejected'

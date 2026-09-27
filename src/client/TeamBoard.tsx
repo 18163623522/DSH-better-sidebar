@@ -23,27 +23,25 @@ import {
   Button, IconChecklistOutlineRegular, IconCheckOutlineRegular, IconChevronUpOutlineRegular, IconEditOutlineRegular,
   IconEllipsisOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconTrashOutlineRegular,
   IconUserOutlineRegular, Menu, Pill, StateDot, Tag,
-  type MenuEntry, type TagTone,
+  type MenuEntry,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { SidebarTeamMemberView, SidebarTeamTaskView } from '../context-types.ts'
-import { t, type CopyKey } from './locales.ts'
+import type { SidebarTeamTaskView } from '../context-types.ts'
+import type { TeamMemberRow } from './team-projection.ts'
+import { taskDotState, taskStatusLabel, taskTone } from './tasks-shared.tsx'
+import { t } from './locales.ts'
 import css from './tasks-graph.module.css'
 
-/** The task status label key. */
-function taskStatusKey(status: SidebarTeamTaskView['status']): CopyKey {
+/**
+ * The status dot of one roster row: the member's derived status (see
+ * ./team-projection.ts — durable phase first, live activity second).
+ */
+function memberDotState(status: TeamMemberRow['status']): 'ongoing' | 'idle' | 'error' {
   switch (status) {
-    case 'pending': return 'teamTaskPending'
-    case 'in_progress': return 'teamTaskInProgress'
-    case 'completed': return 'teamTaskCompleted'
-    case 'deleted': return 'teamTaskDeleted'
+    case 'running': return 'ongoing'
+    case 'provisioning': return 'ongoing'
+    case 'failed': return 'error'
+    case 'idle': return 'idle'
   }
-}
-
-/** The status Tag tone of one task. */
-function taskTone(task: SidebarTeamTaskView): TagTone {
-  if (task.status === 'completed') return 'success'
-  if (!task.ready) return 'warning'
-  return task.status === 'in_progress' ? 'info' : 'neutral'
 }
 
 /**
@@ -59,7 +57,7 @@ function taskTone(task: SidebarTeamTaskView): TagTone {
  */
 function taskMenuItems(
   task: SidebarTeamTaskView,
-  teammates: readonly SidebarTeamMemberView[],
+  teammates: readonly TeamMemberRow[],
 ): MenuEntry[] {
   const completed = task.status === 'completed'
   return [
@@ -96,7 +94,7 @@ function taskMenuItems(
  */
 function TeamTaskRow(props: {
   task: SidebarTeamTaskView
-  teammates: readonly SidebarTeamMemberView[]
+  teammates: readonly TeamMemberRow[]
   onOpenTask(task: SidebarTeamTaskView, anchor: HTMLElement): void
 }): ReactNode {
   const { task, teammates, onOpenTask } = props
@@ -121,17 +119,12 @@ function TeamTaskRow(props: {
         title={t('teamTaskDetail')}
         onClick={(event) => { onOpenTask(task, event.currentTarget) }}
       >
-        <StateDot
-          size={6}
-          state={task.status === 'completed' ? 'done' : task.ready ? 'ongoing' : 'warning'}
-        />
+        <StateDot size={6} state={taskDotState(task)} />
         <span className={css.teamTaskSubject} title={task.subject}>{task.subject}</span>
         {task.ownerName !== undefined && (
           <span className={css.teamTaskOwner} title={task.ownerName}>{task.ownerName}</span>
         )}
-        <Tag tone={taskTone(task)}>
-          {t(task.ready ? taskStatusKey(task.status) : 'teamTaskBlocked')}
-        </Tag>
+        <Tag tone={taskTone(task)}>{taskStatusLabel(task)}</Tag>
       </Button>
       <Menu
         open={menuOpen}
@@ -163,7 +156,7 @@ function TeamTaskRow(props: {
 
 export interface TeamBoardProps {
   rootId: string
-  members: readonly SidebarTeamMemberView[]
+  members: readonly TeamMemberRow[]
   tasks: readonly SidebarTeamTaskView[]
   /** Open the shared task window (undefined = create) anchored at the click. */
   onOpenTask(task: SidebarTeamTaskView | undefined, anchor: HTMLElement): void
@@ -184,7 +177,7 @@ export function TeamBoard(props: TeamBoardProps): ReactNode {
   const teammates = useMemo(() => members.filter(member => member.role === 'teammate'), [members])
 
   return (
-    <section className={css.teamBoard} aria-label={t('teamBoard')}>
+    <section className={css.teamBoard} aria-label={t('teamBoard')} data-team-board>
       <button
         type="button"
         className={css.teamBoardBar}
@@ -222,12 +215,7 @@ export function TeamBoard(props: TeamBoardProps): ReactNode {
                   setOwnerFilter(current => (current === member.name ? undefined : member.name))
                 }}
               >
-                <StateDot
-                  size={6}
-                  state={member.status === 'running' || member.status === 'provisioning'
-                    ? 'ongoing'
-                    : member.status === 'failed' ? 'error' : 'idle'}
-                />
+                <StateDot size={6} state={memberDotState(member.status)} />
                 <span className={css.teamMemberName}>{member.name}</span>
               </Pill>
             ))}

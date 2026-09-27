@@ -13,8 +13,8 @@
  *   exist as the origin's catalog children are RE-PARENTED under the run
  *   node, members without a catalog row are synthesized from the run's own
  *   member data (so a finished run still shows its members);
- * - team members enrich matching agent nodes in place (role/model/status);
- *   the lead's membership lands on the root node;
+ * - team members enrich matching agent nodes in place (role/phase/status);
+ *   the lead's roster row lands on the root node;
  * - fold: per parent, settled agent LEAVES (state done/error, never the
  *   current session, never a workflow member's run node) collapse into one
  *   trailing `fold` node carrying the member ids and label previews.
@@ -23,13 +23,14 @@ import type {
   SidebarSessionSummary,
   SidebarSubagentAddress,
   SidebarSubagentCatalogEntry,
-  SidebarTeamMemberView,
+  SidebarTeamMemberProjection,
   SidebarTeamTaskView,
 } from '../context-types.ts'
 import type { SidebarChildLiveView } from '../context-types.ts'
 import type { WorkflowRunView } from '../workflow-runs.ts'
 import { isSideThreadSummary } from './subagent-detect.ts'
 import { childLive, isKnownLeaf, type SubagentCatalogView } from './subagent-catalog.ts'
+import type { TeamMemberRow } from './team-projection.ts'
 
 /** Display state of one agent node (drives the dot + fold candidacy). */
 export type TasksNodeState = 'running' | 'idle' | 'done' | 'error'
@@ -61,12 +62,14 @@ export interface TasksAgentNode {
   current: boolean
   /** Live tail of a running child (the merged activity + newest text). */
   live?: SidebarChildLiveView
-  /** Team enrichment (membership view matched by session id). */
+  /** Team enrichment (roster row matched by session id). */
   team?: {
     role: 'lead' | 'teammate'
     name: string
-    model?: string
-    status: SidebarTeamMemberView['status']
+    /** Durable lifecycle of the roster row (`provisioning | active | failed`). */
+    phase: SidebarTeamMemberProjection['phase']
+    /** The member's derived display status (see ./team-projection.ts). */
+    status: TeamMemberRow['status']
     diagnostics: string[]
   }
   /**
@@ -121,7 +124,7 @@ export interface TasksModelInput {
   currentSessionId: string
   live: Readonly<Record<string, SidebarChildLiveView | undefined>>
   runs: readonly WorkflowRunView[]
-  teamMembers: readonly SidebarTeamMemberView[]
+  teamMembers: readonly TeamMemberRow[]
   /** The team's shared tasks; each lands on its OWNER's node. */
   teamTasks?: readonly SidebarTeamTaskView[]
   /** Whether settled leaves collapse into fold nodes. */
@@ -142,14 +145,17 @@ function childLabel(
   return entry.label ?? summary?.displayTitle ?? entry.id
 }
 
-/** Map a team member's runtime status onto the node display state. */
-function teamState(status: SidebarTeamMemberView['status']): TasksNodeState {
+/**
+ * Map a team member's derived status onto the node display state. The status
+ * already folds in the durable phase (./team-projection.ts), so this is a
+ * vocabulary translation and nothing more.
+ */
+function teamState(status: TeamMemberRow['status']): TasksNodeState {
   switch (status) {
     case 'running': return 'running'
     case 'provisioning': return 'running'
     case 'failed': return 'error'
-    case 'idle':
-    case 'inactive': return 'idle'
+    case 'idle': return 'idle'
   }
 }
 
@@ -201,7 +207,7 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
     const member = teamById.get(id)
     return member === undefined
       ? undefined
-      : { role: member.role, name: member.name, model: member.model, status: member.status, diagnostics: member.diagnostics }
+      : { role: member.role, name: member.name, phase: member.phase, status: member.status, diagnostics: member.diagnostics }
   }
 
   const out: TasksNode[] = []

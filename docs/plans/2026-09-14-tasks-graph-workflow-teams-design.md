@@ -199,6 +199,18 @@ PR：[#680](https://github.com/omdsh-dev/DSH-better-sidebar/pull/680)（分支 `
 
 完整设计与偏差记录见 [2026-09-27-tasks-graph-polish.md](2026-09-27-tasks-graph-polish.md)。
 
+## ⚠️ 0.1.7 复审（2026-09-27）：本文的团队一半已成历史
+
+本文档的数据源侦察与路由设计写于 **DSH 0.1.5-rc.2 / 0.1.6-alpha.2** 时代。团队那一半——`remoteView` /
+`remoteCreateTask` / `remoteUpdateTask` 三个 Remote 方法、`teams.view` 路由、`team-task-conflict`
+冲突联合、以及只有 `listMembers` 才带的成员 `status` / `model`——**在 0.1.7 上全部失效**：上游删掉了
+那三个方法，把团队的读路径改到 Lead Session 的 `agentTeam` Session projection（写路径保留
+`createTask` / `updateTask`，但拒绝语义从「返回联合」改成「抛 `TeamError`」，冲突码
+`TEAM_TASK_STALE_REVISION`）。结果是 0.1.7 上团队条从来不渲染。
+
+改写、真机证据与实施偏差见 [2026-09-27-agent-teams-dsh-0.1.7-adaptation.md](2026-09-27-agent-teams-dsh-0.1.7-adaptation.md)；
+本文档其余章节（workflow 折叠、图/树布局、fold 规则、jobs 数据源）仍然有效。
+
 ## 验收（回退后，2026-09-21）
 
 `pnpm typecheck` ✅ 0 错误；`pnpm lint` ✅ 0 错误；`pnpm vitest run` **133 文件通过 / 1410 用例通过 / 9 skipped / 0 失败**（回退前：4 个文件失败，其中 `theme.spec.ts`、`ui-foundation.spec.ts` 在收集期就因 `src/client/ui/theme.css` 缺失报 ENOENT，`ui-shadows.spec.ts` 2 例、`bundle-route.spec.ts` 1 例断言失败）。
