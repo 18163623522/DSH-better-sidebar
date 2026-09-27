@@ -35,13 +35,13 @@
 - [✨ 功能一览](#-功能一览)
 - [🚀 安装](#-安装)
 - [🖼️ 特性巡礼](#-特性巡礼)
+- [💬 社区](#-社区)
 - [🆕 最近更新](#-最近更新)
 - [⌨️ 快捷键](#-快捷键)
 - [🔌 服务化扩展](#-服务化扩展)
 - [🛠️ 开发与构建](#-开发与构建)
 - [🔐 安全](#-安全) · [⚠️ 已知限制](#-已知限制) · [🖥️ 平台支持](#-平台支持)
-- [💬 社区](#-社区) · [🌐 插件生态](#-插件生态)
-- [🤝 参与贡献](#-参与贡献) · [👥 贡献者](#-贡献者) · [🔗 友情链接](#-友情链接)
+- [🌐 插件生态](#-插件生态) · [🤝 参与贡献](#-参与贡献) · [👥 贡献者](#-贡献者) · [🔗 友情链接](#-友情链接)
 
 ## ✨ 功能一览
 
@@ -178,6 +178,15 @@ dsh registry enable dsh-external/dsh-better-sidebar
 | **💬 侧边对话(beta)**<br/><sub>Codex 风格侧边线程：**每个对话一个独立 Tab**；线程继承主会话完整上下文（含进行中回合，以 interrupted 诚实冻结）独立运行，不污染主会话；可持续追问、重启冷恢复；一键「保存为新会话」提升为顶层会话。</sub><br/><div align="center"><img width="420" alt="侧边对话(beta)" src="https://github.com/user-attachments/assets/3a338c36-f5de-4000-95f3-4b1cd04f60fc" /></div> | **🖥️ DSH 原生右侧栏 + 插件底部工作台**<br/><sub>右列是 DSH 自己的右侧栏：插件把每个 tab 类型注册成原生 tab（含接管内置「文件」页），聊天里的文件点击直接落到原生栏——**宿主自己的文档预览已覆盖的格式由宿主渲染**，插件只认领 Markdown / HTML / 可编辑代码；插件自有底部面板可与其同时展开，拖 Tab 到分栏边缘**拆分**、拖到中间**合并**，高度拖上缘调节；开合按钮在会话头右侧。</sub><br/><div align="center"><img width="420" alt="双工作台（右侧栏 + 底部面板）" src="https://github.com/user-attachments/assets/dfdb875e-a1a8-4d4b-8340-353736b1708f" /></div> |
 | **⚙️ 声明式设置**<br/><sub>设置页「侧边卡片」分区：每个 tab / 预览器一张小卡片，独立开关（高亮启用态 + 品牌开关滑块）；二级设置经卡片底部「功能设置」条弹窗（开关 / 文本 / 数字 / 下拉）；插件自有设置持久化在 `pluginSettings`，整份偏好则写在 profile 里本插件的**挂载行**上（DSH 0.1.7 起设置按 Loader entry id 寻址）。</sub><br/><div align="center"><img width="420" alt="声明式设置：侧边卡片" src="https://github.com/user-attachments/assets/0800ca64-621e-48da-b7df-aecfddc3ec29" /></div> | **📱 移动端**<br/><sub>窄屏（<768px）自动切换为全宽抽屉：底栏 tab 一次性并入右侧栏，触屏拖拽可调。</sub><br/><div align="center"><img width="360" alt="移动端全宽抽屉" src="https://github.com/user-attachments/assets/a82ba78a-f4cf-4d85-80e8-050a05beb144" /></div> |
 
+## 💬 社区
+
+推荐添加QQ群(577011007)
+
+<div align="center">
+  <img width="220" alt="微信群二维码" src="https://github.com/user-attachments/assets/cbf211c6-e5b8-49c3-a412-7210c0b33d73" />
+  <img width="220" alt="QQ群二维码" src="https://github.com/user-attachments/assets/9be34629-26ef-4537-aad4-1393c147f81c" />
+</div>
+
 ## 🆕 最近更新
 
 **支持的 DSH 版本**：<a href="https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions"><img alt="支持的 DSH 版本（v0.21.1）：0.1.7-rc.1+" src="https://img.shields.io/badge/DSH-0.1.7--rc.1%2B-4d6bfe" /></a> · 完整发布历史见 [Releases](https://github.com/omdsh-dev/DSH-better-sidebar/releases)
@@ -260,15 +269,6 @@ make clean          # 清理 lib/、*.tgz、playwright-report/、test-results/
 ## 🖥️ 平台支持
 
 Windows / Linux / macOS 三平台适配（macOS 日常验证；其余经单元测试覆盖）。插件不再包含原生依赖（终端与 `node-pty` 已整体交还 DSH 自身），构建只需 Node + pnpm，无需编译工具链。
-
-## 💬 社区
-
-推荐添加QQ群(577011007)
-
-<div align="center">
-  <img width="220" alt="微信群二维码" src="https://github.com/user-attachments/assets/cbf211c6-e5b8-49c3-a412-7210c0b33d73" />
-  <img width="220" alt="QQ群二维码" src="https://github.com/user-attachments/assets/9be34629-26ef-4537-aad4-1393c147f81c" />
-</div>
 
 ## 🌐 插件生态
 
