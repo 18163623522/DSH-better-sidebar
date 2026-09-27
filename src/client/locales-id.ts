@@ -368,6 +368,7 @@ export const id: Record<string, string> = {
   settingsViewModeGraphDesc: 'Graf node berlapis dengan zoom dan pan',
   settingsViewModeTree: 'Pohon',
   settingsViewModeTreeDesc: 'Pohon indentasi klasik, dapat dinavigasi dengan keyboard',
+  tasksFoldIdle: 'Idle {count}',
   tasksFoldCompleted: '✓ {count} selesai',
   tasksFoldOne: 'Lipat ke selesai',
   tasksFoldExpand: 'Perluas node yang selesai',

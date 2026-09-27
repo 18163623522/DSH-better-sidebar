@@ -385,6 +385,7 @@ export const zhMO: Record<string, string> = {
   settingsViewModeGraphDesc: '分層節點圖，可縮放平移',
   settingsViewModeTree: '樹狀圖',
   settingsViewModeTreeDesc: '經典縮排樹，可用鍵盤導航',
+  tasksFoldIdle: '{count} 待命',
   tasksFoldCompleted: '✓ {count} 已完成',
   tasksFoldOne: '收進已完成聚合',
   tasksFoldExpand: '展開已完成的節點',

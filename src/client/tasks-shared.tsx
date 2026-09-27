@@ -18,7 +18,9 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SidebarChildLiveView } from '../context-types.ts'
 import { liveActivityLabel } from './process-labels.ts'
-import type { TasksAgentNode, TasksNodeState, TasksNodeTask, TasksWorkflowNode } from './tasks-model.ts'
+import type {
+  TasksAgentNode, TasksFoldNode, TasksNodeState, TasksNodeTask, TasksWorkflowNode,
+} from './tasks-model.ts'
 import { toolGlyph } from './tool-icons.tsx'
 import { t, type CopyKey } from './locales.ts'
 import css from './tasks-graph.module.css'
@@ -280,7 +282,28 @@ export function LiveLine(props: { live: SidebarChildLiveView | undefined }): Rea
   )
 }
 
-/** The fold aggregate's subtitle: up to two label previews joined by ·. */
+/** The fold aggregate's subtitle: up to two label previews joined by `/`. */
 export function foldPreviews(previews: readonly string[]): string {
   return previews.join(' / ')
+}
+
+/**
+ * The fold aggregate's state tally — `✓ 2 已完成 · 3 待命 · 1 出错`.
+ *
+ * The aggregate has to SAY what it swallowed: the badge's "✓ N 已完成" is
+ * true only for the settled part, and an aggregate that also sweeps idle
+ * members (or errors) would otherwise read as a lie. Parts that are zero are
+ * omitted, so an all-done aggregate stays exactly as short as it was.
+ */
+export function foldTally(node: TasksFoldNode): string {
+  const parts: string[] = []
+  if (node.doneCount > 0) parts.push(t('tasksFoldCompleted', { count: node.doneCount }))
+  if (node.idleCount > 0) parts.push(t('tasksFoldIdle', { count: node.idleCount }))
+  if (node.errorCount > 0) parts.push(`${t('tasksStateError')} ${node.errorCount}`)
+  return parts.join(' · ')
+}
+
+/** The aggregate's cross-state badge word: 已完成 unless nothing is done. */
+export function foldBadgeCount(node: TasksFoldNode): number {
+  return node.doneCount > 0 ? node.doneCount : node.count
 }

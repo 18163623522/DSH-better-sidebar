@@ -31,16 +31,24 @@ export type CardKind = 'main' | 'subagent' | 'teammate' | 'workflow' | 'fold'
 /**
  * The kind badge's word: the SAME vocabulary the rest of the page uses (the
  * header already calls the root "主代理"), so no sixth word is invented for it.
+ *
+ * The aggregate's badge says 已完成 only when something WAS completed: an
+ * aggregate that sweeps idle teammates (or only failed rows) and still claimed
+ * "✓ N 已完成" would be lying about what is inside it, so `foldBadgeIdle`
+ * switches it to the idle word for exactly that case.
  * @param kind - card kind.
  * @param count - folded member count (the fold aggregate's badge only).
+ * @param foldBadgeIdle - the aggregate holds no completed row (see above).
  */
-export function cardKindLabel(kind: CardKind, count = 0): string {
+export function cardKindLabel(kind: CardKind, count = 0, foldBadgeIdle = false): string {
   switch (kind) {
     case 'main': return t('subagentMainAgent')
     case 'subagent': return t('tasksKindSubagent')
     case 'teammate': return t('tasksKindTeammate')
     case 'workflow': return t('tasksKindWorkflow')
-    case 'fold': return t('tasksFoldCompleted', { count })
+    case 'fold': return foldBadgeIdle
+      ? t('tasksFoldIdle', { count })
+      : t('tasksFoldCompleted', { count })
   }
 }
 
@@ -69,6 +77,8 @@ export function CardTop(props: {
   kind: CardKind
   /** Folded member count, for the aggregate's badge. */
   count?: number
+  /** Whether the aggregate holds no completed row (its badge switches word). */
+  badgeIdle?: boolean
   /** Tree depth → the group colour of the badge and the card's left edge. */
   depth: number
   /** Workflow phase (a member's badge). */
@@ -82,12 +92,12 @@ export function CardTop(props: {
   /** Extra rows the caller appends (the team task line). */
   children?: ReactNode
 }): ReactNode {
-  const { kind, count, depth, phase } = props
+  const { kind, count, badgeIdle, depth, phase } = props
   return (
     <span className={clsx(css.cardTop, depthClass(depth))}>
       <span className={css.cardBadges}>
         <span className={css.kindBadge} data-card-kind={kind}>
-          {cardKindLabel(kind, count ?? 0)}
+          {cardKindLabel(kind, count ?? 0, badgeIdle === true)}
         </span>
         {phase !== undefined && (
           <span

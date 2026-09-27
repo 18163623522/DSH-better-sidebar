@@ -107,6 +107,14 @@ export interface TasksFoldNode {
   /** Tree depth (see {@link TasksAgentNode.depth}). */
   depth: number
   count: number
+  /** How many of {@link count} are done (the badge keeps saying 已完成). */
+  doneCount: number
+  /** How many are waiting for a turn (待命 idle members, never executing). */
+  idleCount: number
+  /** How many ended in a failure (出错). */
+  errorCount: number
+  /** Whether this row also sweeps IDLE team members (see {@link FOLD_IDLE_MIN}). */
+  hasIdle: boolean
   /** The folded session ids, in original order (expansion restores them). */
   memberIds: string[]
   /** Up to two label previews for the collapsed subtitle. */
@@ -149,32 +157,68 @@ function childLabel(
 }
 
 /**
- * Whether the page-level fold rule may sweep this node into its parent's
- * aggregate. Everything the AUTO rule excludes, it excludes for a reason:
+ * Whether the aggregate may hide this node as part of a page-level fold. The
+ * caller supplies `foldIdleMembers`: an idle teammate is only swept when its
+ * parent has enough of them ({@link FOLD_IDLE_MIN}).
  *
  * - a branching node or one with a run of its own — folding it hides a whole
  *   branch, not a finished leaf;
  * - the session on screen — the "you are here" marker must stay reachable;
- * - a TEAMMATE — a roster row is a real, resumable worker the reader is
- *   watching, not a settled subagent to sweep away;
- * - anything not settled — 运行中 must never be hidden.
+ * - a RUNNING or PROVISIONING node — work in flight is never hidden;
+ * - a teammate — a roster row is a real, resumable worker, not a settled
+ *   subagent to sweep away, so it needs the idle head count (a `failed` one
+ *   is ordinary settled work and folds with the rest).
  *
- * The manual trigger ({@link TasksModelInput.foldedIds}) shares only the last
- * two guards; see `nodeBlocksFold`.
+ * The manual trigger ({@link TasksModelInput.foldedIds}) asks for ONE node by
+ * name, so it answers only to the running/current guards — a trigger that
+ * cannot fire is a dead control.
  */
-function isAutoFoldable(node: TasksAgentNode, runsByOrigin: Map<string, WorkflowRunView[]>): boolean {
-  const isLeaf = node.hasChildren !== true && !runsByOrigin.has(node.id)
-  return isLeaf && node.team === undefined
+function nodeFoldable(node: TasksAgentNode, currentSessionId: string): boolean {
+  return !node.current && node.id !== currentSessionId
+    && node.state !== 'running'
+}
+
+/** The extra guard the PAGE-LEVEL rule adds to {@link nodeFoldable}. */
+function isAutoFoldable(
+  node: TasksAgentNode,
+  runsByOrigin: Map<string, WorkflowRunView[]>,
+  foldIdleMembers: boolean,
+): boolean {
+  if (!foldIdleMembers && node.team !== undefined) return false
+  return node.hasChildren !== true && !runsByOrigin.has(node.id)
 }
 
 /**
- * The guards BOTH fold triggers answer to: only a SETTLED node (done/error)
- * that is not the session on screen may be hidden — 运行中 and 待命 nodes stay
- * visible under either trigger.
+ * How many IDLE team members one parent needs before the page-level rule
+ * sweeps them into the aggregate too.
+ *
+ * A teammate that has finished its turn is `idle`: it is not executing, has
+ * nothing in flight, and can be resumed later — the same fact a plain
+ * subagent reports as `done`. It used to stay out of the aggregate entirely,
+ * so a wide team kept a card per member forever. The count is kept at three
+ * on purpose: one or two idle members are the team's working set (and their
+ * cards are where a task line shows up), while three or more is a roster the
+ * reader is scanning rather than watching. Nothing is lost either way — the
+ * aggregate row names the counts and expands on one click.
  */
-function nodeFoldable(node: TasksAgentNode, currentSessionId: string): boolean {
-  const settled = node.state === 'done' || node.state === 'error'
-  return settled && !node.current && node.id !== currentSessionId
+export const FOLD_IDLE_MIN = 3
+
+/** The state tally of one parent's folded children. */
+interface FoldTally {
+  done: number
+  idle: number
+  error: number
+}
+
+/** Count the folded children by display state. */
+function tally(folded: readonly TasksAgentNode[]): FoldTally {
+  const counts: FoldTally = { done: 0, idle: 0, error: 0 }
+  for (const node of folded) {
+    if (node.state === 'done') counts.done += 1
+    else if (node.state === 'idle') counts.idle += 1
+    else counts.error += 1
+  }
+  return counts
 }
 
 /**
@@ -354,15 +398,19 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
     }
     const visibleAgentChildren = agentChildren.filter(child => child.parentId === parentId)
 
-    // Fold: settled agent leaves of THIS parent collapse into one aggregate.
+    // Fold: this parent's non-executing children collapse into one aggregate.
     // Two triggers, two guard sets: the page-level `folded` rule also spares
-    // team members and branching nodes; a manual `foldedIds` fold is the
-    // reader asking for THAT node, so it only spares live/current work.
+    // branching nodes and (below the idle head count) teammates; a manual
+    // `foldedIds` fold is the reader asking for THAT node, so it only spares
+    // running/current work.
+    const idleMembers = visibleAgentChildren
+      .filter(child => child.state === 'idle' && child.team !== undefined).length
+    const foldIdleMembers = idleMembers >= FOLD_IDLE_MIN
     const kept: TasksAgentNode[] = []
     const foldCandidates: TasksAgentNode[] = []
     for (const child of visibleAgentChildren) {
       const foldable = nodeFoldable(child, currentSessionId)
-      const auto = folded && foldable && isAutoFoldable(child, runsByOrigin)
+      const auto = folded && foldable && isAutoFoldable(child, runsByOrigin, foldIdleMembers)
       const manual = foldedIds?.has(child.id) === true && foldable
       if (auto || manual) foldCandidates.push(child)
       else kept.push(child)
@@ -373,12 +421,17 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
       appendChildren(child.id, child.depth)
     }
     if (foldCandidates.length > 0) {
+      const counts = tally(foldCandidates)
       out.push({
         kind: 'fold',
         id: `fold:${parentId}`,
         parentId,
         depth: depth + 1,
         count: foldCandidates.length,
+        doneCount: counts.done,
+        idleCount: counts.idle,
+        errorCount: counts.error,
+        hasIdle: counts.idle > 0,
         memberIds: foldCandidates.map(child => child.id),
         previews: foldCandidates.slice(0, 2).map(child => child.label),
       })
@@ -402,12 +455,17 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
       }
       out.push(...keptMembers)
       if (foldedMembers.length > 0) {
+        const counts = tally(foldedMembers)
         out.push({
           kind: 'fold',
           id: `fold:${runNode.id}`,
           parentId: runNode.id,
           depth: runNode.depth + 1,
           count: foldedMembers.length,
+          doneCount: counts.done,
+          idleCount: counts.idle,
+          errorCount: counts.error,
+          hasIdle: counts.idle > 0,
           memberIds: foldedMembers.map(member => member.id),
           previews: foldedMembers.slice(0, 2).map(member => member.label),
         })

@@ -370,6 +370,7 @@ export const hi: Record<string, string> = {
   settingsViewModeGraphDesc: 'स्तरित नोड ग्राफ़, ज़ूम और पैन के साथ',
   settingsViewModeTree: 'ट्री',
   settingsViewModeTreeDesc: 'क्लासिक इंडेंटेड ट्री, कीबोर्ड से नेविगेट करने योग्य',
+  tasksFoldIdle: 'Idle {count}',
   tasksFoldCompleted: '✓ {count} पूर्ण',
   tasksFoldOne: 'पूर्ण में समेटें',
   tasksFoldExpand: 'पूर्ण नोड्स विस्तारित करें',

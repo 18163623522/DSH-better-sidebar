@@ -363,6 +363,7 @@ export const fr: Record<string, string> = {
   settingsViewModeGraphDesc: 'Graphe de nœuds en couches, avec zoom et panoramique',
   settingsViewModeTree: 'Arbre',
   settingsViewModeTreeDesc: 'Arbre à indentation classique, navigable au clavier',
+  tasksFoldIdle: 'Idle {count}',
   tasksFoldCompleted: '✓ {count} terminés',
   tasksFoldOne: 'Replier avec les terminés',
   tasksFoldExpand: 'Déplier les nœuds terminés',

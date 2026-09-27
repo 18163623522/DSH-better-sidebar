@@ -372,6 +372,7 @@ export const pl: Record<string, string> = {
   settingsViewModeGraphDesc: 'Warstwowy graf węzłów ze zoomowaniem i przesuwaniem',
   settingsViewModeTree: 'Drzewo',
   settingsViewModeTreeDesc: 'Klasyczne drzewo wcięć, nawigowalne z klawiatury',
+  tasksFoldIdle: 'Idle {count}',
   tasksFoldCompleted: '✓ {count} ukończonych',
   tasksFoldOne: 'Zwiń do ukończonych',
   tasksFoldExpand: 'Rozwiń ukończone węzły',

@@ -20,8 +20,8 @@ import clsx from 'clsx'
 import { IconLoadingOutlineRegular, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TasksAgentNode, TasksNode, TasksWorkflowNode } from './tasks-model.ts'
 import {
-  AgentGlyph, agentMeta, FoldGlyph, foldPreviews, LiveLine, nodeDotState, TaskLine,
-  WorkflowGlyph, workflowMeta,
+  AgentGlyph, agentMeta, FoldGlyph, foldPreviews, foldTally, LiveLine, nodeDotState,
+  TaskLine, WorkflowGlyph, workflowMeta,
 } from './tasks-shared.tsx'
 import { FoldToggleButton, ViewModeToggle } from './TasksGraph.tsx'
 import { t } from './locales.ts'
@@ -104,7 +104,7 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
           role="treeitem"
           tabIndex={0}
           aria-level={depth + 1}
-          aria-label={`${t('tasksFoldCompleted', { count: node.count })} · ${t('tasksFoldExpand')}`}
+          aria-label={`${foldTally(node)} · ${t('tasksFoldExpand')}`}
           className={clsx(css.treeRow, css.treeFoldRow)}
           onClick={onToggleFold}
           onKeyDown={(event) => { activateOnKey(event, onToggleFold) }}
@@ -112,7 +112,7 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
           <span className={css.treeGlyph} aria-hidden="true"><FoldGlyph /></span>
           <span className={css.treeContent}>
             <span className={css.treeTitle}>
-              {t('tasksFoldCompleted', { count: node.count })}
+              {foldTally(node)}
               <span className={css.treeMeta}>
                 {t(folded ? 'tasksFoldExpand' : 'tasksFoldCollapse')}
               </span>

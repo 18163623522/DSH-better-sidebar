@@ -370,6 +370,7 @@ export const vi: Record<string, string> = {
   settingsViewModeGraphDesc: 'Đồ thị nút phân tầng với thu phóng và di chuyển',
   settingsViewModeTree: 'Cây',
   settingsViewModeTreeDesc: 'Cây thụt lề cổ điển, điều hướng được bằng bàn phím',
+  tasksFoldIdle: 'Idle {count}',
   tasksFoldCompleted: '✓ {count} hoàn thành',
   tasksFoldOne: 'Gộp vào đã xong',
   tasksFoldExpand: 'Mở rộng các nút đã hoàn thành',

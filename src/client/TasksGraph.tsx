@@ -41,7 +41,7 @@ import {
   type GraphBox,
 } from './tasks-graph-layout.ts'
 import {
-  agentIdentity, agentMeta, foldPreviews, TaskLine, WorkflowGlyph, workflowMeta,
+  agentIdentity, agentMeta, foldBadgeCount, foldPreviews, foldTally, TaskLine, WorkflowGlyph, workflowMeta,
 } from './tasks-shared.tsx'
 import { CardBar, CardTop, phaseClass, type CardKind } from './tasks-card.tsx'
 import { doneActivityTitle, liveActivityLabel } from './process-labels.ts'
@@ -657,7 +657,7 @@ function renderFoldNode(
       data-depth={node.depth}
       role="button"
       tabIndex={-1}
-      aria-label={`${t('tasksFoldCompleted', { count: node.count })} · ${t('tasksFoldExpand')}`}
+      aria-label={`${foldTally(node)} · ${t('tasksFoldExpand')}`}
       className={clsx(css.node, css.nodeFold)}
       style={style}
       onClick={() => {
@@ -667,13 +667,17 @@ function renderFoldNode(
     >
       <CardTop
         kind="fold"
-        count={node.count}
+        count={foldBadgeCount(node)}
+        badgeIdle={node.doneCount === 0}
         depth={node.depth}
         name={foldPreviews(node.previews)}
         extraClass={css.cardNamePlain}
       />
       <CardBar state="done" stateWord={false}>
-        <span className={css.barActivity}>{t('tasksFoldExpand')}</span>
+        {/* The tally SAYS what was folded (✓N 已完成 · N 待命 · 出错 N): the
+            badge alone would read as "all done" once idle members ride along,
+            and the bar is too narrow for a tally AND an action word. */}
+        <span className={css.barActivity} title={foldTally(node)}>{foldTally(node)}</span>
         <span className={css.barFold} aria-hidden="true">
           <IconChevronDownOutlineRegular size={12} />
         </span>

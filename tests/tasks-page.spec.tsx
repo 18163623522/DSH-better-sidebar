@@ -827,6 +827,26 @@ describe('Tasks page: the shared task window', () => {
     unmount()
   })
 
+  it('reports the idle part of the aggregate instead of claiming everything is done', async () => {
+    // Three idle teammates meet the idle head count, so the team folds — and
+    // the aggregate row has to say that they are WAITING, not finished.
+    const mate = (index: number): SidebarTeamMemberProjection => ({
+      id: `child-${index}`, name: `mate-${index}`, role: 'teammate', phase: 'active',
+    })
+    withTeam({ members: [{ id: 'root', name: 'lead', role: 'lead', phase: 'active' }, ...[0, 1, 2].map(mate)] })
+    const store = makeStore(snapshotWithChildren(3))
+    const { container, unmount } = renderRoot(
+      createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
+    )
+    await flushJobs()
+    const aggregate = container.querySelector('[data-graph-node="fold:root"]') as HTMLElement
+    expect(aggregate).not.toBeNull()
+    expect(aggregate.textContent).toContain('3 待命')
+    // Nothing was completed, so the badge must not claim a completed count.
+    expect(aggregate.textContent).not.toContain('已完成')
+    unmount()
+  })
+
   it('draws COLLAPSE and EXPAND with different glyphs (cluster, card, aggregate)', async () => {
     const store = makeStore(snapshotWithChildren(2))
     const { container, unmount } = renderRoot(

@@ -353,6 +353,7 @@ export const pt: Record<string, string> = {
   settingsViewModeGraphDesc: 'Grafo de nós em camadas, com zoom e deslocamento',
   settingsViewModeTree: 'Árvore',
   settingsViewModeTreeDesc: 'Árvore com indentação clássica, navegável pelo teclado',
+  tasksFoldIdle: 'Idle {count}',
   tasksFoldCompleted: '✓ {count} concluídos',
   tasksFoldOne: 'Dobrar nos concluídos',
   tasksFoldExpand: 'Expandir os nós concluídos',

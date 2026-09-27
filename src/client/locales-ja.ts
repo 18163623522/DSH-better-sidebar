@@ -370,6 +370,7 @@ export const ja: Record<string, string> = {
   settingsViewModeGraphDesc: '階層ノードグラフ（ズーム・パン対応）',
   settingsViewModeTree: 'ツリー',
   settingsViewModeTreeDesc: '従来のインデントツリー（キーボード操作可）',
+  tasksFoldIdle: '待機 {count}',
   tasksFoldCompleted: '✓ {count} 件完了',
   tasksFoldOne: '完了済みにまとめる',
   tasksFoldExpand: '完了ノードを展開',
