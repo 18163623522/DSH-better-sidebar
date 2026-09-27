@@ -116,6 +116,12 @@ client 半（src/client/）
 | `subagents.live` 新载荷 + `SidebarChildLiveView` | 移植（去掉 `expand`/`stages`） |
 | 卡片 UI（`subagent-card.tsx` / `subagent-runs.ts` / 树重写 / 5 个词条） | **丢弃** |
 
+## 后续变更（同日，`2026-09-27-floating-window-mobile-settings.md`）
+
+本文描述的卡片语言随后被两处调整：**左侧竖条（层级条 + 当前会话条）删除**，层级改由上段极淡底色承担、
+当前会话改用加粗 accent 描边；**圆角 4px → 8px**。任务输出的锚定浮窗也换成了常驻浮动窗。
+以新文档为准。
+
 ## 实施偏差记录（写给复审）
 
 1. **`process-activity.ts` 是裁剪版而不是原样搬运**：本轮「阶段」= 徽标 + 颜色，逐阶段列表没有消费者，留着就是死代码。裁剪后 44 例 → 30 例（阶段相关用例随机制一起删除）。

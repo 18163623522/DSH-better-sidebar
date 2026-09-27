@@ -148,7 +148,11 @@
   padding: 0;
   background: var(--dsw-alias-bg-layer-1);
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 4px;
+  /* 8px, the same rounding the floating window wears: the page's cards and
+     its windows are one family, and the square-ish 4px read as a table cell
+     next to them. The border is INSIDE the box (border-box + the layout's
+     min-height), so a thicker border never changes the card's outer size. */
+  border-radius: 8px;
   cursor: pointer;
   overflow: hidden;
 }
@@ -157,17 +161,18 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-/* The current session: the card keeps the native selected language — the
-   same 2px accent bar the tree row wears, never a shadow. */
-.nodeCurrent::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 4px;
-  bottom: 4px;
-  width: 2px;
-  border-radius: 1px;
-  background: var(--dsw-alias-state-business-primary);
+/* The current session: a THICKER accent edge (the reader's ask was "边框加粗
+   高亮", and the previous 2px left stripe was the card's one leftover piece of
+   chrome — it also doubled the level edge on the root card, which is why the
+   two read as a single bar).
+   2px, not 1.5px: Chromium FLOORS a sub-pixel border width at device-pixel
+   ratio 1, so 1.5px computes (and paints) as 1px — measured on the real host,
+   where the "thicker" edge was indistinguishable from the plain one. The border
+   sits inside the border box, so the layout's height/width budgets are
+   untouched (the card's own content absorbs the extra pixel). */
+.nodeCurrent {
+  border-color: var(--dsw-alias-state-business-primary);
+  border-width: 2px;
 }
 
 /* Teammates and the workflow run wear the accent edge; the run adds its
@@ -193,12 +198,14 @@
 
 /* The group colour of a node is its DEPTH. The host ships no chart palette and
    the skin contract forbids literal colours, so the ramp mixes the one accent
-   token: level 0 is the accent itself, deeper levels recede. The level also
-   tints the top segment faintly, so a wide graph still reads as bands. */
-.depth0 { --card-edge: 100%; --card-tint: 7%; }
-.depth1 { --card-edge: 72%; --card-tint: 5%; }
-.depth2 { --card-edge: 48%; --card-tint: 3.5%; }
-.depth3 { --card-edge: 28%; --card-tint: 2.5%; }
+   token. The level is carried by the TOP SEGMENT'S FAINT TINT alone — the 2px
+   left edge it used to add was the one piece of card chrome the reader asked
+   to remove ("就是左侧的竖条，这个去掉"), and the tint was lifted a notch
+   (7/5/3.5/2.5% → 9/7/5/3.5%) to compensate for the lost contrast. */
+.depth0 { --card-tint: 9%; }
+.depth1 { --card-tint: 7%; }
+.depth2 { --card-tint: 5%; }
+.depth3 { --card-tint: 3.5%; }
 
 .cardTop {
   position: relative;
@@ -207,22 +214,9 @@
   gap: 2px;
   flex: 1;
   min-width: 0;
-  padding: 6px 8px 5px 10px;
+  padding: 6px 8px 5px;
   background: color-mix(
     in srgb, var(--dsw-alias-state-business-primary) var(--card-tint, 6%), var(--dsw-alias-bg-layer-1)
-  );
-}
-
-/* The level edge: 2px, full height of the segment, never a second border. */
-.cardTop::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: color-mix(
-    in srgb, var(--dsw-alias-state-business-primary) var(--card-edge, 100%), transparent
   );
 }
 
@@ -857,15 +851,6 @@
   white-space: nowrap;
 }
 
-/* The job output well reads on the host's own code-block rhythm (11px/19px
-   code): unwrapped and wrapped terminal lines share one leading, and the well
-   matches every markdown code block in the app. Scoped so the shared `.popPre`
-   metrics the node/task cards rely on stay untouched — and doubled, so the
-   base rule's own `font-size` / `line-height` cannot win on sheet order. */
-.jobPopPre.jobPopPre {
-  font: var(--dsw-font-markdown-code-block, 11px/19px var(--ds-font-family-code, monospace));
-}
-
 /* The armed (first-click) confirm of the popover's kill: the same danger chip
    the drawer's terminate button arms into, so one destructive action reads the
    same in both places. */
@@ -936,26 +921,6 @@
 .popValueMono {
   font-family: var(--ds-font-family-code, monospace);
   font-size: 11px;
-}
-
-/* An inset well: the hairline is definition, the fill is the surface. The
-   160px cap is the page's one scroll-well height — the member list, the run's
-   phase list, the output well and the task description all take it, so no card
-   in the family scrolls at a different depth. */
-.popPre {
-  margin: 4px 0 0;
-  padding: 8px;
-  max-height: 160px;
-  overflow: auto;
-  background: var(--dsw-alias-bg-base);
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 3px;
-  font-family: var(--ds-font-family-code, monospace);
-  font-size: 11px;
-  line-height: 1.55;
-  color: var(--dsw-alias-label-secondary);
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
 /* A section inside a card opens with the family's one hairline: 8px of air on

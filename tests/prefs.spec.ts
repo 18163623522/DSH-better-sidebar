@@ -35,6 +35,8 @@ describe('side card preferences', () => {
         autoOpenSubagent: false,
         autoOpenJobs: true,
         tasksViewMode: 'graph',
+        mobileNoAutoOpen: true,
+        mobileDefaultTree: true,
         agentOpenTools: true,
         editorExplorer: false,
         workspaceFence: true,
@@ -57,6 +59,8 @@ describe('side card preferences', () => {
         autoOpenSubagent: true,
         autoOpenJobs: true,
         tasksViewMode: 'graph',
+        mobileNoAutoOpen: true,
+        mobileDefaultTree: true,
         agentOpenTools: false,
         editorExplorer: false,
         workspaceFence: true,
@@ -79,6 +83,8 @@ describe('side card preferences', () => {
         autoOpenSubagent: true,
         autoOpenJobs: true,
         tasksViewMode: 'graph',
+        mobileNoAutoOpen: true,
+        mobileDefaultTree: true,
         agentOpenTools: false,
         editorExplorer: false,
         workspaceFence: true,
@@ -107,6 +113,19 @@ describe('side card preferences', () => {
       .toBe(true)
     expect((await loadPrefs(wire({ autoOpenJobs: false }))).autoOpenJobs)
       .toBe(false)
+  })
+
+  it('defaults both mobile adaptations to on; only an explicit false disarms one', async () => {
+    // Absent or malformed → ON: a phone is exactly the case these exist for,
+    // and each one only changes what happens on a NARROW viewport.
+    for (const key of ['mobileNoAutoOpen', 'mobileDefaultTree'] as const) {
+      expect((await loadPrefs(wire({})))[key]).toBe(true)
+      expect((await loadPrefs(wire({ [key]: 'yes' })))[key]).toBe(true)
+      expect((await loadPrefs(wire({ [key]: 1 })))[key]).toBe(true)
+      // Explicit booleans survive verbatim.
+      expect((await loadPrefs(wire({ [key]: false })))[key]).toBe(false)
+      expect((await loadPrefs(wire({ [key]: true })))[key]).toBe(true)
+    }
   })
 
   it('defaults editorExplorer to false; only an explicit true enables the merged editor-explorer', async () => {

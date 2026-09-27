@@ -28,6 +28,23 @@ export interface SidebarPrefs {
    */
   tasksViewMode: 'graph' | 'tree'
   /**
+   * MOBILE ADAPTATION (narrow viewports, `isNarrowWidth`): while the viewport
+   * is narrow, do not auto-activate the Tasks page for background activity —
+   * it suppresses BOTH triggers (`autoOpenSubagent` and `autoOpenJobs`) at
+   * once, because on a phone the takeover costs the whole screen. The two
+   * individual switches keep their own meaning on wide viewports.
+   */
+  mobileNoAutoOpen: boolean
+  /**
+   * MOBILE ADAPTATION (narrow viewports): open the Tasks page in the classic
+   * TREE by default instead of the workflow graph — a narrow screen cannot
+   * show a layered graph legibly, while the tree's indentation still reads.
+   * It only picks the DEFAULT: the in-page view toggle still flips this
+   * session's page ad hoc, and `tasksViewMode` keeps deciding on wide
+   * viewports.
+   */
+  mobileDefaultTree: boolean
+  /**
    * Whether the model-facing `sidebar_open` tool is injected into the
    * model's toolset — one tool that lets the model actively open a local
    * file, a local folder (as a tree rooted there), or an HTTP(S) page in
@@ -157,6 +174,10 @@ export const SIDEBAR_PREFS_DEFAULTS: SidebarPrefs = {
   autoOpenSubagent: true,
   autoOpenJobs: true,
   tasksViewMode: 'graph',
+  // Both mobile adaptations are ON by default: a phone is the case they exist
+  // for, and each one only ever changes what happens on a NARROW viewport.
+  mobileNoAutoOpen: true,
+  mobileDefaultTree: true,
   agentOpenTools: false,
   editorExplorer: false,
   workspaceFence: true,

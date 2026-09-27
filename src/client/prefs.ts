@@ -48,6 +48,12 @@ export function parsePrefs(value: unknown): SidebarPrefs {
     tasksViewMode: record.tasksViewMode === 'tree' || record.tasksViewMode === 'graph'
       ? record.tasksViewMode
       : SIDEBAR_PREFS_DEFAULTS.tasksViewMode,
+    mobileNoAutoOpen: typeof record.mobileNoAutoOpen === 'boolean'
+      ? record.mobileNoAutoOpen
+      : SIDEBAR_PREFS_DEFAULTS.mobileNoAutoOpen,
+    mobileDefaultTree: typeof record.mobileDefaultTree === 'boolean'
+      ? record.mobileDefaultTree
+      : SIDEBAR_PREFS_DEFAULTS.mobileDefaultTree,
     agentOpenTools: typeof record.agentOpenTools === 'boolean'
       ? record.agentOpenTools
       : SIDEBAR_PREFS_DEFAULTS.agentOpenTools,

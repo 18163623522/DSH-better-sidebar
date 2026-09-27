@@ -50,6 +50,7 @@ import { treeSessionIds } from './subagent-lineage.ts'
 import { orderJobs, type TreeJob } from './subagent-jobs.ts'
 import { api, type TeamsViewResult } from './api.ts'
 import { usePolling } from './use-polling.ts'
+import { useNarrowViewport } from './breakpoints.ts'
 import {
   clientJobs, collectRows, useJobObservation, useJobWatchers, useJobsSnapshot,
 } from './jobs-client.ts'
@@ -57,7 +58,7 @@ import { t } from './locales.ts'
 import { buildTasksModel, type TasksAgentNode, type TasksWorkflowNode } from './tasks-model.ts'
 import { TasksGraph } from './TasksGraph.tsx'
 import { TasksTree } from './TasksTree.tsx'
-import { JobsDrawer, JobOutputPopoverContent } from './JobsDrawer.tsx'
+import { JobsDrawer, JobOutputWindow } from './JobsDrawer.tsx'
 import { AnchoredPopover } from './AnchoredPopover.tsx'
 import { AgentNodePopover, WorkflowNodePopover } from './TasksPopovers.tsx'
 import { TeamBoard } from './TeamBoard.tsx'
@@ -240,10 +241,17 @@ export function SubagentView(props: {
   )
 
   // The default view mode comes from the side card prefs (settings select);
-  // the in-page toggle overrides it ephemerally.
+  // the in-page toggle overrides it ephemerally. On a NARROW viewport the
+  // `mobileDefaultTree` preference swaps that default to the classic tree —
+  // only the default: the toggle below still flips this session's page.
+  const narrow = useNarrowViewport()
   const prefsMode = useSyncExternalStore(
     useMemo(() => (callback: () => void) => store?.subscribe(callback) ?? (() => {}), [store]),
-    useCallback(() => store?.getPrefs().tasksViewMode ?? 'graph', [store]),
+    useCallback((): 'graph' | 'tree' => {
+      const prefs = store?.getPrefs()
+      if (narrow && prefs?.mobileDefaultTree === true) return 'tree'
+      return prefs?.tasksViewMode ?? 'graph'
+    }, [store, narrow]),
   )
   const [modeOverride, setModeOverride] = useState<'graph' | 'tree' | undefined>(undefined)
   const mode = modeOverride ?? prefsMode
@@ -453,11 +461,13 @@ export function SubagentView(props: {
       const row = jobRows.find(candidate => candidate.job.id === popover.jobId)
       if (row === undefined) return null
       return (
-        <JobOutputPopoverContent
+        <JobOutputWindow
           jobs={treeJobs.jobs}
           ownerSessionId={row.ownerSessionId}
           job={row.job}
           observed={treeJobs.observed[row.job.id]}
+          anchor={popover.anchor}
+          onClose={closePopover}
         />
       )
     }
@@ -599,18 +609,20 @@ export function SubagentView(props: {
             : { kind: 'job', jobId: row.job.id, anchor })
         }}
       />
-      {popover?.kind === 'task'
+      {/*
+        Two surfaces, two lifecycles: the job output is a PERSISTENT window
+        (its own frame, closed by its button/Escape only), while node and
+        workflow details stay anchored popovers on the 280px card.
+      */}
+      {popover?.kind === 'job'
         ? popoverContent
-        : (
-          <AnchoredPopover
-            anchor={popover?.anchor ?? null}
-            onClose={closePopover}
-            draggable={popover?.kind === 'job'}
-            width={popover?.kind === 'job' ? 380 : 280}
-          >
-            {popoverContent}
-          </AnchoredPopover>
-        )}
+        : popover?.kind === 'task'
+          ? popoverContent
+          : (
+            <AnchoredPopover anchor={popover?.anchor ?? null} onClose={closePopover} width={280}>
+              {popoverContent}
+            </AnchoredPopover>
+          )}
     </div>
   )
 }

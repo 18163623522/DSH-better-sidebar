@@ -182,6 +182,11 @@ export function useHostFeeds(feeds: {
    * baseline starts at the current count — so a deliberate layout is never
    * fought.
    *
+   * MOBILE: while the viewport is narrow (the plugin's own bracket), the
+   * `mobileNoAutoOpen` preference suppresses this takeover entirely — on a
+   * phone the Tasks page costs the whole screen, and the reader has not asked
+   * for it. The viewport is read when the trigger FIRES, like the park gate.
+   *
    * The decision is DEBOUNCED (AUTO_OPEN_DEBOUNCE_MS): a Side Chat thread
    * is also a subagent-origin child, and its 'Side: ' title lands one frame
    * after its origin — an immediate check would misread that first frame as
@@ -202,6 +207,7 @@ export function useHostFeeds(feeds: {
       autoOpenPendingRef.current = null
       if (!detectNewDirectSubagent(baseline, ctx.sessions.list.getSnapshot(), sessionId)) return
       if (!store.getPrefs().autoOpenSubagent) return
+      if (store.getPrefs().mobileNoAutoOpen && isNarrowWidth(window.innerWidth)) return
       if (ctx.get('betterSidebar')?.isTabEnabled('subagent') === false) return
       activateTasksPage(ctx, sessionId, { background: true })
     }, AUTO_OPEN_DEBOUNCE_MS)
@@ -224,6 +230,10 @@ export function useHostFeeds(feeds: {
    * the subagent trigger ({@link activateTasksPage}). Unlike that trigger
    * (0 → N only), ANY new job id triggers: the agent may start several jobs in
    * one session, and each should surface.
+   *
+   * MOBILE: `mobileNoAutoOpen` suppresses this one too on a narrow viewport
+   * (one switch for both triggers — a phone should not be taken over by either
+   * kind of background work).
    *
    * The roster is PUSHED by the host's own client jobs service: one
    * reference-counted `watchRows` stream for the current session replaces the
@@ -260,6 +270,7 @@ export function useHostFeeds(feeds: {
     if (prev === undefined) return
     if (!detectNewJob(prev, rows, jobWatchStartRef.current)) return
     if (!store.getPrefs().autoOpenJobs) return
+    if (store.getPrefs().mobileNoAutoOpen && isNarrowWidth(window.innerWidth)) return
     if (ctx.get('betterSidebar')?.isTabEnabled('subagent') === false) return
     activateTasksPage(ctx, sessionId, { background: true })
   }, [jobsService, jobsSnapshot, sessionId, store, ctx])

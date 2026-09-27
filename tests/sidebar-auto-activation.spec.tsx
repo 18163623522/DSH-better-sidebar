@@ -228,7 +228,7 @@ function setViewport(width: number): void {
 function mountSidebar(
   width: number,
   bottomOpen = false,
-  options: { columnExpanded?: boolean } = {},
+  options: { columnExpanded?: boolean; prefs?: Record<string, unknown> } = {},
 ): MountedSidebar {
   setViewport(width)
   vi.stubGlobal('WebSocket', FakeWebSocket)
@@ -243,7 +243,12 @@ function mountSidebar(
   // (`ctx.jobs`): the feed below is what a test pushes rosters into.
   const jobs = makeJobsFeed()
   const store = createSidebarStore()
-  store.setPrefs({ ...store.getPrefs(), autoOpenSubagent: true, autoOpenJobs: true })
+  store.setPrefs({
+    ...store.getPrefs(),
+    autoOpenSubagent: true,
+    autoOpenJobs: true,
+    ...options.prefs,
+  })
   store.setSession(sessionId)
   store.reduce(state => ({ ...state, bottomOpen }))
   const service = createBetterSidebarService(store)
@@ -408,7 +413,10 @@ describe('Sidebar background-activity auto-activation (#162)', () => {
     { source: 'subagent', width: 1024 },
     { source: 'job', width: 1024 },
   ] as const)('$source activation at $width px activates the Tasks page in the native Sidebar', async ({ source, width }) => {
-    const sidebar = mountSidebar(width)
+    // The NARROW rows disarm the mobile adaptation on purpose: this lane pins
+    // the activate-and-park promise, while the suppression the mobile switch
+    // adds on narrow viewports has its own test below.
+    const sidebar = mountSidebar(width, false, { prefs: { mobileNoAutoOpen: false } })
     await publishActivity(sidebar, source)
     expectNativeTasksOpen(sidebar, sidebar.sessionId)
     expectWorkbenchUntouched(sidebar)
@@ -417,13 +425,13 @@ describe('Sidebar background-activity auto-activation (#162)', () => {
   })
 
   it.each(['subagent', 'job'] as const)('%s activation leaves a narrow fullscreen column to the park', async (source) => {
-    const sidebar = mountSidebar(390)
+    const sidebar = mountSidebar(390, false, { prefs: { mobileNoAutoOpen: false } })
     await publishActivity(sidebar, source)
     expect(sidebar.column.toggles).toBe(1)
   })
 
   it('a narrow column the user already expanded is not closed under them', async () => {
-    const sidebar = mountSidebar(390, false, { columnExpanded: true })
+    const sidebar = mountSidebar(390, false, { columnExpanded: true, prefs: { mobileNoAutoOpen: false } })
     await publishActivity(sidebar, 'subagent')
     expectNativeTasksOpen(sidebar, sidebar.sessionId)
     expect(sidebar.column.toggles).toBe(0)
@@ -471,12 +479,38 @@ describe('Sidebar background-activity auto-activation (#162)', () => {
   })
 
   it('reads the viewport when the debounced activation fires, not when it arms', () => {
-    const sidebar = mountSidebar(1024)
+    const sidebar = mountSidebar(1024, false, { prefs: { mobileNoAutoOpen: false } })
     publishSubagent(sidebar)
     setViewport(390)
     flushSubagentDebounce()
     expectNativeTasksOpen(sidebar, sidebar.sessionId)
     expect(sidebar.column.toggles).toBe(1)
+  })
+
+  it('a NARROW viewport suppresses both triggers while the mobile switch is on', async () => {
+    // The mobile adaptation defaults to ON: on a phone the Tasks page costs
+    // the whole screen, so neither kind of background work may take it over.
+    const subagents = mountSidebar(390)
+    await publishActivity(subagents, 'subagent')
+    expect(subagents.surface.opens).toEqual([])
+    await publishActivity(subagents, 'job')
+    expect(subagents.surface.opens).toEqual([])
+
+    // Turning the switch off restores the old narrow behaviour: activate, then
+    // park the fullscreen column (the existing narrow promise).
+    const jobs = mountSidebar(390)
+    jobs.store.setPrefs({ ...jobs.store.getPrefs(), mobileNoAutoOpen: false })
+    await publishActivity(jobs, 'job')
+    expectNativeTasksOpen(jobs, jobs.sessionId)
+    expect(jobs.column.toggles).toBe(1)
+  })
+
+  it('the mobile switch never touches a WIDE viewport', async () => {
+    const sidebar = mountSidebar(1024)
+    await publishActivity(sidebar, 'subagent')
+    expectNativeTasksOpen(sidebar, sidebar.sessionId)
+    // Nothing was parked (there is no fullscreen column to park).
+    expect(sidebar.column.toggles).toBe(0)
   })
 
   it('leaves an already-open bottom workbench open and untouched', async () => {

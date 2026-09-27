@@ -10,6 +10,7 @@ import { createElement } from 'react'
 import { act } from 'react-dom/test-utils'
 import { renderRoot } from './test-utils.ts'
 import { SubagentView } from '../src/client/SubagentView.tsx'
+import { createSidebarStore } from '../src/client/state.ts'
 import type {
   Context,
   SidebarClientJobsService,
@@ -230,6 +231,46 @@ describe('Tasks page interactions', () => {
     await act(async () => { bar.click() })
     expect(container.textContent).toContain('sleep 300')
     unmount()
+  })
+
+  it('opens in the TREE by default on a narrow viewport when the mobile switch is on', async () => {
+    // jsdom's window is the plugin's mobile bracket here (767 < 768).
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 420 })
+    try {
+      const store = makeStore(snapshotWithChildren(2))
+      const sidebar = createSidebarStore()
+      sidebar.setPrefs({ ...sidebar.getPrefs(), tasksViewMode: 'graph' })
+      const first = renderRoot(
+        createElement(SubagentView, {
+          sessionId: 'root', active: true, ctx: makeCtx(store), store: sidebar,
+        }),
+      )
+      await flushJobs()
+      // The mobile adaptation wins over the wide-viewport default…
+      expect(first.container.querySelector('[role="tree"]')).not.toBeNull()
+      expect(first.container.querySelector('[role="group"]')).toBeNull()
+      // …but the in-page toggle still switches this session's page ad hoc.
+      const toGraph = first.container.querySelector('button[aria-label="切换为工作流图"]') as HTMLButtonElement
+      await act(async () => { toGraph.click() })
+      expect(first.container.querySelector('[role="group"]')).not.toBeNull()
+      first.unmount()
+
+      // Disarming the switch restores the settings default (graph) on the same
+      // narrow viewport.
+      const off = makeStore(snapshotWithChildren(2))
+      const offSidebar = createSidebarStore()
+      offSidebar.setPrefs({ ...offSidebar.getPrefs(), tasksViewMode: 'graph', mobileDefaultTree: false })
+      const second = renderRoot(
+        createElement(SubagentView, {
+          sessionId: 'root', active: true, ctx: makeCtx(off), store: offSidebar,
+        }),
+      )
+      await flushJobs()
+      expect(second.container.querySelector('[role="group"]')).not.toBeNull()
+      second.unmount()
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 })
+    }
   })
 
   it('toggles between graph and tree with the cluster visible in BOTH modes', async () => {
@@ -478,7 +519,7 @@ describe('Tasks page: owned tasks, host-primitive controls, draggable output', (
     unmount()
   })
 
-  it('drags the job output popover away from its anchor', async () => {
+  it('opens the job output in the persistent floating window and drags it by its title bar', async () => {
     const store = makeStore(snapshotWithChildren(1))
     const { container, unmount } = renderRoot(
       createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
@@ -486,15 +527,31 @@ describe('Tasks page: owned tasks, host-primitive controls, draggable output', (
     await flushJobs()
     const row = container.querySelector('button[aria-label*="sleep 300"]') as HTMLButtonElement
     await act(async () => { row.click() })
-    const card = document.querySelector('[role="dialog"]') as HTMLElement
-    expect(card).not.toBeNull()
-    const before = { left: card.style.left, top: card.style.top }
+    // The job output is a WINDOW, not the 280px anchored popover: it carries
+    // the plugin's frame (a title bar to drag, a scrolling body).
+    const frame = document.querySelector('[data-floating-window]') as HTMLElement
+    expect(frame).not.toBeNull()
+    expect(frame.getAttribute('aria-label')).toBe('sleep 300')
+    expect(frame.querySelector('[data-window-body]')).not.toBeNull()
+    // An outside click must NOT dismiss it (the window is persistent); Escape does.
     await act(async () => {
-      card.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 40, clientY: 40 }))
+      document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    })
+    expect(document.querySelector('[data-floating-window]')).not.toBeNull()
+
+    const before = { left: frame.style.left, top: frame.style.top }
+    const handle = frame.querySelector('[data-window-handle]') as HTMLElement
+    await act(async () => {
+      handle.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 40, clientY: 40 }))
       window.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 140, clientY: 120 }))
       window.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }))
     })
-    expect({ left: card.style.left, top: card.style.top }).not.toEqual(before)
+    expect({ left: frame.style.left, top: frame.style.top }).not.toEqual(before)
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(document.querySelector('[data-floating-window]')).toBeNull()
     unmount()
   })
 })

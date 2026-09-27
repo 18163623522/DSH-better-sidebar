@@ -5,11 +5,15 @@
  * service — see jobs-client.ts) collapse into a bottom bar that AUTO-COLLAPSES
  * once the tree has many agents — the manual toggle always wins afterwards.
  *
- * Popover: clicking a row opens a DRAGGABLE, portalled output card (see
- * AnchoredPopover) instead of docking a pane inside the page. It shows the
- * output the host streams for an OBSERVER (never the model's consuming
- * cursor), with a copy action, a follow-latest switch, the two-click kill, and
- * a terminal-style tail while the job runs.
+ * Window: clicking a row opens a PERSISTENT floating window (FloatingWindow —
+ * draggable, resizable, closed only by its own button or Escape), because a
+ * job's output is something the reader watches for minutes: the popover it
+ * used to open was dismissed by any click elsewhere and had no height bound,
+ * so a chatty job ran off the bottom of the screen. The window's BODY is the
+ * scroll container, so the output stays readable whatever its length. It shows
+ * what the host streams for an OBSERVER (never the model's consuming cursor),
+ * with a copy action in the title bar, a follow-latest switch and the
+ * two-click kill in the footer, and a terminal-style tail while the job runs.
  *
  * Every control is a host primitive (Button / Tag / Switch / StateDot /
  * TerminalBlock).
@@ -28,6 +32,7 @@ import {
   jobStatusLabel,
   type TreeJob,
 } from './subagent-jobs.ts'
+import { FloatingWindow } from './FloatingWindow.tsx'
 import { t } from './locales.ts'
 import css from './tasks-graph.module.css'
 
@@ -202,13 +207,13 @@ export function JobsDrawer(props: JobsDrawerProps): ReactNode {
 }
 
 /**
- * The output popover content of one job: the text the MODEL has read so far
- * (replayed from the owner session's event log), refreshed every
- * {@link JOB_POLL_MS} while the job runs and the page is visible. The reader
- * can copy the output and turn the terminal-style tail off; the kill action
- * keeps its two-click confirm.
+ * The output WINDOW of one job: what the host streams for an observer of this
+ * job, inside the plugin's persistent floating window. The window owns the
+ * frame, the geometry and the dismissal contract; this component owns the
+ * content (status header rows, the terminal tail) and the footer controls
+ * (follow-latest, two-click kill).
  */
-export function JobOutputPopoverContent(props: {
+export function JobOutputWindow(props: {
   /** The host client jobs service (absent → the panel only reports that). */
   jobs: SidebarClientJobsService | undefined
   job: SidebarJobView
@@ -216,14 +221,18 @@ export function JobOutputPopoverContent(props: {
   ownerSessionId: string
   /** The host's streamed observation of THIS job (undefined until it arrives). */
   observed: SidebarObservedJob | undefined
+  /** The row's main button — where the window first appears. */
+  anchor?: HTMLElement | null
+  /** Close the window (the close button, or Escape). */
+  onClose(): void
 }): ReactNode {
-  const { jobs, job, ownerSessionId, observed } = props
+  const { jobs, job, ownerSessionId, observed, anchor, onClose } = props
   const [follow, setFollow] = useState(true)
   const [copied, setCopied] = useState(false)
   const [armed, setArmed] = useState(false)
   const [killing, setKilling] = useState(false)
   const [killFailed, setKillFailed] = useState(false)
-  const preRef = useRef<HTMLPreElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
   const live = isJobLive(job)
   const text = observed?.text ?? ''
   const labels = useMemo(() => terminalBlockLabels(), [])
@@ -235,15 +244,16 @@ export function JobOutputPopoverContent(props: {
     return () => { window.clearTimeout(timer) }
   }, [armed])
 
-  // Terminal-tail behavior: every frame pins the view to the newest output
-  // while the reader keeps the follow switch on.
+  // Terminal-tail behavior: every frame pins the BODY (the window's own scroll
+  // container — the element the previous popover wrapped in a div that never
+  // scrolled) to the newest output while the reader keeps follow on.
   useEffect(() => {
     if (!live || !follow || text.length === 0) return
-    const pre = preRef.current
-    if (pre !== null) pre.scrollTop = pre.scrollHeight
+    const body = bodyRef.current
+    if (body !== null) body.scrollTop = body.scrollHeight
   }, [text, live, follow])
 
-  /** Two-click kill from the popover (the roster settles the row afterwards). */
+  /** Two-click kill from the window (the roster settles the row afterwards). */
   const kill = async (): Promise<void> => {
     if (jobs === undefined) return
     setKilling(true)
@@ -259,10 +269,13 @@ export function JobOutputPopoverContent(props: {
   }
 
   return (
-    <div className={css.popCard} data-popover-handle>
-      <div className={css.popHead}>
-        <span>{t('jobs')}</span>
-        <span className={css.popHeadActions} data-popover-no-drag>
+    <FloatingWindow
+      title={job.label}
+      onClose={onClose}
+      {...(anchor === undefined ? {} : { anchor })}
+      bodyRef={bodyRef}
+      actions={(
+        <>
           <Button
             variant="ghost"
             size="sm"
@@ -277,8 +290,43 @@ export function JobOutputPopoverContent(props: {
               })
             }}
           />
-        </span>
-      </div>
+        </>
+      )}
+      footer={(
+        <div className={css.jobPopActions}>
+          {/*
+            The host Switch draws a bare track, so its wording rides beside it —
+            the same `jobFollowTail` copy the switch already carries as its
+            accessible name.
+          */}
+          <span className={css.jobPopFollow}>
+            <Switch
+              checked={follow}
+              onChange={setFollow}
+              label={t('jobFollowTail')}
+              disabled={!live}
+            />
+            <span className={css.jobPopFollowLabel}>{t('jobFollowTail')}</span>
+          </span>
+          {live && (
+            <Button
+              variant="outline"
+              size="sm"
+              className={armed ? css.jobPopKillArmed : undefined}
+              icon={<IconStopFillRegular size={11} />}
+              disabled={killing}
+              onClick={() => {
+                if (armed) void kill()
+                else setArmed(true)
+              }}
+            >
+              {armed ? t('jobKillConfirm') : t('jobKill')}
+            </Button>
+          )}
+          {killFailed && <div className={css.popError}>{t('jobKillError')}</div>}
+        </div>
+      )}
+    >
       <div className={css.jobPopTitle}>
         <StateDot state={jobDotState(job.status)} size={6} />
         <span className={css.popTitle} title={job.label}>{job.label}</span>
@@ -296,7 +344,7 @@ export function JobOutputPopoverContent(props: {
           {observed.error !== undefined && <div className={css.popError}>{t('jobOutputError')}</div>}
           {observed.text.length > 0
             ? (
-              <div ref={preRef as unknown as React.RefObject<HTMLDivElement>} data-popover-no-drag>
+              <div>
                 <TerminalBlock
                   command={job.label}
                   output={observed.text}
@@ -311,38 +359,6 @@ export function JobOutputPopoverContent(props: {
             : <div className={css.popHint}>{t('jobNoOutput')}</div>}
         </>
       )}
-      <div className={css.jobPopActions} data-popover-no-drag>
-        {/*
-          The host Switch draws a bare track, so its wording rides beside it —
-          the same `jobFollowTail` copy the switch already carries as its
-          accessible name.
-        */}
-        <span className={css.jobPopFollow}>
-          <Switch
-            checked={follow}
-            onChange={setFollow}
-            label={t('jobFollowTail')}
-            disabled={!live}
-          />
-          <span className={css.jobPopFollowLabel}>{t('jobFollowTail')}</span>
-        </span>
-        {live && (
-          <Button
-            variant="outline"
-            size="sm"
-            className={armed ? css.jobPopKillArmed : undefined}
-            icon={<IconStopFillRegular size={11} />}
-            disabled={killing}
-            onClick={() => {
-              if (armed) void kill()
-              else setArmed(true)
-            }}
-          >
-            {armed ? t('jobKillConfirm') : t('jobKill')}
-          </Button>
-        )}
-      </div>
-      {killFailed && <div className={css.popError}>{t('jobKillError')}</div>}
-    </div>
+    </FloatingWindow>
   )
 }
