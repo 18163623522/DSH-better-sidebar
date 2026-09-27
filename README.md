@@ -183,9 +183,10 @@ dsh registry enable dsh-external/dsh-better-sidebar
 推荐添加QQ群(577011007)
 
 <div align="center">
-  <img width="220" alt="微信群二维码" src="https://github.com/user-attachments/assets/cbf211c6-e5b8-49c3-a412-7210c0b33d73" />
+  <img width="220" alt="微信群二维码" src="https://github.com/user-attachments/assets/5d727d52-7fff-4526-8b36-fb7203fb1dce" />
   <img width="220" alt="QQ群二维码" src="https://github.com/user-attachments/assets/9be34629-26ef-4537-aad4-1393c147f81c" />
 </div>
+
 
 ## 🆕 最近更新
 
