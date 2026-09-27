@@ -379,10 +379,11 @@ export function registerNativeSurface(deps: NativeSurfaceDeps): () => void {
         wanted.set(descriptor.id, () => registerDescriptor(descriptor))
       }
       for (const [descriptorId, registration] of live) {
-        // `files` is this module's OWN takeover, never a descriptor: it is
-        // owned by the editor-type switch below. Re-creating it here on every
-        // notification used to put its host-side type through a
-        // tear-down/re-register window on each store commit — and a
+        // `files` is this module's OWN takeover, never a descriptor (`wanted`
+        // only ever holds descriptor ids): its lifetime belongs to the
+        // editor-type switch below. Disposing it here on EVERY notification
+        // (any prefs/state pulse, a Session switch included) re-mounted the
+        // explorer body and lost the tree's own component state — and a
         // re-registration attempted on an already-inactive context (a plugin
         // reload) left the type registered with nobody holding its disposer,
         // so the same id could never be registered again for the rest of the

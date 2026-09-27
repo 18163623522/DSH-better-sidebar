@@ -213,6 +213,57 @@ describe('service routing into the native surface', () => {
 })
 
 describe('registerNativeSurface lifecycle (service-driven registration)', () => {
+  it('keeps the files takeover registered across a Session switch pulse', () => {
+    // Regression: `sync()`'s cleanup loop compared the live registrations with
+    // the DESCRIPTOR list, which never contains the `files` takeover — so every
+    // store/service pulse (a Session switch is one) disposed and rebuilt it.
+    // That remounts the explorer body, and a body remount loses the tree's own
+    // component state (its scroll offset) even though the record survives.
+    const store = createSidebarStore()
+    store.setSession('s1')
+    const service = createBetterSidebarService(store)
+    service.registerTab({ id: 'editor', title: 'Files', component: () => null, icon: () => null })
+    const records = createNativeTabRecords()
+
+    const registered: string[] = []
+    const disposed: string[] = []
+    const registry = {
+      current: {
+        register: (definition: { id: string; kind: string }) => {
+          registered.push(definition.kind)
+          return () => { disposed.push(definition.kind) }
+        },
+      },
+    }
+    let runInjected: (() => void) | undefined
+    const ctx = {
+      inject: (_deps: readonly string[], callback: (injected: { get: (name: string) => unknown }) => void) => {
+        runInjected = () => { callback({ get: () => registry.current }) }
+        return { dispose: () => { runInjected = undefined } }
+      },
+      get: () => registry.current,
+      slots: {
+        inject: (_key: string, callback: () => () => void) => callback(),
+        register: () => () => {},
+      },
+    }
+    const dispose = registerNativeSurface({ ctx: ctx as never, store, service, records })
+    runInjected?.()
+    const filesCount = (): number => registered.filter(kind => kind === 'files').length
+    expect(filesCount(), 'the takeover registers once').toBe(1)
+
+    // A Session switch is a store pulse: it must not tear the takeover down.
+    store.setSession('s2')
+    expect(filesCount(), 'a Session switch must not rebuild the takeover').toBe(1)
+    expect(disposed, 'and nothing was disposed on the way').toEqual([])
+
+    // Disabling the editor type DOES retire it — the lifetime it really owns.
+    store.setPrefs({ ...store.getPrefs(), tabsEnabled: { editor: false } })
+    expect(disposed, 'the editor switch retired the takeover (with the editor type)').toContain('files')
+    expect(filesCount(), 'and it was not rebuilt while disabled').toBe(1)
+    dispose()
+  })
+
   it('registers the native tab types when the tab-type registry ARRIVES after the slot declaration', () => {
     // Regression: the native seat declares `sidebar.right.pane.tab` before it
     // provides `sidebarRightTabs`, so a registration driven by the slot
