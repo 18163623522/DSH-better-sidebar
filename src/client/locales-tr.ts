@@ -370,6 +370,7 @@ export const tr: Record<string, string> = {
   settingsViewModeGraphDesc: 'Yakınlaştırma ve kaydırma ile katmanlı düğüm grafiği',
   settingsViewModeTree: 'Ağaç',
   settingsViewModeTreeDesc: 'Klasik girintili ağaç, klavye ile gezilebilir',
+  tasksFoldIdleGroup: 'N waiting',
   tasksFoldIdle: 'Idle {count}',
   tasksFoldCompleted: '✓ {count} tamamlandı',
   tasksFoldOne: 'Tamamlananlara katla',

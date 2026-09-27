@@ -353,6 +353,7 @@ export const sv: Record<string, string> = {
   settingsViewModeGraphDesc: 'Lagerindelad nodgraf med zoom och panorering',
   settingsViewModeTree: 'Träd',
   settingsViewModeTreeDesc: 'Klassiskt indragsträd, navigerbart med tangentbord',
+  tasksFoldIdleGroup: 'N waiting',
   tasksFoldIdle: 'Idle {count}',
   tasksFoldCompleted: '✓ {count} klara',
   tasksFoldOne: 'Vik ihop med klara',

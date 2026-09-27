@@ -827,9 +827,10 @@ describe('Tasks page: the shared task window', () => {
     unmount()
   })
 
-  it('reports the idle part of the aggregate instead of claiming everything is done', async () => {
-    // Three idle teammates meet the idle head count, so the team folds — and
-    // the aggregate row has to say that they are WAITING, not finished.
+  it('gives the waiting members their own aggregate row, and folds one by its chevron', async () => {
+    // Three idle teammates meet the idle head count, so they fold — into a row
+    // of their OWN: the finished work keeps its "✓ N 已完成" badge and the
+    // waiting members say "N 个待命" instead of hiding inside a ✓ count.
     const mate = (index: number): SidebarTeamMemberProjection => ({
       id: `child-${index}`, name: `mate-${index}`, role: 'teammate', phase: 'active',
     })
@@ -839,11 +840,39 @@ describe('Tasks page: the shared task window', () => {
       createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
     )
     await flushJobs()
-    const aggregate = container.querySelector('[data-graph-node="fold:root"]') as HTMLElement
+    const aggregate = container.querySelector('[data-graph-node="fold:root:idle"]') as HTMLElement
     expect(aggregate).not.toBeNull()
     expect(aggregate.textContent).toContain('3 待命')
-    // Nothing was completed, so the badge must not claim a completed count.
     expect(aggregate.textContent).not.toContain('已完成')
+    // The finished group is a DIFFERENT row (empty here: nothing is done).
+    expect(container.querySelector('[data-graph-node="fold:root"]')).toBeNull()
+    unmount()
+  })
+
+  it('offers a WAITING card its own fold chevron (idle is foldable by hand)', async () => {
+    // Below the idle head count nothing folds automatically; each waiting card
+    // still carries the chevron, which is what "点击没反应" was about.
+    const mate = (index: number): SidebarTeamMemberProjection => ({
+      id: `child-${index}`, name: `mate-${index}`, role: 'teammate', phase: 'active',
+    })
+    withTeam({ members: [{ id: 'root', name: 'lead', role: 'lead', phase: 'active' }, ...[0, 1].map(mate)] })
+    const store = makeStore(snapshotWithChildren(2))
+    const { container, unmount } = renderRoot(
+      createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
+    )
+    await flushJobs()
+    expect(container.querySelector('[data-graph-node="fold:root:idle"]')).toBeNull()
+    const chevron = container.querySelector(
+      '[data-graph-node="child-0"] button[aria-label="收进已完成聚合"]',
+    ) as HTMLButtonElement
+    expect(chevron).not.toBeNull()
+    await act(async () => { chevron.click() })
+    const aggregate = container.querySelector('[data-graph-node="fold:root:idle"]') as HTMLElement
+    expect(aggregate).not.toBeNull()
+    expect(aggregate.textContent).toContain('1 待命')
+    // The aggregate's badge says 待命 too, so the row never reads as finished.
+    expect(aggregate.querySelector('[data-card-kind="fold"]')?.textContent).toBe('N 个待命')
+    expect(container.querySelector('[data-graph-node="child-0"]')).toBeNull()
     unmount()
   })
 

@@ -362,6 +362,7 @@ export const ko: Record<string, string> = {
   settingsViewModeGraphDesc: '계층형 노드 그래프, 확대/이동 가능',
   settingsViewModeTree: '트리',
   settingsViewModeTreeDesc: '클래식 들여쓰기 트리, 키보드 탐색 지원',
+  tasksFoldIdleGroup: 'N waiting',
   tasksFoldIdle: 'Idle {count}',
   tasksFoldCompleted: '✓ {count} 완료됨',
   tasksFoldOne: '완료 항목으로 접기',

@@ -361,6 +361,7 @@ export const it: Record<string, string> = {
   settingsViewModeGraphDesc: 'Grafo di nodi a livelli, con zoom e pan',
   settingsViewModeTree: 'Albero',
   settingsViewModeTreeDesc: 'Albero a rientri classico, navigabile da tastiera',
+  tasksFoldIdleGroup: 'N waiting',
   tasksFoldIdle: 'Idle {count}',
   tasksFoldCompleted: '✓ {count} completati',
   tasksFoldOne: 'Raggruppa nei completati',

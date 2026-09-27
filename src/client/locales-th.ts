@@ -370,6 +370,7 @@ export const th: Record<string, string> = {
   settingsViewModeGraphDesc: 'กราฟโหนดแบบชั้น ซูมและเลื่อนได้',
   settingsViewModeTree: 'มุมมองต้นไม้',
   settingsViewModeTreeDesc: 'ต้นไม้แบบเยื้องคลาสสิก นำทางด้วยคีย์บอร์ดได้',
+  tasksFoldIdleGroup: 'N waiting',
   tasksFoldIdle: 'Idle {count}',
   tasksFoldCompleted: '✓ เสร็จแล้ว {count}',
   tasksFoldOne: 'พับรวมกับที่เสร็จแล้ว',

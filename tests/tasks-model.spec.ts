@@ -223,12 +223,14 @@ describe('buildTasksModel', () => {
       'root', 'live', 'mate', 'parent', 'grandchild', 'fold:root',
     ])
     const fold = model.find(node => node.kind === 'fold')
-    expect(fold).toMatchObject({ parentId: 'root', count: 2, memberIds: ['done-1', 'done-2'] })
+    expect(fold).toMatchObject({
+      foldKind: 'done', parentId: 'root', count: 2, memberIds: ['done-1', 'done-2'],
+    })
   })
 
   it('sweeps idle team members once a parent has FOLD_IDLE_MIN of them', () => {
     // Three idle teammates = a roster the reader scans, not a working set:
-    // they fold, and the aggregate keeps saying who is only waiting.
+    // they fold into their OWN row, which says they are waiting.
     const mates = ['m1', 'm2', 'm3']
     const model = buildTasksModel(input({
       catalogs: {
@@ -238,9 +240,9 @@ describe('buildTasksModel', () => {
       byId: Object.fromEntries([['root', summary('root')], ...mates.map(id => [id, summary(id)])]),
       teamMembers: mates.map(id => member({ id, name: id, status: 'idle' })),
     }))
-    expect(model.map(node => node.id)).toEqual(['root', 'fold:root'])
+    expect(model.map(node => node.id)).toEqual(['root', 'fold:root:idle'])
     expect(model.find(node => node.kind === 'fold')).toMatchObject({
-      count: 3, doneCount: 0, idleCount: 3, errorCount: 0, hasIdle: true,
+      foldKind: 'idle', count: 3, doneCount: 0, idleCount: 3, errorCount: 0,
       memberIds: ['m1', 'm2', 'm3'],
     })
   })
@@ -273,11 +275,13 @@ describe('buildTasksModel', () => {
         member({ id: 'busy', name: 'busy', status: 'running' }),
       ],
     }))
-    expect(model.map(node => node.id)).toEqual(['root', 'busy', 'fold:root'])
-    expect(model.find(node => node.kind === 'fold')).toMatchObject({ idleCount: 3, doneCount: 0 })
+    expect(model.map(node => node.id)).toEqual(['root', 'busy', 'fold:root:idle'])
+    expect(model.find(node => node.kind === 'fold')).toMatchObject({
+      foldKind: 'idle', idleCount: 3, doneCount: 0,
+    })
   })
 
-  it('counts a mixed aggregate per state so the tally cannot over-claim', () => {
+  it('keeps the finished and the waiting members in SEPARATE rows', () => {
     const model = buildTasksModel(input({
       catalogs: {
         root: catalog([child('m1'), child('m2'), child('m3'), child('done-1'), child('failed-1')]),
@@ -293,8 +297,31 @@ describe('buildTasksModel', () => {
         member({ id: 'failed-1', name: 'failed-1', phase: 'failed', status: 'failed' }),
       ],
     }))
+    const folders = model.filter(node => node.kind === 'fold')
+    expect(folders.map(node => node.id)).toEqual(['fold:root', 'fold:root:idle'])
+    // finished work + the failure, with the failure called out beside the ✓
+    expect(folders[0]).toMatchObject({
+      foldKind: 'done', count: 2, doneCount: 1, idleCount: 0, errorCount: 1,
+      memberIds: ['done-1', 'failed-1'],
+    })
+    // …and the waiting members in their own row, which claims no completion
+    expect(folders[1]).toMatchObject({
+      foldKind: 'idle', count: 3, doneCount: 0, idleCount: 3, errorCount: 0,
+      memberIds: ['m1', 'm2', 'm3'],
+    })
+  })
+
+  it('folds a single idle member into the IDLE row from its own chevron', () => {
+    const model = buildTasksModel(input({
+      catalogs: { root: catalog([child('mate')]) },
+      byId: { root: summary('root'), mate: summary('mate') },
+      teamMembers: [member({ id: 'mate', name: 'mate', status: 'idle' })],
+      folded: false,
+      foldedIds: new Set(['mate']),
+    }))
+    expect(model.map(node => node.id)).toEqual(['root', 'fold:root:idle'])
     expect(model.find(node => node.kind === 'fold')).toMatchObject({
-      count: 5, doneCount: 1, idleCount: 3, errorCount: 1,
+      foldKind: 'idle', count: 1, idleCount: 1,
     })
   })
 

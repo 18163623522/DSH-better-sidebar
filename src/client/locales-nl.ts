@@ -368,6 +368,7 @@ export const nl: Record<string, string> = {
   settingsViewModeGraphDesc: 'Gelaagde knoppengrafiek met in- en uitzoomen en pannen',
   settingsViewModeTree: 'Boom',
   settingsViewModeTreeDesc: 'Klassieke inspringboom, navigeerbaar met het toetsenbord',
+  tasksFoldIdleGroup: 'N waiting',
   tasksFoldIdle: 'Idle {count}',
   tasksFoldCompleted: '✓ {count} voltooid',
   tasksFoldOne: 'Vouwen bij afgerond',

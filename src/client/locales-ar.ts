@@ -371,6 +371,7 @@ export const ar: Record<string, string> = {
   settingsViewModeGraphDesc: 'مخطط عُقد متدرج مع تكبير وتحريك',
   settingsViewModeTree: 'شجرة',
   settingsViewModeTreeDesc: 'شجرة كلاسيكية بمسافات بادئة، قابلة للتنقل بلوحة المفاتيح',
+  tasksFoldIdleGroup: 'N waiting',
   tasksFoldIdle: 'Idle {count}',
   tasksFoldCompleted: '✓ {count} مكتمل',
   tasksFoldOne: 'الطي مع المكتملة',

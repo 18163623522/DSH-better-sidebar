@@ -41,7 +41,7 @@ import {
   type GraphBox,
 } from './tasks-graph-layout.ts'
 import {
-  agentIdentity, agentMeta, foldBadgeCount, foldPreviews, foldTally, TaskLine, WorkflowGlyph, workflowMeta,
+  agentIdentity, agentMeta, foldPreviews, foldTally, TaskLine, WorkflowGlyph, workflowMeta,
 } from './tasks-shared.tsx'
 import { CardBar, CardTop, phaseClass, type CardKind } from './tasks-card.tsx'
 import { doneActivityTitle, liveActivityLabel } from './process-labels.ts'
@@ -558,6 +558,14 @@ function renderAgentNode(
   onFold?: (node: TasksAgentNode) => void,
 ): ReactNode {
   const settled = node.state === 'done' || node.state === 'error'
+  /**
+   * Whether this card offers its own fold chevron. A WAITING member counts:
+   * it is not executing either, and the chevron is the reader's own trigger
+   * (independent of the page-level rule and of the idle head count). The
+   * `settled` flag stays a separate idea — that one controls how the card
+   * RECEDES, and an idle teammate is not finished work.
+   */
+  const foldable = settled || node.state === 'idle'
   return (
     <div
       key={node.id}
@@ -593,7 +601,7 @@ function renderAgentNode(
         state={node.state}
         running={node.state === 'running'}
         {...(barActivity(node) === undefined ? {} : { activity: barActivity(node) })}
-        {...(settled && !node.current && onFold !== undefined
+        {...(foldable && !node.current && onFold !== undefined
           ? { onFold: () => { onFold(node) } }
           : {})}
       />
@@ -667,16 +675,17 @@ function renderFoldNode(
     >
       <CardTop
         kind="fold"
-        count={foldBadgeCount(node)}
-        badgeIdle={node.doneCount === 0}
+        count={node.count}
+        foldKind={node.foldKind}
         depth={node.depth}
         name={foldPreviews(node.previews)}
         extraClass={css.cardNamePlain}
       />
-      <CardBar state="done" stateWord={false}>
-        {/* The tally SAYS what was folded (✓N 已完成 · N 待命 · 出错 N): the
-            badge alone would read as "all done" once idle members ride along,
-            and the bar is too narrow for a tally AND an action word. */}
+      <CardBar state={node.foldKind === 'idle' ? 'idle' : 'done'} stateWord={false}>
+        {/* The bar SAYS what the row holds — "✓ N 已完成 · 出错 N" for finished
+            work (a stray failure would otherwise hide inside the ✓) and
+            "N 待命" for the waiting members. No action word: the tally needs
+            the room and the chevron already points at 展开. */}
         <span className={css.barActivity} title={foldTally(node)}>{foldTally(node)}</span>
         <span className={css.barFold} aria-hidden="true">
           <IconChevronDownOutlineRegular size={12} />

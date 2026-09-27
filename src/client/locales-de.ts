@@ -356,6 +356,7 @@ export const de: Record<string, string> = {
   settingsViewModeGraphDesc: 'Geschichtetes Knotendiagramm mit Zoom und Schwenken',
   settingsViewModeTree: 'Baum',
   settingsViewModeTreeDesc: 'Klassischer Einrückungsbaum, per Tastatur navigierbar',
+  tasksFoldIdleGroup: 'N waiting',
   tasksFoldIdle: 'Idle {count}',
   tasksFoldCompleted: '✓ {count} abgeschlossen',
   tasksFoldOne: 'Zu Erledigten falten',

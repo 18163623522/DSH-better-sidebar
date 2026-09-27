@@ -27,27 +27,29 @@ import css from './tasks-graph.module.css'
 
 /** The five kinds of card the graph draws. */
 export type CardKind = 'main' | 'subagent' | 'teammate' | 'workflow' | 'fold'
+/** Which aggregate a fold card is (`done` = finished/failed, `idle` = waiting). */
+export type CardFoldKind = 'done' | 'idle'
 
 /**
  * The kind badge's word: the SAME vocabulary the rest of the page uses (the
  * header already calls the root "主代理"), so no sixth word is invented for it.
  *
- * The aggregate's badge says 已完成 only when something WAS completed: an
- * aggregate that sweeps idle teammates (or only failed rows) and still claimed
- * "✓ N 已完成" would be lying about what is inside it, so `foldBadgeIdle`
- * switches it to the idle word for exactly that case.
+ * The two aggregates say different things, because they hold different work:
+ * `done` keeps "✓ N 已完成" (finished and failed rows alike) while `idle` says
+ * "N 个待命". One mixed row could only have hedged ("✓ 2 已完成 · 3 待命"),
+ * which is exactly what splitting them removed.
  * @param kind - card kind.
  * @param count - folded member count (the fold aggregate's badge only).
- * @param foldBadgeIdle - the aggregate holds no completed row (see above).
+ * @param foldKind - which aggregate (`done` unless stated).
  */
-export function cardKindLabel(kind: CardKind, count = 0, foldBadgeIdle = false): string {
+export function cardKindLabel(kind: CardKind, count = 0, foldKind: CardFoldKind = 'done'): string {
   switch (kind) {
     case 'main': return t('subagentMainAgent')
     case 'subagent': return t('tasksKindSubagent')
     case 'teammate': return t('tasksKindTeammate')
     case 'workflow': return t('tasksKindWorkflow')
-    case 'fold': return foldBadgeIdle
-      ? t('tasksFoldIdle', { count })
+    case 'fold': return foldKind === 'idle'
+      ? t('tasksFoldIdleGroup')
       : t('tasksFoldCompleted', { count })
   }
 }
@@ -77,8 +79,8 @@ export function CardTop(props: {
   kind: CardKind
   /** Folded member count, for the aggregate's badge. */
   count?: number
-  /** Whether the aggregate holds no completed row (its badge switches word). */
-  badgeIdle?: boolean
+  /** Which aggregate this card is, when `kind` is `fold`. */
+  foldKind?: CardFoldKind
   /** Tree depth → the group colour of the badge and the card's left edge. */
   depth: number
   /** Workflow phase (a member's badge). */
@@ -92,12 +94,12 @@ export function CardTop(props: {
   /** Extra rows the caller appends (the team task line). */
   children?: ReactNode
 }): ReactNode {
-  const { kind, count, badgeIdle, depth, phase } = props
+  const { kind, count, foldKind, depth, phase } = props
   return (
     <span className={clsx(css.cardTop, depthClass(depth))}>
       <span className={css.cardBadges}>
         <span className={css.kindBadge} data-card-kind={kind}>
-          {cardKindLabel(kind, count ?? 0, badgeIdle === true)}
+          {cardKindLabel(kind, count ?? 0, foldKind ?? 'done')}
         </span>
         {phase !== undefined && (
           <span

@@ -288,22 +288,18 @@ export function foldPreviews(previews: readonly string[]): string {
 }
 
 /**
- * The fold aggregate's state tally — `✓ 2 已完成 · 3 待命 · 1 出错`.
+ * The fold aggregate's bar text.
  *
- * The aggregate has to SAY what it swallowed: the badge's "✓ N 已完成" is
- * true only for the settled part, and an aggregate that also sweeps idle
- * members (or errors) would otherwise read as a lie. Parts that are zero are
- * omitted, so an all-done aggregate stays exactly as short as it was.
+ * The two groups read differently on purpose. The `done` row counts its
+ * finished members and calls out failures beside them (`✓ 4 已完成 · 出错 1`
+ * — a row of nothing but failures is `出错 N`), because "✓ N 已完成" alone
+ * would quietly include them. The `idle` row says what the members are doing
+ * now: nothing (`N 待命`), which is why they were swept away.
  */
 export function foldTally(node: TasksFoldNode): string {
+  if (node.foldKind === 'idle') return t('tasksFoldIdle', { count: node.count })
   const parts: string[] = []
   if (node.doneCount > 0) parts.push(t('tasksFoldCompleted', { count: node.doneCount }))
-  if (node.idleCount > 0) parts.push(t('tasksFoldIdle', { count: node.idleCount }))
   if (node.errorCount > 0) parts.push(`${t('tasksStateError')} ${node.errorCount}`)
   return parts.join(' · ')
-}
-
-/** The aggregate's cross-state badge word: 已完成 unless nothing is done. */
-export function foldBadgeCount(node: TasksFoldNode): number {
-  return node.doneCount > 0 ? node.doneCount : node.count
 }

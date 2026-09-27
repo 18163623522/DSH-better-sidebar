@@ -368,6 +368,7 @@ export const ru: Record<string, string> = {
   settingsViewModeGraphDesc: 'Многоуровневый граф узлов с масштабированием и панорамированием',
   settingsViewModeTree: 'Дерево',
   settingsViewModeTreeDesc: 'Классическое дерево с отступами, навигация с клавиатуры',
+  tasksFoldIdleGroup: 'N waiting',
   tasksFoldIdle: 'Idle {count}',
   tasksFoldCompleted: '✓ {count} завершено',
   tasksFoldOne: 'Свернуть в завершённые',
