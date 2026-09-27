@@ -155,6 +155,46 @@ describe('buildTasksModel', () => {
     expect(agents(model).find(node => node.id === 'w')?.state).toBe('running')
   })
 
+  it('folds a settled team member when the READER folds it by hand', () => {
+    // The card's chevron is drawn whenever a node is settled, and a teammate
+    // can settle as 出错 (a failed roster row). Auto-fold keeps team members
+    // out of the aggregate — a roster row is a real, resumable worker, not a
+    // settled subagent to sweep away — but a manual fold is the reader's
+    // explicit request for THAT node and must not be silently dropped.
+    const model = buildTasksModel(input({
+      catalogs: { root: catalog([child('mate'), child('sub')]), sub: catalog([]) },
+      byId: { root: summary('root'), mate: summary('mate'), sub: summary('sub') },
+      teamMembers: [member({ id: 'mate', phase: 'failed', status: 'failed' })],
+      folded: false,
+      foldedIds: new Set(['mate', 'sub']),
+    }))
+    expect(model.map(node => node.id)).toEqual(['root', 'fold:root'])
+    expect(model.find(node => node.kind === 'fold')).toMatchObject({
+      count: 2, memberIds: ['mate', 'sub'],
+    })
+  })
+
+  it('leaves a failed teammate alone under the AUTO rule (only a manual fold takes it)', () => {
+    const model = buildTasksModel(input({
+      catalogs: { root: catalog([child('mate'), child('sub')]), sub: catalog([]) },
+      byId: { root: summary('root'), mate: summary('mate'), sub: summary('sub') },
+      teamMembers: [member({ id: 'mate', phase: 'failed', status: 'failed' })],
+      folded: true,
+    }))
+    expect(model.map(node => node.id)).toEqual(['root', 'mate', 'fold:root'])
+  })
+
+  it('never folds a RUNNING team member, even when the reader clicks its chevron', () => {
+    const model = buildTasksModel(input({
+      catalogs: { root: catalog([child('mate')]) },
+      byId: { root: summary('root'), mate: summary('mate') },
+      teamMembers: [member({ id: 'mate', phase: 'active', status: 'running' })],
+      folded: false,
+      foldedIds: new Set(['mate']),
+    }))
+    expect(model.map(node => node.id)).toEqual(['root', 'mate'])
+  })
+
   it('folds settled leaves per parent and keeps running/teammate/current rows', () => {
     const model = buildTasksModel(input({
       catalogs: {

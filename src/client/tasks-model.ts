@@ -130,9 +130,12 @@ export interface TasksModelInput {
   /** Whether settled leaves collapse into fold nodes. */
   folded: boolean
   /**
-   * Nodes the READER folded by hand (a completed card's bar chevron). They fold
-   * under the same guards as the global rule, so a manual fold can never hide a
-   * running or branching node — it only adds a per-node trigger.
+   * Nodes the READER folded by hand (a settled card's bar chevron). This is a
+   * PER-NODE trigger, not a second copy of the global rule, so it only has to
+   * satisfy the guards that protect the reader from hiding live work: never a
+   * running node, never the current session, never a branching one. It is
+   * deliberately NOT subject to {@link isAutoFoldable} — the chevron is drawn
+   * on every settled card, and a trigger that cannot fire is a dead control.
    */
   foldedIds?: ReadonlySet<string>
 }
@@ -143,6 +146,35 @@ function childLabel(
   summary: SidebarSessionSummary | undefined,
 ): string {
   return entry.label ?? summary?.displayTitle ?? entry.id
+}
+
+/**
+ * Whether the page-level fold rule may sweep this node into its parent's
+ * aggregate. Everything the AUTO rule excludes, it excludes for a reason:
+ *
+ * - a branching node or one with a run of its own — folding it hides a whole
+ *   branch, not a finished leaf;
+ * - the session on screen — the "you are here" marker must stay reachable;
+ * - a TEAMMATE — a roster row is a real, resumable worker the reader is
+ *   watching, not a settled subagent to sweep away;
+ * - anything not settled — 运行中 must never be hidden.
+ *
+ * The manual trigger ({@link TasksModelInput.foldedIds}) shares only the last
+ * two guards; see `nodeBlocksFold`.
+ */
+function isAutoFoldable(node: TasksAgentNode, runsByOrigin: Map<string, WorkflowRunView[]>): boolean {
+  const isLeaf = node.hasChildren !== true && !runsByOrigin.has(node.id)
+  return isLeaf && node.team === undefined
+}
+
+/**
+ * The guards BOTH fold triggers answer to: only a SETTLED node (done/error)
+ * that is not the session on screen may be hidden — 运行中 and 待命 nodes stay
+ * visible under either trigger.
+ */
+function nodeFoldable(node: TasksAgentNode, currentSessionId: string): boolean {
+  const settled = node.state === 'done' || node.state === 'error'
+  return settled && !node.current && node.id !== currentSessionId
 }
 
 /**
@@ -323,23 +355,17 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
     const visibleAgentChildren = agentChildren.filter(child => child.parentId === parentId)
 
     // Fold: settled agent leaves of THIS parent collapse into one aggregate.
-    // `folded` is the page-level rule; `foldedIds` are the nodes the reader
-    // folded by hand from their own card bar. Both run through the SAME guards.
+    // Two triggers, two guard sets: the page-level `folded` rule also spares
+    // team members and branching nodes; a manual `foldedIds` fold is the
+    // reader asking for THAT node, so it only spares live/current work.
     const kept: TasksAgentNode[] = []
     const foldCandidates: TasksAgentNode[] = []
     for (const child of visibleAgentChildren) {
-      // A leaf: no durable children (catalog signal) and no workflow run of
-      // its own — folding a parent would hide its live branch.
-      const isLeaf = child.hasChildren !== true && !runsByOrigin.has(child.id)
-      if (
-        (folded || (foldedIds?.has(child.id) ?? false)) && isLeaf && !child.current
-        && child.team === undefined
-        && (child.state === 'done' || child.state === 'error')
-      ) {
-        foldCandidates.push(child)
-      } else {
-        kept.push(child)
-      }
+      const foldable = nodeFoldable(child, currentSessionId)
+      const auto = folded && foldable && isAutoFoldable(child, runsByOrigin)
+      const manual = foldedIds?.has(child.id) === true && foldable
+      if (auto || manual) foldCandidates.push(child)
+      else kept.push(child)
     }
 
     for (const child of kept) {
@@ -362,14 +388,13 @@ export function buildTasksModel(input: TasksModelInput): TasksNode[] {
       if (runNode === undefined) continue
       out.push(runNode)
       const members = memberNodes[index] ?? []
-      // Fold settled members of the run too (same leaf rule, run as parent).
+      // The run's own members fold under the same two triggers; they need no
+      // leaf test (they are leaves by construction here) and no team guard
+      // (a run member is not a roster row the reader is watching).
       const keptMembers: TasksAgentNode[] = []
       const foldedMembers: TasksAgentNode[] = []
       for (const member of members) {
-        if (
-          (folded || (foldedIds?.has(member.id) ?? false)) && !member.current
-          && (member.state === 'done' || member.state === 'error')
-        ) {
+        if ((folded || foldedIds?.has(member.id) === true) && nodeFoldable(member, currentSessionId)) {
           foldedMembers.push(member)
         } else {
           keptMembers.push(member)
