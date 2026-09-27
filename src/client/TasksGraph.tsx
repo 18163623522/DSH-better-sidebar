@@ -30,7 +30,8 @@ import {
 } from 'react'
 import clsx from 'clsx'
 import {
-  Button, IconChecklistOutlineRegular, IconChevronDownOutlineRegular, IconFullscreenOutlineRegular,
+  Button, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular,
+  IconFullscreenOutlineRegular,
   IconLoadingOutlineRegular, IconTreeCornerRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TasksAgentNode, TasksFoldNode, TasksNode, TasksWorkflowNode } from './tasks-model.ts'
@@ -164,6 +165,14 @@ export function ViewModeToggle(props: {
 }
 
 /** The fold toggle (expand / re-collapse the settled aggregates). */
+/**
+ * The cluster's fold switch. Its glyph names the action it will take, not the
+ * state it is in: while the settled nodes are folded the button offers to
+ * EXPAND (chevron down), and while they are open it offers to FOLD (chevron
+ * up, the same collapse direction the cards' own bar buttons wear). The old
+ * single checklist glyph read identically in both states, which is what the
+ * reader reported as "折叠按钮和展开一样".
+ */
 export function FoldToggleButton(props: { folded: boolean; onToggleFold(): void }): ReactNode {
   const { folded, onToggleFold } = props
   return (
@@ -171,7 +180,9 @@ export function FoldToggleButton(props: { folded: boolean; onToggleFold(): void 
       variant="ghost"
       size="sm"
       className={clsx(css.controlBtn, folded && css.controlBtnActive)}
-      icon={<IconChecklistOutlineRegular size={13} />}
+      icon={folded
+        ? <IconChevronDownOutlineRegular size={13} />
+        : <IconChevronUpOutlineRegular size={13} />}
       aria-pressed={folded}
       aria-label={t(folded ? 'tasksFoldExpand' : 'tasksFoldCollapse')}
       title={t(folded ? 'tasksFoldExpand' : 'tasksFoldCollapse')}

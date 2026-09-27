@@ -19,7 +19,7 @@
  */
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
-import { IconChevronDownOutlineRegular, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronUpOutlineRegular, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TasksNodeState } from './tasks-model.ts'
 import { nodeDotState, stateLabel } from './tasks-shared.tsx'
 import { t } from './locales.ts'
@@ -150,7 +150,13 @@ export function CardBar(props: {
                 props.onFold?.(event)
               }}
             >
-              <IconChevronDownOutlineRegular size={12} />
+              {/*
+                The COLLAPSE direction (chevron up = gather into the group): the
+                aggregate card at the other end of the same motion offers the
+                EXPAND one (chevron down). Two opposite actions must not share
+                a glyph — the first cut drew both as a down chevron.
+              */}
+              <IconChevronUpOutlineRegular size={12} />
             </button>
           )}
         </>

@@ -161,6 +161,26 @@ describe('skin contract: the plugin owns no color of its own', () => {
     }
   })
 
+  it('the running bar sweeps the FULL width (a band either side, not a partial blob)', () => {
+    // Reader report: the first cut moved a 45%-wide band with
+    // `background-position`, so the bar was only ever partially lit. The
+    // corrected rule is a bar-wide band whose TRANSFORM travels one full width
+    // either side of the bar — entered at the left edge, covering the bar
+    // mid-flight, gone past the right edge.
+    const styles = readFileSync(resolve(ROOT, 'src/client/tasks-graph.module.css'), 'utf8')
+    const block = /\.cardBar\[data-running='true'\]::after \{([\s\S]*?)\n\}/.exec(styles)?.[1]
+    if (block === undefined) throw new Error('the running bar sweep rule must exist')
+    expect(block).toContain('width: 100%')
+    expect(block).toContain('transform: translateX(-100%)')
+    // No residual background-position travel (the partial-sweep mechanism).
+    expect(block).not.toContain('background-position')
+    expect(block).not.toContain('background-size')
+    const frames = /@keyframes dsh-tasks-bar-sweep \{([\s\S]*?)\n\}/.exec(styles)?.[1]
+    if (frames === undefined) throw new Error('the sweep keyframes must exist')
+    expect(frames).toContain('transform: translateX(-100%)')
+    expect(frames).toContain('transform: translateX(100%)')
+  })
+
   it('the empty-pane welcome capsule follows the host guide recipe', () => {
     // The card is the same surface as DSH's own guide capsule ("pick what
     // opens here"), so this pins the shared geometry and the token-only

@@ -718,6 +718,35 @@ describe('Tasks page: the shared task window', () => {
     unmount()
   })
 
+  it('draws COLLAPSE and EXPAND with different glyphs (cluster, card, aggregate)', async () => {
+    const store = makeStore(snapshotWithChildren(2))
+    const { container, unmount } = renderRoot(
+      createElement(SubagentView, { sessionId: 'root', active: true, ctx: makeCtx(store) }),
+    )
+    await flushJobs()
+    /** The icon markup of one control (the glyph is what the reader compares). */
+    const glyph = (selector: string): string =>
+      container.querySelector(selector)?.querySelector('svg')?.innerHTML ?? ''
+
+    // Folded by default: the cluster's switch offers EXPAND, and it wears the
+    // same expand glyph the aggregate card's bar does.
+    const expandGlyph = glyph('button[aria-label="展开已完成的节点"]')
+    expect(expandGlyph).not.toBe('')
+    expect(glyph('[data-graph-node^="fold:"] [data-card-bar]')).toBe(expandGlyph)
+
+    // Unfold: the cards' own control COLLAPSES one node, and it must not share
+    // the expand glyph (the reader's report was that both looked identical).
+    await act(async () => {
+      (container.querySelector('button[aria-label="展开已完成的节点"]') as HTMLButtonElement).click()
+    })
+    const collapseGlyph = glyph('[data-graph-node] button[aria-label="收进已完成聚合"]')
+    expect(collapseGlyph).not.toBe('')
+    expect(collapseGlyph).not.toBe(expandGlyph)
+    // The cluster switch flips to the collapse direction with the same glyph.
+    expect(glyph('button[aria-label="折叠已完成的节点"]')).toBe(collapseGlyph)
+    unmount()
+  })
+
   it('offers no fold chevron on a running card or on the current session', async () => {
     livePayload = { 'child-0': { running: true, summary: { counts: [], runningDetail: '' } } }
     const store = makeStore(snapshotWithChildren(2))
