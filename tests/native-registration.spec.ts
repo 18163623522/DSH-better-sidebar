@@ -14,12 +14,19 @@
  * `tab type id "…" is already registered`. The kind then renders the host's
  * "nothing here can view this kind of content" face until a page refresh.
  *
- * Two properties keep that impossible, and both are asserted here:
+ * Three properties keep that impossible, and all are asserted here:
  *   1. an unrelated notification never re-creates the `files` takeover (the
  *      tear-down/re-register window the reload used to walk into);
  *   2. a registration that fails after its type was registered releases the
  *      type again, so the id stays registrable and one broken descriptor cannot
- *      take the others down with it.
+ *      take the others down with it;
+ *   3. slots installed before the failing one are released too (the partial
+ *      release inside `registerSlots`).
+ *
+ * The assertions are written against the fake registry's EVENT LOG, not only
+ * against the set of live ids: an orphaned type leaves the key set identical to
+ * a healthy one, so a key-set assertion would pass on the unfixed code and pin
+ * nothing.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { registerNativeSurface } from '../src/client/native/index.ts'
@@ -58,19 +65,28 @@ function createRegistry() {
 /**
  * A fake client context: `slots.inject` runs its callback synchronously (the
  * real one resolves the declaration and calls `ctx.effect`, which throws while
- * `inactive`), `slots.register` throws for a key listed in `failKeys`, and
+ * `inactive`), a slot listed in `failSlots` throws from `slots.register`, and
  * `inject` hands back the registry while honouring the callback's own teardown.
+ *
+ * Slot failures are keyed by `name::key` — NOT by `key` alone. Both slots of a
+ * descriptor share the same key, so a key-keyed failure can only ever fail the
+ * FIRST slot; failing the second one for a single descriptor is the only shape
+ * that exercises `registerSlots`' partial release (the first slot is already
+ * installed when the second throws).
  */
 function createHost() {
   const registry = createRegistry()
+  /** Slot registrations and releases, in order (the partial-release witness). */
+  const slotEvents: string[] = []
   // One mutable state object the ctx closures read: the test flips it after
   // the host was built.
   const state = {
     /** True while the plugin's context is being torn down (the reload case). */
     inactive: false,
-    /** Native ids whose slot registration fails. */
-    failKeys: new Set<string>(),
+    /** `name::key` slots whose registration throws. */
+    failSlots: new Set<string>(),
   }
+  const slotId = (options: { name: string; key?: string }): string => `${options.name}::${options.key ?? ''}`
   const ctx = {
     inject: (
       _deps: readonly string[],
@@ -85,15 +101,15 @@ function createHost() {
         if (state.inactive) throw new Error('cannot create effect on inactive context')
         return typeof callback === 'function' ? callback() : () => {}
       },
-      register: (options: { key?: string }) => {
-        if (options.key !== undefined && state.failKeys.has(options.key)) {
-          throw new Error(`slot registration for "${options.key}" failed`)
-        }
-        return () => {}
+      register: (options: { name: string; key?: string }) => {
+        const id = slotId(options)
+        if (state.failSlots.has(id)) throw new Error(`slot registration for "${id}" failed`)
+        slotEvents.push(`register ${id}`)
+        return () => { slotEvents.push(`release ${id}`) }
       },
     },
   }
-  return { registry, state, ctx }
+  return { registry, slotEvents, state, ctx }
 }
 
 /** A store + service with two enabled descriptors, plus the record registry. */
@@ -115,31 +131,42 @@ function silenceFailures(): { restore: () => void; messages: string[] } {
   return { restore: () => { spy.mockRestore() }, messages }
 }
 
+/**
+ * The phase labels a surface reports through the client's visible diagnostic
+ * channel (`reportFailure` → `fail('native ' + phase, error)`).
+ */
+function collectReports(): { phases: string[]; report: (phase: string) => void } {
+  const phases: string[] = []
+  return { phases, report: (phase: string) => { phases.push(phase) } }
+}
+
 describe('native tab registration lifecycle', () => {
   it('releases a type whose slot registration failed, and can register it again later', () => {
     const host = createHost()
     const { store, service, records } = createPlugins()
-    const log = silenceFailures()
-    try {
-      // The reload: the context goes inactive while notifications are still
-      // arriving, so every slot registration fails after its type registered.
-      host.state.inactive = true
-      expect(() => registerNativeSurface({ ctx: host.ctx as never, store, service, records })).not.toThrow()
-      expect([...host.registry.registered.keys()], 'a failed registration leaves no type behind').toEqual([])
+    const reports = collectReports()
+    // The reload: the context goes inactive while notifications are still
+    // arriving, so every slot registration fails after its type registered.
+    host.state.inactive = true
+    expect(() => registerNativeSurface({
+      ctx: host.ctx as never, store, service, records, reportFailure: reports.report,
+    })).not.toThrow()
+    expect([...host.registry.registered.keys()], 'a failed registration leaves no type behind').toEqual([])
+    // Each of them is reported through the visible channel, not swallowed.
+    expect(reports.phases.sort()).toEqual(['register editor', 'register files', 'register git'])
 
-      // The context comes back (the reload's next activation): the same ids
-      // must be registrable — no "already registered" from the orphan.
-      host.state.inactive = false
-      host.state.failKeys.clear()
-      store.setPrefs(store.getPrefs())
-      expect([...host.registry.registered.keys()].sort()).toEqual([
-        'dsh-better-sidebar:editor',
-        'dsh-better-sidebar:files',
-        'dsh-better-sidebar:git',
-      ])
-    } finally {
-      log.restore()
-    }
+    // The context comes back (the reload's next activation): the same ids must
+    // be registrable — no "already registered" from the orphan. The event log
+    // is the discriminating assertion: a leaked type would keep the key set
+    // looking correct while the retry throws into the same catch.
+    host.state.inactive = false
+    host.registry.events.length = 0
+    store.setPrefs(store.getPrefs())
+    expect(host.registry.events.sort()).toEqual([
+      'register dsh-better-sidebar:editor',
+      'register dsh-better-sidebar:files',
+      'register dsh-better-sidebar:git',
+    ])
   })
 
   it('never re-creates the "files" takeover on an unrelated notification', () => {
@@ -159,23 +186,34 @@ describe('native tab registration lifecycle', () => {
   it('keeps the other tab types when one descriptor cannot register', () => {
     const host = createHost()
     const { store, service, records } = createPlugins()
-    host.state.failKeys.add('dsh-better-sidebar:git')
+    const reports = collectReports()
+    // The SECOND slot of ONE descriptor: its type and its body slot are
+    // already installed when this one throws.
+    host.state.failSlots.add('sidebar.right.pane.tab.title::dsh-better-sidebar:git')
     const log = silenceFailures()
     try {
-      expect(() => registerNativeSurface({ ctx: host.ctx as never, store, service, records })).not.toThrow()
+      expect(() => registerNativeSurface({
+        ctx: host.ctx as never, store, service, records, reportFailure: reports.report,
+      })).not.toThrow()
       expect([...host.registry.registered.keys()].sort()).toEqual([
         'dsh-better-sidebar:editor',
         'dsh-better-sidebar:files',
       ])
+      expect(reports.phases).toEqual(['register git'])
+      // The body slot installed before the failure was released; the failing
+      // one never registered, so there is nothing to release for it.
+      expect(host.slotEvents.filter(event => event === 'release sidebar.right.pane.tab::dsh-better-sidebar:git'))
+        .toHaveLength(1)
+      expect(host.slotEvents.filter(event => event === 'release sidebar.right.pane.tab.title::dsh-better-sidebar:git'))
+        .toEqual([])
+
       // The broken descriptor is retried on the next sync instead of being
-      // written off, and the retry succeeds once it can register.
-      host.state.failKeys.clear()
+      // written off — and the retry REGISTERS it (event log), rather than
+      // merely ending up with a key set a leaked type produces as well.
+      host.state.failSlots.clear()
+      host.registry.events.length = 0
       store.setPrefs(store.getPrefs())
-      expect([...host.registry.registered.keys()].sort()).toEqual([
-        'dsh-better-sidebar:editor',
-        'dsh-better-sidebar:files',
-        'dsh-better-sidebar:git',
-      ])
+      expect(host.registry.events).toEqual(['register dsh-better-sidebar:git'])
     } finally {
       log.restore()
     }
