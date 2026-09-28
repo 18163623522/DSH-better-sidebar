@@ -2,6 +2,16 @@
 
 > 本文档收录 dsh-better-sidebar 的完整发布历史（最新版摘要见 [README](README.md)；同步发布于 [GitHub Releases](https://github.com/omdsh-dev/DSH-better-sidebar/releases)）。
 
+### v0.24.0
+
+> 📦 **支持线前移**：仅适配 DSH **0.2.0-rc.1+**（peer 下限 `^0.2.0-rc.1`，CI 钉 `@deepseek-ai/dsh@0.2.0-rc.1`）。**0.1.7 线（含 npm `latest` 的 0.1.7-rc.2）请固定 v0.23.0**——宿主 0.2.0 的启动兼容性预检按 `semver.satisfies(宿主版本, peer范围, {includePrerelease:true})` 判定，caret 范围跨 minor 不成立（实测 `^0.1.7-rc.1` 对 `0.2.0-rc.1` 为 **false**，整行会被静默禁用），因此本版不保留任何 0.1.7 兼容分支。
+
+- 📦 **基线抬到 `0.2.0-rc.1`**：14 条 DSH peer + 27 个 `@deepseek-ai/*` devDependencies 同步钉版；`dsh.plugin.json` 的 `engines.dsh` 随之前移；挂载 lane（`scripts/e2e-common.sh`）与 CI 钉版同步。
+- 🔍 **适配前的实测结论（纯增量，故无运行时改动）**：本插件消费的 19 个宿主包里**零个值导出被删除**；类型面仅 `dsh-client-ui-primitives`（`DisclosureRow`/`TextShimmer`/`Tooltip` 新增可选 prop、overlay 顶部内距）、`dsh-session`（新增 `ToolCallRecovery`）、`dsh-api-remotes`（新增 product-analytics remote）有变化；会话格式仍 **v4**（无迁移包）、`SUBAGENT_DESCRIPTOR_VERSION` 仍 **3**、`dsh/lib/bin.js`（`dsh plugin` / `dsh web` / 启动行 / `--version`）与 `dsh-client-modules` 运行时**逐字节相同**、web profile 的客户端 inject 列表相同、`ui-primitives` 的裸 import 集合相同（无需新增测试期依赖）。
+- 🧩 **宿主 web profile 组成变化与本插件无关但已核对**：新增 desktop-only 的 `product-analytics` / `desktop-product-telemetry`（web profile 上 `disabled`）；原先就 `disabled` 的 `time-context` / `schedule` / `ui-schedule` 三行移入可选的 `dsh-experimental-schedule-bundle`。「宿主 tab 只有 terminal、browser 缺席」的挂载断言不受影响。
+- 🧪 **测试与规则**：`tests/market-manifest.spec.ts` 的 peer 形状断言改为钉当前基线 tuple，并把「caret 跨 minor 必失效」写进注释（这条与 §3.4 第 12 条里「includePrerelease 更宽松」的经验不冲突：宽松只发生在同一 minor 内）。
+- ⚠️ **唯一残留**：可选集成 `@huanlin/dsh-plugin-better-locale`（未被任何源码/测试 import，仅结构化运行时探测）的 peer 钉在 `^0.1.0-rc.8`，其最新 0.4.3 同样钉 `^0.1.5-rc.2`——两者在 0.2.0 上都会被宿主预检禁用，故 `pnpm peers check` 会报它的 5 条 unmet peer。这是上游未适配 0.2.0 的结果，与本插件自身 14 条 peer 无关。
+
 ### v0.22.0
 
 > 📦 **正式版**（npm `latest`）：仅支持 **DSH 0.1.7-rc.1+**（peer 下限 `^0.1.7-rc.1`，CI 钉 `@deepseek-ai/dsh@0.1.7-rc.1`）——本版没有动支持线，0.21.1 的用户直接升级即可。**DSH 0.1.6-alpha.2 及更早仍请固定 v0.19.1**。主内容是把任务管理页从「子代理拓扑」重做成**工作流图**，并在随后几轮里按真机反馈打磨；期间 DSH 0.1.7 删掉了 Agent Teams 的 Remote 方法，团队与后台任务两个数据面随之改写。
