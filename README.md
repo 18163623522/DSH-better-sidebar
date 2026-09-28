@@ -3,7 +3,7 @@
 > [!IMPORTANT]
 > **v0.19.0 起接入 DSH 原生侧边栏**：右列就是 DSH 自己的右侧栏，插件把每个 tab 类型注册为原生 tab（不再自绘右侧面板），只保留自绘的底部工作台与开放给所有插件的 `ctx.betterSidebar` 服务。
 >
-> **v0.21.1 起要求 DSH `0.1.7-rc.1+`**（peer 下限 `^0.1.7-rc.1`；本版 v0.22.0 即 npm `latest`）。DSH 0.1.7 自带完整文档预览，插件把只读预览（表格 / PDF / 图片 / Office）整体让给内置，只保留 Markdown / HTML 与可编辑的代码编辑器。**0.1.6-alpha.2 及更早的用户请固定 `dsh-better-sidebar@0.19.1`**；按 DSH 版本选插件版本的对照表见[安装](#-安装)。
+> **v0.21.1 起要求 DSH `0.1.7-rc.1+`**（peer 下限 `^0.1.7-rc.1`；本版 v0.22.1 即 npm `latest`）。DSH 0.1.7 自带完整文档预览，插件把只读预览（表格 / PDF / 图片 / Office）整体让给内置，只保留 Markdown / HTML 与可编辑的代码编辑器。**0.1.6-alpha.2 及更早的用户请固定 `dsh-better-sidebar@0.19.1`**；按 DSH 版本选插件版本的对照表见[安装](#-安装)。
 
 <!-- Hero -->
 <div align="center">
@@ -14,7 +14,7 @@
   <a href="https://github.com/omdsh-dev/DSH-better-sidebar/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/omdsh-dev/DSH-better-sidebar" /></a>
   <a href="https://opensource.org/licenses/MIT"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" /></a>
   <a href="https://dshfind.com/zh/plugins/omdsh-dev/DSH-better-sidebar?ref=badge"><img alt="dshfind" src="https://dshfind.com/api/badge/omdsh-dev/DSH-better-sidebar?lang=zh" /></a><br /><br />
-  <a href="https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions"><img alt="支持的 DSH 版本（v0.22.0）：0.1.7-rc.1+" src="https://img.shields.io/badge/DSH-0.1.7--rc.1%2B-4d6bfe" /></a>
+  <a href="https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions"><img alt="支持的 DSH 版本（v0.22.1）：0.1.7-rc.1+" src="https://img.shields.io/badge/DSH-0.1.7--rc.1%2B-4d6bfe" /></a>
   <a href="https://github.com/topics/dsh-better-sidebar"><img alt="插件生态：GitHub topic dsh-better-sidebar" src="https://img.shields.io/badge/%E6%8F%92%E4%BB%B6%E7%94%9F%E6%80%81-topic%20dsh--better--sidebar-4d6bfe" /></a><br /><br />
   <img alt="文件管理" src="https://img.shields.io/badge/-文件管理-4d6bfe" /> <img alt="编辑预览" src="https://img.shields.io/badge/-编辑预览-4d6bfe" /> <img alt="底部工作台" src="https://img.shields.io/badge/-底部工作台-4d6bfe" /> <img alt="文件变动" src="https://img.shields.io/badge/-文件变动-4d6bfe" /> <img alt="后台任务" src="https://img.shields.io/badge/-后台任务-4d6bfe" /> <img alt="侧边对话" src="https://img.shields.io/badge/-侧边对话-4d6bfe" /> <img alt="插件接入" src="https://img.shields.io/badge/-插件接入-4d6bfe" /><br /><br />
   <b>右侧栏 + 底部面板双工作台</b>，并把 <code>ctx.betterSidebar</code> 服务开放给所有插件——<br />
@@ -62,15 +62,15 @@
 **前置**：已装好 DSH（`dsh web` 能正常运行），Node.js ≥ 20、pnpm ≥ 10。
 
 **支持的 DSH 版本**：
-<a href="https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions"><img alt="支持的 DSH 版本（v0.22.0）：0.1.7-rc.1+" src="https://img.shields.io/badge/DSH-0.1.7--rc.1%2B-4d6bfe" /></a>
+<a href="https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions"><img alt="支持的 DSH 版本（v0.22.1）：0.1.7-rc.1+" src="https://img.shields.io/badge/DSH-0.1.7--rc.1%2B-4d6bfe" /></a>
 
-> 📌 **通道与支持线**：`v0.22.0` 是**正式版**（npm `latest`），仅适配 DSH **0.1.7-rc.1+**。**装 DSH 请写精确版本号**：`npm i -g @deepseek-ai/dsh@0.1.7-rc.1`（rc.1 走 npm `next` 通道）。**DSH 0.1.6-alpha.2 及更早的用户请固定 `dsh-better-sidebar@0.19.1`**——0.1.7 的破坏面（设置服务重写、图标导出改名、会话格式 v3→v4）大到本版不写兼容层。
+> 📌 **通道与支持线**：`v0.22.1` 是**正式版**（npm `latest`），仅适配 DSH **0.1.7-rc.1+**。**装 DSH 请写精确版本号**：`npm i -g @deepseek-ai/dsh@0.1.7-rc.1`（rc.1 走 npm `next` 通道）。**DSH 0.1.6-alpha.2 及更早的用户请固定 `dsh-better-sidebar@0.19.1`**——0.1.7 的破坏面（设置服务重写、图标导出改名、会话格式 v3→v4）大到本版不写兼容层。
 
 > 🧭 **按你的 DSH 版本选插件版本**：
 >
 > | 你的 DSH 版本 | 安装命令 | 版本 / peer 声明 |
 > | --- | --- | --- |
-> | **0.1.7-rc.1+**（含之后的 0.1.7 正式版） | `dsh plugin --profile web add dsh-better-sidebar@latest` | **0.22.0**，`^0.1.7-rc.1` |
+> | **0.1.7-rc.1+**（含之后的 0.1.7 正式版） | `dsh plugin --profile web add dsh-better-sidebar@latest` | **0.22.1**，`^0.1.7-rc.1` |
 > | 0.1.7-alpha.1 / 0.1.7-alpha.2 | **没有可装版本**——先把 DSH 升到 rc.1，再跑上一行：<br>`npm i -g @deepseek-ai/dsh@0.1.7-rc.1` | — |
 > | 0.1.6-alpha.2 及更早、`0.1.5-rc.*`（含 npm `latest` 的 0.1.5-rc.3） | `dsh plugin --profile web add dsh-better-sidebar@0.19.1` | **0.19.1**，`^0.1.5-rc.1` |
 > | `0.1.5-alpha.2` | `dsh plugin --profile web add dsh-better-sidebar@0.19.0-alpha.1` | `^0.1.5-alpha.2` |
@@ -144,7 +144,7 @@ dsh plugin --profile web add dsh-better-sidebar@latest
 5. 硬刷新浏览器（Cmd/Ctrl+Shift+R）即可看到效果（client 改动无需重启 DSH；host 半改动才需重启）
 ```
 
-更新：`git pull && pnpm install && pnpm build` → 硬刷新浏览器即可（client 改动热加载生效，无需重启 DSH；host 半改动才需重启）。切回 npm 通道时，把依赖改回 npm 上的对应版本（稳定线 `"^0.19.1"`；本线 `"^0.22.0"`）再 `pnpm install`。
+更新：`git pull && pnpm install && pnpm build` → 硬刷新浏览器即可（client 改动热加载生效，无需重启 DSH；host 半改动才需重启）。切回 npm 通道时，把依赖改回 npm 上的对应版本（稳定线 `"^0.19.1"`；本线 `"^0.22.1"`）再 `pnpm install`。
 
 </details>
 
@@ -190,7 +190,15 @@ dsh registry enable dsh-external/dsh-better-sidebar
 
 ## 🆕 最近更新
 
-**支持的 DSH 版本**：<a href="https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions"><img alt="支持的 DSH 版本（v0.22.0）：0.1.7-rc.1+" src="https://img.shields.io/badge/DSH-0.1.7--rc.1%2B-4d6bfe" /></a> · 完整发布历史见 [Releases](https://github.com/omdsh-dev/DSH-better-sidebar/releases)
+**支持的 DSH 版本**：<a href="https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions"><img alt="支持的 DSH 版本（v0.22.1）：0.1.7-rc.1+" src="https://img.shields.io/badge/DSH-0.1.7--rc.1%2B-4d6bfe" /></a> · 完整发布历史见 [Releases](https://github.com/omdsh-dev/DSH-better-sidebar/releases)
+
+### v0.22.1
+
+> 📦 **正式版**（npm `latest`）：支持线**不变**——仍仅支持 **DSH 0.1.7-rc.1+**（peer 下限 `^0.1.7-rc.1`，CI 钉 `@deepseek-ai/dsh@0.1.7-rc.1`），0.21.1 / 0.22.0 的用户直接升级即可。修掉两个**真机可复现、单测却全绿**的缺陷；**DSH 0.1.6-alpha.2 及更早请继续固定 v0.19.1**。
+
+- 🐛 **`files` 接管被孤儿化 → 报错刷屏 + 文件树空态**（社区 #770 / #771，官方桌面壳日志实证）：客户端条目替换（插件市场更新 / Plugins 页禁用→启用 / HMR 重打）时，`sync()` 的清理循环会把**不属于描述符**的 `files` 接管释放掉、又在同一轮里重建——而重建发生在**已经 inactive** 的插件上下文上：`tabs.register` 建在宿主上下文上照样取走了 id，紧随的 `ctx.slots.inject` 却抛 `cannot create effect on inactive context`，于是 disposer 丢失、该 id 在**整个页面生命周期内不可再注册**（表现就是 `native register files error: … already registered` 刷屏 + 文件树落到宿主空态，只有刷新页面才恢复）。现在清理循环**跳过 `FILES_KIND`**（接管的寿命只由编辑器类型开关与 seat disposer 决定），并且**任何在宿主取走 id 之后失败的注册都会回滚释放**（含已建好的槽位），失败只留一个「下次通知可重试」的状态。修复取自社区 PR #777（@yanzhaohui1999）。
+- 🖥️ **macOS 桌面版窗口拖拽 / 双击标题栏缩放失效**（#772）：插件宿主是直挂 `body` 的子元素，宿主的 `html[data-platform=darwin] body > :not(#root) { -webkit-app-region: no-drag }` 命中它，而 app-region **无视 `pointer-events`**——铺满视口的面板层把下面每条拖拽带一起抵消（拖第一次还行、之后全失效）。现在 `[data-dsh-better-sidebar]` / `[data-dsh-panel-host]` / 放大视图 `.mermaidModal` 都用中性值 `initial !important` 退出计算，层内的面板与控件保持 `no-drag`（点击不被吞）；合并社区 PR #773 并补齐放大视图这最后一个铺满视口的 body 直挂层。
+- ✅ **守住它们**：新增单元用例把「接管不得被通知拆建」「注册失败必须回滚已占用 id 与已建槽位」钉在注册表**事件日志**上（未修复代码上 4/4 红），并新增**部署级回归门** `tests/e2e/native-reload.e2e.ts`（在 npm 0.22.0 上 3/3 红、修复版 3/3 绿）；拖拽契约由单元用例 + 挂载 lane 的**真实级联探针**（按宿主规则读计算值）守护。验证：`pnpm test` 122 files / 1292 passed / 9 skipped，`pnpm test:mount` 与 `test:mount:aggregate` 绿。事故记录见 [docs/plans/2026-09-28-native-files-takeover-reload-leak.md](./docs/plans/2026-09-28-native-files-takeover-reload-leak.md)。
 
 ### v0.22.0
 
@@ -207,19 +215,7 @@ dsh registry enable dsh-external/dsh-better-sidebar
 - 🐛 **真机抓到、单测全绿的四个缺陷**：逐节点折叠按钮点了没反应（被自动折叠的守卫卡住）；「待命」卡片从不画折叠按钮；认领后标签错显「阻塞」；队列任务上「完成」必失败（需先认领）。
 - 🎨 **窄屏与手机设置**：按原生右侧栏窄宽重新定档卡片与行距；设置页新增**手机**分组——窄屏（≤768px）不自动弹出新任务页、任务页默认树状图。
 
-### v0.21.1
-
-> 📦 **正式版**（npm `latest`）：仅支持 **DSH 0.1.7-rc.1+**（peer 下限 `^0.1.7-rc.1`，CI 钉 `@deepseek-ai/dsh@0.1.7-rc.1`）。**DSH 0.1.6-alpha.2 及更早的用户请固定在 v0.19.1**——0.1.7 动了设置服务、图标具名导出与会话格式三处硬契约，本版不写运行时兼容层。⚠️ **上一版 v0.20.0 从未发布到 npm**：它的终端 / 浏览器让出也一并落在本版，npm 上从 0.19.1 直接到本版。
-
-- 🗂️ **只读文件预览整体让给 DSH 的文档预览**：DSH 0.1.7 的 `ui-sidebar-documentpreview` 自带表格 / PDF / 图片 / Office 渲染（宿主侧 Office→PDF 转换、电子表格 worker 表格、图片 / PDF 缩放、按目录自动刷新），所以插件删掉了自己的 `image` / `pdf` / `binary-download` 三个 viewer，并在 `editor.canOpen` 里**拒绝认领**这些扩展名——`xlsx xls csv tsv fods pdf png jpg jpeg gif webp svg bmp ico doc docx ppt pptx`——把文件地址交回宿主。**rc.1 收回其中 9 个**：`xlsb` / `xlt` / `xltx` / `xltm` / `ots` / `dot` / `dotx` / `avif` / `ods` 宿主其实**没有渲染器**（点开只有「暂不支持预览」），而它们在让出之前是走插件兜底显示下载面板的，属于我们上一版自己引入的回归；现由插件的 `code` catch-all 重新认领。`fods` 继续让出（宿主会用纯文本显示这段扁平 XML，比下载面板有用）。**插件仍保留三件宿主没有的**：Markdown（自带渲染器）、HTML（自带沙箱预览 + `htmlViewerNoSandbox` / `htmlViewerDefaultUnsafe` 两个安全开关）、以及**可编辑**的文本 / 代码编辑器（内置那几个是只读预览）；未知二进制（`.zip` / `.wasm`）仍走代码编辑器判 binary 后的下载面板，功能不回归。
-- 🔗 **外链接管收敛**：删掉按协议分流的三个外链接管设置项（20 份词典的相关词条一并删除）。现在插件**只认领有 tab 类型通过 `urlTarget` 明确声明认领的链接**，其余一律放行、由宿主决定（DSH 0.1.7 新增用户设置 `linkOpening`，决定正文链接进侧栏还是新标签页）；**一个都没认领到时不阻止默认行为**；认领成功但目标类型在打开那一刻已不可用（插件卸载 / 被关）时兜底 `window.open(url, '_blank', 'noopener,noreferrer')`——顺手修掉了上一版留下的真实回归：插件自绘 markdown（侧边对话转录 / 编辑器预览 / diff 面板）里的 http 链接点了没反应。另外宿主的 `browser` kind **在 Web profile 已不再挂载**（0.1.7 只在 desktop profile 挂载它）。
-- ⚙️ **设置接入面重写 + 用户偏好的自动回迁**：DSH 0.1.7 删除了插件可注册的设置命名空间，改为**按插件 Loader 行的 entry id 找表单**（`SettingsForms`：只剩 `describe` / `update` / `replace` / `mutate` / `configure`）。插件偏好因此落在 **profile 的 cordis patch 文档**里（即本插件的挂载行），不再是 `~/.dsh/settings.yaml`；schema 来自插件模块导出的 `Config`（本版把用户偏好并进 `Config`，并给每个偏好字段标 `meta.volatile = true`——**这一个标记就是「改设置实时生效、不重挂插件」的全部机制**）。**用户设置不会丢**：插件首次启动时会把旧 `settings.yaml` / `settings.yaml.imported` 里的 `dsh-better-sidebar` 段一次性回迁（只在该行还没有任何用户值时执行，且只迁移当前 schema 仍声明的字段）。entry id 是**运行时自发现**的（本包默认 `better-sidebar`，聚合包挂载时会是别的 id），不硬编码。
-- 🔄 **文件树实时刷新**：插件接管了内置「文件」页，宿主自己的按目录 watch 覆盖不到它——本版新增 `/sidebar/ws/fs-watch`：客户端上报**已展开**的目录，宿主按目录 `fs.watch`（150ms 去抖、每连接 64 个句柄上限、路径仍走 `fs.tree` 同一道 workspace fence），改动后只重列那一层、折叠即退订。此前文件树会一直陈旧到手动刷新。
-- 🐛 **会话跟随修好了**：插件此前读的是一个**不存在的 `SessionListState.current` 字段**（插件的类型镜像自己造了它，编译期一直放行），导致「按会话持久化」实际没绑上、窄屏 park 门控恒假。现在改用 DSH 0.1.7 的 `ctx.sidebarRight.mounted`（只在该列真正换成另一个会话时才变化）。
-- 🖥️ **模型侧代价不变**：插件原有的 8 个 `terminal_*` 工具（默认关）已在上一版删除，上游等价物 `@deepseek-ai/dsh-tool-terminal` **仍未被任何 shipped bundle 默认挂载**，需要持久终端时请在 profile 的 `cordis.patch.yml` 里自行插入一行 `tool-terminal`（否则模型只有一次性 `bash` / `pwsh`）。
-- 📐 **基线**：`@deepseek-ai/dsh-*` 全部钉 `0.1.7-rc.1`，`@deepseek-ai/cordis` peer 下限 `^4.0.3`；`ui-primitives` 图标具名导出整族改名（`Icon<Name><14|16>` → `Icon<Name>Regular` / `Medium`，26 个具名导入随之适配）；会话格式 v3→v4（sidechat 边界注入改用 `plugin:dsh-better-sidebar`，tool 结果消息改 `role: 'tool'` 顶层形状，解析器同时接受新旧两种形状以兼容历史日志）。
-
-> 📜 **更早版本**：完整发布历史见 [CHANGELOG.md](./CHANGELOG.md)（v0.20.0 → v0.12.3）与 [GitHub Releases](https://github.com/omdsh-dev/DSH-better-sidebar/releases)。
+> 📜 **更早版本**：完整发布历史见 [CHANGELOG.md](./CHANGELOG.md)（v0.21.1 → v0.12.3）与 [GitHub Releases](https://github.com/omdsh-dev/DSH-better-sidebar/releases)。
 
 ## ⌨️ 快捷键
 
