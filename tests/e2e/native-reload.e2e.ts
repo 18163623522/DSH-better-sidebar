@@ -65,7 +65,11 @@ test.afterAll(async () => {
 })
 
 test('the native tab types survive an in-page client entry replacement', async ({ page }) => {
-  test.skip(CLIENT_JS === undefined, 'set DSH_HOME or DSH_E2E_PLUGIN_CLIENT_JS to locate the installed bundle')
+  // A hard failure, not a skip: this gate's whole value is that it cannot
+  // pass quietly when the harness stops telling us where the bundle lives.
+  if (CLIENT_JS === undefined) {
+    throw new Error('DSH_HOME (or DSH_E2E_PLUGIN_CLIENT_JS) must point at the profile running this server')
+  }
   const consoleErrors: string[] = []
   page.on('console', (message) => {
     if (message.type() === 'error') consoleErrors.push(message.text())
@@ -145,6 +149,12 @@ test('the native tab types survive an in-page client entry replacement', async (
   const filesEntry = page.locator('[data-sidebar-right-guide-entry="files"]')
   await expect(filesEntry, 'the Files guide row must be offered again').toHaveCount(1, { timeout: 30_000 })
   await filesEntry.click()
-  await expect(pane.locator('[data-sidebar-right-unavailable]')).toHaveCount(0)
+  // The explorer must really render again — assert the CONTENT first (a bare
+  // "no unavailable marker" check passes on an empty pane), then the host's
+  // "a kind with no registrant" fallback must be absent.
   await expect(pane.locator(`[role="button"][title$="${SEEDED_FILE}"]:visible`)).toHaveCount(1, { timeout: 30_000 })
+  await expect(
+    pane.locator('[data-sidebar-right-unavailable]'),
+    'the host must not fall back to its "nothing can view this kind" face',
+  ).toHaveCount(0)
 })

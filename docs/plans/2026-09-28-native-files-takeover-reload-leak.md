@@ -21,12 +21,12 @@ native register files error: Error: cannot create effect on inactive context
   assertActive ← effect ← inject(slots) ← registerSlots ← registerFilesKind ← sync ← notify
 ```
 
-随后同一毫秒（.339–.340）**6 条** `already registered`（栈：`register ← registerFilesKind ← sync ← notify`），13 秒后新激活的 `_reload` 路径又报 2 条。链条：
+随后同一毫秒（.339–.340）**7 条** `already registered`（栈：`register ← registerFilesKind ← sync ← notify`），13 秒后新激活的 `_reload` 路径又报 2 条（该 burst 合计 9 条，与「7 个内置描述符注销 → 7 次 notify」一一对应）。链条：
 
-1. `service.notify()` 是同步内联（`src/client/service.ts:696`），而 `registerNativeSurface` 把 `sync()` 订阅到它和 store 上（`src/client/native/index.ts:353`）。
+1. `service.notify()` 是同步内联（`src/client/service.ts:696`），而 `registerNativeSurface` 把 `sync()` 订阅到它和 store 上（`src/client/native/index.ts:353`；本文行号按 v0.22.0，main 因 #777 的插入而顺移）。
 2. `sync()` 的清理循环把 `live` 里**两类归属不同的条目**一视同仁：描述符类型（键 = descriptor id）与 `files` 接管（键 = `FILES_KIND`，**永远不在 `wanted` 里**）。于是**每次**通知都会释放接管、并在同一轮里重建它。
 3. 插件 teardown 时，内置描述符逐个注销 → 每次注销 notify → `sync()` 在**已经 inactive** 的插件 ctx 上运行。此时 `tabs.register` 建在**宿主** ctx 上（宿主 ctx 仍活着）→ id 被取走且返回了 disposer；紧随的 `ctx.slots.inject` 建在**插件** ctx 上 → cordis `assertActive()` 抛 `INACTIVE_EFFECT`（`@deepseek-ai/cordis@4.0.4` `effect()` 首行）→ `live.set(FILES_KIND, …)` 永不执行 → **该 id 在本页生命周期内再也不能注册**。
-4. 之后每次 notify（日志里还有 6 次）都重试同一个被占用的 id → `already registered` 刷屏；新一次激活同样注册不上 → 文件树空态。
+4. 之后每次 notify（同一 burst 里还有 6 次）都重试同一个被占用的 id → `already registered` 刷屏；新一次激活同样注册不上 → 文件树空态。
 
 **两条一般化的不变量**（已写进 [AGENTS.md](../../AGENTS.md) §3.4 第 9 条）：
 
@@ -41,8 +41,9 @@ PR #777（贡献者 @yanzhaohui1999）落地上面两条：`sync()` 的清理循
 
 ## 验证
 
-- **单测红→绿（实测）**：`tests/native-registration.spec.ts` 在 v0.22.0 源码上 4/4 红，在 PR head 上 4/4 绿；head 上 `pnpm typecheck` / `pnpm lint` / `pnpm test`（114 files / 1136 passed / 9 skipped）全绿。
-- 首版用例的两处断言（「失败后还能重新注册」）写在**活着的 id 集合**上，在未修复代码上会**同样通过**（泄漏的 id 恰好构成同一个集合）。跟进 PR 把它们改写到注册表的**事件日志**上，并把槽位失败判据从 `key` 改成 `name::key` —— 两个槽位共用一个 `key`，按 `key` 失败永远只能失败第一个槽，`registerSlots` 的部分回滚分支从未被执行；改后该分支有覆盖，且 4 例在 v0.22.0 上仍全部红。
+- **单测红→绿（实测）**：`tests/native-registration.spec.ts` 在 v0.22.0 源码上 4/4 红，在修复分支上 4/4 绿；`pnpm typecheck` / `pnpm lint` / `pnpm test` 全绿（修复分支的 base 早于 #781，故为 114 files / 1136 passed；合入 main 后为 122 files / 1292 passed / 9 skipped）。
+- **部署级红→绿（实测）**：`tests/e2e/native-reload.e2e.ts` 在 scratch profile 里对 npm 上的 `dsh-better-sidebar@0.22.0` 触发页面内条目替换（`utimesSync` 已安装的 `lib/client.js`），**3/3 红**且每次都是本文那两条栈；换成本地打包的修复版 **3/3 绿**。该用例已随本 PR 进入挂载 lane（CI `plugin-mount` 绿），触发方式依赖钉住的宿主 0.1.7-rc.1 的 rev 规则（`mtime/ctime/size` 的 sha1）——pin 上调时需同步复核。
+- 首版用例的两处断言（「失败后还能重新注册」）写在**活着的 id 集合**上，在未修复代码上会**同样通过**（泄漏的 id 恰好构成同一个集合）。跟进 PR 把它们改写到注册表的**事件日志**上，并把槽位失败判据从 `key` 改成 `name::key` —— 两个槽位共用一个 `key`，按 `key` 失败时**第一个**槽就抛，回收循环虽然进了、但手里的 disposer 列表永远是空的（即 `registerSlots` 的部分回滚**释放动作**从未被执行）；改后可以让某个描述符的**第二个**槽失败，回收列表非空、释放路径真正被覆盖，且 4 例在 v0.22.0 上仍全部红。
 
 ## 已知限制 / 未做
 

@@ -51,8 +51,14 @@ function createRegistry() {
         throw new Error(`sidebarRight: tab type id "${definition.id}" is already registered`)
       }
       events.push(`register ${definition.id}`)
+      // The host's disposer is IDEMPOTENT (a cordis effect disposer returns
+      // the same task on a second call), so a repeated release must neither
+      // log again nor pretend to free something twice.
+      let released = false
       const dispose = (): void => {
+        if (released) return
         if (failReleaseOf === definition.id) throw new Error(`cannot release ${definition.id}`)
+        released = true
         registered.delete(definition.id)
         events.push(`release ${definition.id}`)
       }
