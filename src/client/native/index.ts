@@ -160,6 +160,13 @@ interface Registration {
  * Run one registration disposer, reporting a failure instead of propagating
  * it: releasing a registration must never mask the error being handled, and
  * one broken entry must not leave the others registered.
+ *
+ * A release failure is logged, NOT routed through `reportFailure` (the visible
+ * diagnostic strip), on purpose: both callers run while the surface is being
+ * taken down — the drop loop and the seat teardown — where a strip would just
+ * be noise, and an id that really stays taken cannot hide anyway: the next
+ * registration attempt for it goes through the strip as
+ * `register … error: … already registered`.
  * @param dispose - the disposer to run.
  * @param what - the registration's name, for the log line.
  */
