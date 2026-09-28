@@ -250,6 +250,31 @@ describe('change tree (the Git lens reads its groups through it)', () => {
     ])
   })
 
+  it('pins the collation, so the order cannot move with the runtime locale', () => {
+    // Mixed case + accents + non-letters: the comparator runs an explicit
+    // 'en' base collation and breaks ties by code point. A bare
+    // `localeCompare(other)` would follow the machine's ICU default and could
+    // reorder the same change list on another machine.
+    const names = ['b.ts', 'A.ts', 'ä.ts', 'Z.ts', 'a.ts', 'Ä.ts', '_x.ts', '1.ts']
+    const order = (list: readonly string[]): string[] =>
+      buildChangeTree(list.map(path => entry(path))).map(node => node.name)
+    expect(order(names)).toEqual(['_x.ts', '1.ts', 'A.ts', 'a.ts', 'Ä.ts', 'ä.ts', 'b.ts', 'Z.ts'])
+    // …and it is a TOTAL order: reversing the input cannot move a row.
+    expect(order([...names].reverse())).toEqual(order(names))
+
+    const dirs = ['Zdir/f.ts', 'adir/f.ts', 'Ädir/f.ts', '_dir/f.ts']
+    const dirOrder = (list: readonly string[]): string[] =>
+      buildChangeTree(list.map(path => entry(path))).map(node => node.name)
+    expect(dirOrder(dirs)).toEqual(['_dir', 'adir', 'Ädir', 'Zdir'])
+    expect(dirOrder([...dirs].reverse())).toEqual(dirOrder(dirs))
+
+    // Why the pin is load-bearing: under Swedish collation 'ä' sorts AFTER
+    // 'z', so an unpinned comparator would order this very list differently on
+    // a machine whose runtime locale happens to be Swedish.
+    expect(['z.ts', 'ä.ts'].sort((left, right) => left.localeCompare(right, 'sv', { sensitivity: 'base' })))
+      .toEqual(['z.ts', 'ä.ts'])
+  })
+
   it('returns no nodes for an empty or all-clean list', () => {
     expect(buildChangeTree([])).toEqual([])
     expect(buildChangeTree([entry('a.ts', '  '), entry('b.ts', '!!')])).toEqual([])

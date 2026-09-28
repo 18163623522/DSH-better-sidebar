@@ -8,11 +8,12 @@
  * for the whole archive. No third-party dependency, no filesystem walking —
  * the caller supplies the entries, this module only reads their bytes.
  *
- * The entries are bounded by `maxEntries` / `maxBytes` before anything is
- * read, so a runaway selection fails with a clear error instead of filling
- * memory with an archive nobody asked for.
+ * The entries are bounded by `maxEntries` / `maxBytes`: the count is checked
+ * up front, and every source is stat'ed against the remaining byte budget
+ * BEFORE it is read, so a runaway selection fails with a clear error instead
+ * of filling memory with an archive nobody asked for.
  */
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { deflateRaw } from 'node:zlib'
 import { promisify } from 'node:util'
 import { SidebarError } from './wire.ts'
@@ -95,11 +96,20 @@ function dosDateTime(date: Date): { time: number; date: number } {
   }
 }
 
-/** Normalize an entry name to a '/'-separated relative archive path. */
+/**
+ * Normalize an entry name to a '/'-separated relative archive path.
+ *
+ * A backslash is NOT a separator here: on POSIX (and on the host half, which
+ * builds the names) `a\b.txt` is one legal file name, so converting it would
+ * silently split one file into a directory. Windows separators never reach
+ * this point — the walk composes names from `basename`/`join` results.
+ * Leading slashes are dropped (names are archive-relative by definition) and
+ * `..` segments are refused, so a name can never traverse.
+ */
 function archiveName(raw: string, isDir: boolean): string {
-  const normalized = raw.replace(/\\/g, '/').replace(/^\/+/, '')
+  const normalized = raw.replace(/^\/+/, '')
   const segments = normalized.split('/').filter(segment => segment !== '' && segment !== '.')
-  if (segments.length === 0 || segments.includes('..')) {
+  if (raw === '..' || segments.length === 0 || segments.includes('..')) {
     throw new SidebarError('bad-request', `invalid archive entry name "${raw}"`)
   }
   const name = segments.join('/')
@@ -114,8 +124,26 @@ function requireSourcePath(raw: string): string {
   return raw
 }
 
-/** Read + compress one member (deflate only when it actually shrinks). */
-async function prepareFile(name: string, path: string): Promise<ZipMember> {
+/**
+ * Read + compress one member (deflate only when it actually shrinks).
+ * @param limit - the archive's total uncompressed ceiling (for the message).
+ * @param budget - uncompressed bytes still available; the source is stat'ed
+ *  FIRST and refused when it cannot fit, so an oversized archive never pulls
+ *  the payload into memory (let alone deflates it) before failing.
+ */
+async function prepareFile(name: string, path: string, limit: number, budget: number): Promise<ZipMember> {
+  let size: number
+  try {
+    size = (await stat(path)).size
+  } catch (error) {
+    throw new SidebarError('fs-error', `cannot read "${path}": ${error instanceof Error ? error.message : String(error)}`, 400)
+  }
+  // `budget <= 0` refuses even a zero-size source. That is not pedantry: a
+  // FIFO stats as 0 bytes and reading one BLOCKS until a writer shows up, so
+  // an exhausted budget must never reach open().
+  if (budget <= 0 || size > budget) {
+    throw new SidebarError('fs-error', `archive exceeds the ${limit} byte limit`, 400)
+  }
   let data: Buffer
   try {
     data = await readFile(path)
@@ -183,14 +211,16 @@ export async function buildZip(entries: readonly ZipEntry[], opts: ZipOptions = 
       continue
     }
     const path = requireSourcePath(entry.path)
-    const member = await prepareFile(archiveName(entry.name, false), path)
     // The bound is the archive's total UNCOMPRESSED payload: that is what the
     // reader materializes, and it makes the limit independent of how well the
     // input happens to compress.
-    totalBytes += member.size
-    if (totalBytes > maxBytes) {
+    const member = await prepareFile(archiveName(entry.name, false), path, maxBytes, maxBytes - totalBytes)
+    // A source can grow AFTER its stat (sparse files, concurrent writers), so
+    // the ceiling is re-checked against what was actually read.
+    if (totalBytes + member.size > maxBytes) {
       throw new SidebarError('fs-error', `archive exceeds the ${maxBytes} byte limit`, 400)
     }
+    totalBytes += member.size
     members.push(member)
   }
 

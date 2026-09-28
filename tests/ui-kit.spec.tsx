@@ -163,6 +163,45 @@ describe('useGitStatus', () => {
     await unmount()
   })
 
+  it('keeps the snapshot identity when an idle poll returns the same answer', async () => {
+    // Without this, every 2.5s tick minted a new object and every downstream
+    // memo (the changes tree, the file tree rows) re-ran on an unchanged view.
+    // A FRESH object per call: the host really does re-serialize the answer
+    // every poll, so `mockResolvedValue` (same reference) would not prove this.
+    gitStatus.mockImplementation(async () => snapshot())
+    // Collect the snapshots the hook PUBLISHES (the view object itself is
+    // re-created per render, so identity must be read off the snapshot).
+    const published: (GitStatusResult | null)[] = []
+    let view: GitStatusView | undefined
+    const { unmount } = await mount(createElement(Probe, {
+      scope: { sessionId: 's-idle' },
+      onView: (next) => { view = next; published.push(next.snapshot) },
+    }))
+    expect(gitStatus).toHaveBeenCalledTimes(1)
+    const before = published[published.length - 1]
+    expect(before).not.toBeNull()
+    await act(async () => { view?.refresh(); await Promise.resolve(); await Promise.resolve() })
+    expect(gitStatus).toHaveBeenCalledTimes(2)
+    expect(published[published.length - 1]).toBe(before)
+    await unmount()
+  })
+
+  it('replaces the snapshot when the poll reports a real change', async () => {
+    gitStatus.mockResolvedValueOnce(snapshot())
+    const published: (GitStatusResult | null)[] = []
+    let view: GitStatusView | undefined
+    const { unmount } = await mount(createElement(Probe, {
+      scope: { sessionId: 's-change' },
+      onView: (next) => { view = next; published.push(next.snapshot) },
+    }))
+    const before = published[published.length - 1]
+    gitStatus.mockResolvedValue(snapshot({ entries: [{ path: 'src/a.ts', xy: ' M' }, { path: 'src/b.ts', xy: '??' }] }))
+    await act(async () => { view?.refresh(); await Promise.resolve(); await Promise.resolve() })
+    expect(published[published.length - 1]).not.toBe(before)
+    expect(view?.statusOf('/ws/src/b.ts')?.tone).toBe('untracked')
+    await unmount()
+  })
+
   it('invalidateGitStatus re-reads every live key of one session', async () => {
     gitStatus.mockResolvedValue(snapshot())
     const { unmount } = await mount(createElement(Probe, { scope: { sessionId: 's6' }, onView: () => {} }))

@@ -1032,16 +1032,20 @@ export function FileTree(props: {
         label: (
           <span className={css.openWithLabel}>
             <span className={css.openWithName}>{openWithLabelOf(target)}</span>
-            {/* The pushpin: a span (never a button — the Menu row itself is
-                a button, so a nested interactive element would be invalid).
-                Clicking it pins/unpins the target at the menu's top level
-                WITHOUT selecting the row: the pin stops propagation, so the
-                menu stays open and the icon flips on the next render. */}
+            {/* The pushpin: a PLAIN span, deliberately not a control. The
+                Menu renders the row itself as `<button role="menuitem">`, so a
+                nested button/imitation-button would be invalid markup — and
+                anything with `tabIndex` inside it is unreachable by keyboard
+                anyway (the row button swallows focus). It is therefore an
+                honest MOUSE hot zone: hovering the row reveals it, clicking it
+                pins/unpins without selecting the row (stopPropagation), and it
+                keeps a `title` so the affordance is still nameable on hover.
+                Keyboard/AT users have a real, reachable path to the same list:
+                the plugin settings panel's pinned-targets editor
+                (OpenWithSettings). Do not re-add role/tabIndex here without
+                also making the row itself non-interactive. */}
             <span
-              role="button"
-              tabIndex={-1}
               className={clsx(css.openWithPin, pinnedNow && css.openWithPinActive)}
-              aria-label={pinnedNow ? t('unpinOpenWith') : t('pinOpenWith')}
               title={pinnedNow ? t('unpinOpenWith') : t('pinOpenWith')}
               onClick={(event) => {
                 event.preventDefault()
@@ -1172,9 +1176,15 @@ export function FileTree(props: {
    * `.zip`. So the bytes are fetched explicitly: a non-2xx answer is parsed for
    * its `{error: {message}}` envelope (the shape `api.ts` reads) and reported
    * through `zipFailed`; a 2xx body becomes an object URL handed to the same
-   * hidden-anchor mechanics. `archiveBusyRef` keeps a double click from
-   * packaging the same selection twice.
+   * hidden-anchor mechanics.
+   *
+   * The host builds the archive in one pass, which can take a while for a big
+   * selection: `archiveBusy` drives the progress line under the error strip
+   * while the request is in flight, and `archiveBusyRef` keeps a repeated pick
+   * from packaging the same selection twice (the guard is silent by design —
+   * the line it is already showing IS the feedback).
    */
+  const [archiveBusy, setArchiveBusy] = useState(false)
   const archiveBusyRef = useRef(false)
   const downloadArchive = (paths: readonly string[]): void => {
     if (archiveBusyRef.current) return
@@ -1187,6 +1197,7 @@ export function FileTree(props: {
       return
     }
     archiveBusyRef.current = true
+    setArchiveBusy(true)
     void fetch(url)
       .then(async (response) => {
         if (!response.ok) {
@@ -1214,7 +1225,10 @@ export function FileTree(props: {
       .catch((error: unknown) => {
         setActionError(t('zipFailed', { message: error instanceof Error ? error.message : String(error) }))
       })
-      .finally(() => { archiveBusyRef.current = false })
+      .finally(() => {
+        archiveBusyRef.current = false
+        setArchiveBusy(false)
+      })
   }
 
   const root = cwd
@@ -1449,6 +1463,16 @@ export function FileTree(props: {
                 onClick={() => { setActionError(null) }}
               />
             </div>
+          )}
+          {/* The archive is built host-side in one pass: while it runs, the
+              row sits right under the error strip (the two CAN coexist — a
+              stale error stays readable while a new attempt is in flight).
+              `role="status"` makes it a polite live region, so the busy state
+              is announced without stealing focus. */}
+          {archiveBusy && (
+            <Notice kind="loading" tone="inline" role="status">
+              {t('loading')}
+            </Notice>
           )}
           {selected.size > 0 && (
             <SectionHeader

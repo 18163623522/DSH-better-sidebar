@@ -476,3 +476,21 @@ ChangesTab
   ② 变动页 Git 视角以树显示：`src/client/changes`（单子目录链压缩成一行，带计数胶囊 1）→ `GitLens.tsx`（M 徽标），已暂存组 `src` → `app.ts`。
 - 单文件页回归：14 个 spec / 91 用例绿（含新增 `file-tree-archive.spec.tsx` 9 例：出现条件、成功链、三条失败路径、in-flight 守卫）。
 - 仍未验证：真实浏览器里 ZIP 的落盘行为（jsdom spy 证据）、拖拽/多选手感、Windows 宿主差异。
+
+### 9.5 第三轮（verifier 二轮报告后的修复，全部完成）
+
+| 编号 | 问题 | 修法 | 判别性验证 |
+|---|---|---|---|
+| F1【高】 | 中文等非 latin1 下载名 → 真实宿主 **500**（`content-disposition` 直接塞原始名，Node `writeHead` 拒绝 >U+00FF） | `archive-route.ts` 新增 `contentDispositionOf`：ASCII 回退 + `filename*=UTF-8''…`（无可用 ASCII stem 时回退 `download.zip`） | 临时回退 → 真 `node:http` 用例 500；对照断言钉住 `validateHeaderValue` 必抛 |
+| F2【中】 | 多选同名不同目录 → 归档条目重名（解压互相覆盖） | `disambiguateArchiveNames`：只对冲突项逐级上溯父目录，必要时回退完整路径 | 临时回退 → 条目重名断言变红 |
+| F3【中低】 | `maxBytes` 在读完源文件后才判定（与注释相反）；且 `budget===0` 时 0 字节 FIFO 仍会 `open()` 永久阻塞 | `prepareFile` 先 `stat`，`budget <= 0 || size > budget` 立即抛，再读 | FIFO 探针：回退后 5s 超时（阻塞），修复后 44ms 通过（Windows 跳过该探针） |
+| F4【中低】 | SSH 模式下宿主不可用时 reveal 整条消失 | SSH 过滤保留 `kind === 'reveal'` 的目标，并注明理由 | 更新 open-with.spec 断言（`['explorer','vscode','cursor','custom:e2']`，reveal 恰 1 条） |
+| F5【低】 | 图钉是 `<span role="button" tabIndex={-1}>` 嵌在 menuitem 按钮内（语义非法 + 键盘不可达） | 去掉 role/tabIndex，改成诚实的鼠标热区；注释写明键盘入口是设置面板 | 临时加回 role → 用例变红 |
+| F6【低】 | 变更树行无 memo，空闲 tick 全量重渲染 | ① 行 `memo` + 恒定 props（图标解析搬进行内当探针）② 内容键 `entriesKey` 派生 tree ③ （Lead）共享 store 的 `sameStatus` 保住快照身份 | 三处各自临时回退 → 探针变红 |
+| F7【低】 | 排序依赖运行时 locale collation | `localeCompare(other, 'en', { sensitivity: 'base' })` + 码点兜底 | 反向输入顺序不变 + 瑞典 collation 对照断言 |
+| F8【低】 | POSIX 文件名里的 `\` 被静默转成层级 | `archiveName` 不再替换 `\` | 实探条目 `a\b.txt` 保持单条成员 |
+| F9【低】 | 打包中重复点击静默吞掉、大选择无反馈 | `archiveBusy` state + 树顶 `Notice kind="loading" role="status"` | deferred fetch 断言忙态行出现/消失、重复点选 fetch 仍 1 次 |
+| — | 新增交互：目录行支持「暂存/取消暂存该目录」 | `DirRow` hover IconButton（`gitStage`/`gitUnstage` 均接受目录 pathspec） | 断言 `gitStage(scope,'src/deep',MAIN)` 且点击不触发折叠 |
+
+最终门禁（修复后重跑）：`pnpm typecheck` / `pnpm lint` / `pnpm test`（**134 文件 / 1441 通过 / 9 跳过**）/ `pnpm build` 全绿；
+`DSH_CMD='npx -y --package @deepseek-ai/dsh@0.1.7-rc.1 dsh' pnpm test:mount` → **7/7 通过**（mount=372ms，p95 帧间隔 16ms，无宽度泄漏）。

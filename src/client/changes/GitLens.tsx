@@ -26,7 +26,7 @@
  * failures used to land under the commit box, which read as "your commit
  * failed" for an action the user never ran.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import {
   Button, IconChevronRightOutlineRegular, IconCodeOutlineRegular, IconCopyOutlineRegular, IconPlusOutlineRegular,
   IconTrashOutlineRegular, Input, Menu, writeClipboard,
@@ -125,31 +125,62 @@ const WORKTREE_POLL_MS = 30_000
  *  just because `snapshot?.entries ?? []` minted a new array. */
 const NO_ENTRIES: readonly GitStatusEntry[] = []
 
+/**
+ * A CONTENT key for one status answer. The shared store mints a brand-new
+ * entries array for every poll — idle polls with byte-identical content
+ * included — so array identity cannot decide whether the tree must be rebuilt.
+ * This string can: the same paths and porcelain codes always produce the same
+ * key, and a key change is exactly when the tree, its counts and the row
+ * objects need to be recomputed.
+ */
+function entriesKey(entries: readonly GitStatusEntry[]): string {
+  let key = ''
+  for (const entry of entries) key += `${entry.xy}\u0000${entry.path}\n`
+  return key
+}
+
+/** The preview ref for one changed file (one ref per path+side). */
+function worktreeRefOf(
+  path: string,
+  untracked: boolean,
+  staged: boolean,
+  worktree: string | undefined,
+  repoRoot: string | undefined,
+): SidebarDiffRef {
+  return { kind: 'worktree', path, staged, untracked, worktree, repoRoot }
+}
+
 /** One changed file's row: the host's file artwork + porcelain letter + name
- *  + the trailing stage action (revealed on hover/focus). */
-function FileRow(props: {
-  node: ChangeFile
-  icon: ReactNode
+ *  + the trailing stage action (revealed on hover/focus).
+ *
+ *  Memoized, and every prop keeps its identity across a status poll that
+ *  changed nothing: the tree is content-keyed (so `node` is the same object),
+ *  the callbacks are state-free, and `glyph` is a stable resolver. The icon
+ *  resolution inside the row therefore doubles as the re-render probe the
+ *  specs use — an idle poll must not resolve a single icon. */
+const FileRow = memo(function FileRow(props: {
+  row: ChangeFile
+  glyph: (path: string) => ReactNode
   staged: boolean
   busy: boolean
   selected: boolean
-  onPreview(): void
-  onContextMenu(event: MouseEvent): void
-  onToggleStage(): void
+  onPreview: (node: ChangeFile, staged: boolean) => void
+  onContextMenu: (event: MouseEvent, node: ChangeFile, staged: boolean) => void
+  onToggleStage: (path: string, staged: boolean) => void
 }): ReactNode {
-  const { node, staged, busy, selected } = props
+  const { row: node, staged, busy, selected } = props
   const action = staged ? t('unstage') : t('stage')
   return (
-    <div className={css.row} data-selected={selected ? 'true' : undefined}>
+    <div className={css.row} data-row={node.path} data-selected={selected ? 'true' : undefined}>
       <button
         type="button"
         className={css.rowMain}
         data-path={node.path}
         title={node.path}
-        onClick={props.onPreview}
-        onContextMenu={props.onContextMenu}
+        onClick={() => { props.onPreview(node, staged) }}
+        onContextMenu={(event) => { props.onContextMenu(event, node, staged) }}
       >
-        <span className={css.rowIcon} aria-hidden="true">{props.icon}</span>
+        <span className={css.rowIcon} aria-hidden="true">{props.glyph(node.path)}</span>
         <StatusBadge tone={BADGE_TONE[node.status.tone]} title={node.path}>{node.status.letter}</StatusBadge>
         <span className={css.rowName}>{node.name}</span>
       </button>
@@ -159,34 +190,62 @@ function FileRow(props: {
         disabled={busy}
         label={action}
         icon={staged ? <IconTrashOutlineRegular size={14} /> : <IconPlusOutlineRegular size={14} />}
-        onClick={props.onToggleStage}
+        onClick={() => { props.onToggleStage(node.path, staged) }}
       />
     </div>
   )
-}
+})
 
 /** One directory row: the disclosure chevron + folder artwork + the label
- *  (a compressed chain reads as one 'a/b/c' line) + how much changed below. */
-function DirRow(props: { node: ChangeDir; icon: ReactNode; open: boolean; onToggle(): void }): ReactNode {
-  const { node, open } = props
+ *  (a compressed chain reads as one 'a/b/c' line) + how much changed below,
+ *  plus the SAME trailing action a file row carries — applied to the whole
+ *  subtree (`git add -A -- <dir>` / `git reset -q -- <dir>`, both of which
+ *  take a directory pathspec). The action is a sibling of the disclosure
+ *  button, so a click can never fold the row; it stops propagation anyway so
+ *  the intent survives a future nesting change. Memoized like {@link FileRow}. */
+const DirRow = memo(function DirRow(props: {
+  row: ChangeDir
+  folderGlyph: (path: string, open: boolean) => ReactNode
+  staged: boolean
+  open: boolean
+  busy: boolean
+  onToggle: (key: string) => void
+  onToggleStage: (path: string, staged: boolean) => void
+}): ReactNode {
+  const { row: node, staged, open, busy } = props
+  const key = `${staged ? 's' : 'u'}:${node.path}`
+  const action = staged ? t('unstageAll') : t('stageAll')
   return (
-    <button
-      type="button"
-      className={css.dirRow}
-      data-dir={node.path}
-      aria-expanded={open}
-      title={node.path}
-      onClick={props.onToggle}
-    >
-      <span className={css.chevron} data-open={open ? 'true' : undefined} aria-hidden="true">
-        <IconChevronRightOutlineRegular size={12} />
-      </span>
-      <span className={css.rowIcon} aria-hidden="true">{props.icon}</span>
-      <span className={css.dirName}>{node.name}</span>
-      <span className={css.countPill}>{node.changes}</span>
-    </button>
+    <div className={css.row} data-row={node.path}>
+      <button
+        type="button"
+        className={css.dirRow}
+        data-dir={node.path}
+        aria-expanded={open}
+        title={node.path}
+        onClick={() => { props.onToggle(key) }}
+      >
+        <span className={css.chevron} data-open={open ? 'true' : undefined} aria-hidden="true">
+          <IconChevronRightOutlineRegular size={12} />
+        </span>
+        <span className={css.rowIcon} aria-hidden="true">{props.folderGlyph(node.path, open)}</span>
+        <span className={css.dirName}>{node.name}</span>
+        <span className={css.countPill} data-count={node.changes}>{node.changes}</span>
+      </button>
+      <IconButton
+        size="sm"
+        className={css.rowAction}
+        disabled={busy}
+        label={action}
+        icon={staged ? <IconTrashOutlineRegular size={14} /> : <IconPlusOutlineRegular size={14} />}
+        onClick={(event) => {
+          event.stopPropagation()
+          props.onToggleStage(node.path, staged)
+        }}
+      />
+    </div>
   )
-}
+})
 
 export interface GitLensProps {
   scope: SessionScope
@@ -575,27 +634,11 @@ export function GitLens(props: GitLensProps) {
     void writeClipboard(text)
   }
 
-  const openFileMenu = (event: MouseEvent, path: string, staged: boolean, untracked: boolean): void => {
-    event.preventDefault()
-    event.stopPropagation()
-    setFileMenu({ path, staged, untracked, x: event.clientX, y: event.clientY })
-  }
-
   const openHistoryMenu = (event: MouseEvent, entry: GitLogEntry): void => {
     event.preventDefault()
     event.stopPropagation()
     setHistoryMenu({ entry, x: event.clientX, y: event.clientY })
   }
-
-  /** The preview ref for one changed file (one ref per path+side). */
-  const worktreeRefOf = (path: string, untracked: boolean, staged: boolean): SidebarDiffRef => ({
-    kind: 'worktree',
-    path,
-    staged,
-    untracked,
-    worktree: selectedWorktree,
-    repoRoot,
-  })
 
   /** The preview ref for one commit. */
   const commitRefOf = (entry: GitLogEntry): SidebarDiffRef => ({
@@ -615,8 +658,11 @@ export function GitLens(props: GitLensProps) {
   }
 
   const entries = snapshot?.entries ?? NO_ENTRIES
-  // One fold per group, memoized on the snapshot's own entry array: the tree
-  // (compression + sorting + counts) is rebuilt only when git answers anew.
+  // The CONTENT of the answer decides whether the tree must be rebuilt; the
+  // array identity only decides whether the (cheap) key is recomputed.
+  const contentKey = useMemo(() => entriesKey(entries), [entries])
+  // One fold per group, rebuilt only when the change list's CONTENT changes —
+  // never on a poll that answered the same files, however fresh its arrays are.
   const { stagedEntries, unstagedEntries, stagedTree, unstagedTree } = useMemo(() => {
     const staged = entries.filter(isStagedEntry)
     const unstaged = entries.filter(isUnstagedEntry)
@@ -626,34 +672,67 @@ export function GitLens(props: GitLensProps) {
       stagedTree: buildChangeTree(staged),
       unstagedTree: buildChangeTree(unstaged),
     }
-  }, [entries])
+    // The key stands in for `entries`: same content ⇒ same tree objects ⇒ the
+    // memoized rows below keep their props and never re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contentKey])
   const isRepo = snapshot?.isRepo === true
   const branch = snapshot?.branch ?? ''
   const branchOptions = branch === '' ? branchNames : [branch, ...branchNames.filter(name => name !== branch)]
   const clean = isRepo && stagedEntries.length === 0 && unstagedEntries.length === 0
 
-  /** Fold or unfold one directory row (keyed per group, see `collapsed`). */
-  const toggleDir = (key: string): void => {
+  /** Fold or unfold one directory row (keyed per group, see `collapsed`).
+   *  Stable: it is a memoized row's prop. */
+  const toggleDir = useCallback((key: string): void => {
     setCollapsed((current) => {
       const next = new Set(current)
       if (next.has(key)) next.delete(key)
       else next.add(key)
       return next
     })
-  }
+  }, [])
+
+  /** The latest-value holder for the actions a memoized row calls: a row's
+   *  props must keep their identity across polls, so these callbacks read the
+   *  current closures through the ref instead of closing over them. */
+  const rowActions = useRef({
+    preview: (_node: ChangeFile, _staged: boolean): void => { /* replaced below */ },
+    stage: (_path: string, _staged: boolean): void => { /* replaced below */ },
+  })
+  useEffect(() => {
+    rowActions.current = {
+      preview: (node, staged) => {
+        onPreview(worktreeRefOf(node.path, isUntrackedStatus(node.status), staged, chosenPathRef.current, repoRootRef.current))
+      },
+      stage: (path, staged) => { stageEntry(path, staged) },
+    }
+  })
+
+  /** Stable row callbacks (see rowActions). */
+  const previewFile = useCallback((node: ChangeFile, staged: boolean): void => {
+    rowActions.current.preview(node, staged)
+  }, [])
+  const stagePath = useCallback((path: string, staged: boolean): void => {
+    rowActions.current.stage(path, staged)
+  }, [])
+  const openRowMenu = useCallback((event: MouseEvent, node: ChangeFile, staged: boolean): void => {
+    event.preventDefault()
+    event.stopPropagation()
+    setFileMenu({ path: node.path, staged, untracked: isUntrackedStatus(node.status), x: event.clientX, y: event.clientY })
+  }, [])
 
   /** One file row of a group's tree (the single file-row renderer). */
   const renderFile = (node: ChangeFile, staged: boolean): ReactNode => (
     <FileRow
-      key={`${staged ? 's' : 'u'}:${node.path}`}
-      node={node}
-      icon={fileGlyph(node.path)}
+      key={`file:${staged ? 's' : 'u'}:${node.path}`}
+      row={node}
+      glyph={fileGlyph}
       staged={staged}
       busy={busy}
       selected={isPreviewedWorktree(node.path, staged)}
-      onPreview={() => { onPreview(worktreeRefOf(node.path, isUntrackedStatus(node.status), staged)) }}
-      onContextMenu={(event) => { openFileMenu(event, node.path, staged, isUntrackedStatus(node.status)) }}
-      onToggleStage={() => { stageEntry(node.path, staged) }}
+      onPreview={previewFile}
+      onContextMenu={openRowMenu}
+      onToggleStage={stagePath}
     />
   )
 
@@ -662,8 +741,16 @@ export function GitLens(props: GitLensProps) {
     const key = `${staged ? 's' : 'u'}:${node.path}`
     const open = !collapsed.has(key)
     return (
-      <div key={key}>
-        <DirRow node={node} icon={folderGlyph(node.path, open)} open={open} onToggle={() => { toggleDir(key) }} />
+      <div key={`dir:${key}`}>
+        <DirRow
+          row={node}
+          folderGlyph={folderGlyph}
+          staged={staged}
+          open={open}
+          busy={busy}
+          onToggle={toggleDir}
+          onToggleStage={stagePath}
+        />
         {open && (
           <div className={css.treeChildren}>
             {node.children.map(child => (child.kind === 'dir' ? renderDir(child, staged) : renderFile(child, staged)))}

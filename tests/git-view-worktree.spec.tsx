@@ -17,7 +17,9 @@ import { act } from 'react-dom/test-utils'
 import { GitLens } from '../src/client/changes/GitLens.tsx'
 import { createSidebarStore } from '../src/client/state.ts'
 import { api, type GitLogEntry, type GitStatusResult, type GitWorktree } from '../src/client/api.ts'
+import type { BetterSidebarService } from '../src/client/service.ts'
 import { t } from '../src/client/locales.ts'
+import type { Context } from '../src/context-types.ts'
 
 import { setupReactAct } from './test-utils.ts'
 setupReactAct()
@@ -70,7 +72,12 @@ async function flushEffects(): Promise<void> {
  *  — the shared status store only polls/loads while a consumer is on screen. */
 function mountGit(
   root: Root,
-  options: { scope?: { sessionId: string; cwd?: string }; refreshTick?: number; visible?: boolean } = {},
+  options: {
+    scope?: { sessionId: string; cwd?: string }
+    refreshTick?: number
+    visible?: boolean
+    ctx?: Context
+  } = {},
 ): void {
   act(() => {
     root.render(createElement(GitLens, {
@@ -81,6 +88,7 @@ function mountGit(
       selectedRef: null,
       visible: options.visible ?? true,
       refreshTick: options.refreshTick ?? 0,
+      ...(options.ctx === undefined ? {} : { ctx: options.ctx }),
     }))
   })
 }
@@ -538,10 +546,14 @@ describe('GitLens (changes tab, git lens) change tree', () => {
       expect(unstaged.querySelector('[data-count]')?.textContent).toBe('2')
       expect(staged.querySelector('[data-count]')?.textContent).toBe('1')
 
-      const stageAll = unstaged.querySelector<HTMLButtonElement>(`button[aria-label="${t('stageAll')}"]`)
-      const unstageAll = staged.querySelector<HTMLButtonElement>(`button[aria-label="${t('unstageAll')}"]`)
-      expect(stageAll).not.toBeNull()
-      expect(unstageAll).not.toBeNull()
+      // The band's own action is the one that is NOT inside a row (directory
+      // rows carry the same "Stage all" label for their own subtree).
+      const stageAll = [...unstaged.querySelectorAll<HTMLButtonElement>(`button[aria-label="${t('stageAll')}"]`)]
+        .find(button => button.closest('[data-row]') === null)
+      const unstageAll = [...staged.querySelectorAll<HTMLButtonElement>(`button[aria-label="${t('unstageAll')}"]`)]
+        .find(button => button.closest('[data-row]') === null)
+      expect(stageAll).not.toBeUndefined()
+      expect(unstageAll).not.toBeUndefined()
 
       const stage = vi.spyOn(api, 'gitStage').mockResolvedValue({ ok: true })
       await act(async () => { stageAll!.click() })
@@ -551,6 +563,112 @@ describe('GitLens (changes tab, git lens) change tree', () => {
     } finally {
       act(() => { root.unmount() })
       container.remove()
+    }
+  })
+
+  it('stages and unstages a whole directory from its row action', async () => {
+    const { container, root } = makeRoot()
+    try {
+      await mountTree(container, root, [
+        { path: 'src/deep/a.ts', xy: ' M' }, // unstaged → the 'src/deep' row
+        { path: 'docs/b.md', xy: 'M ' }, // staged → the 'docs' row
+      ])
+      const stage = vi.spyOn(api, 'gitStage').mockResolvedValue({ ok: true })
+      const unstage = vi.spyOn(api, 'gitUnstage').mockResolvedValue({ ok: true })
+
+      const dirAction = (path: string, label: string): HTMLButtonElement => {
+        const row = container.querySelector<HTMLElement>(`[data-row="${path}"]`)
+        expect(row).not.toBeNull()
+        const button = row!.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
+        expect(button).not.toBeNull()
+        return button!
+      }
+
+      const unstagedDir = dirAction('src/deep', t('stageAll'))
+      await act(async () => { unstagedDir.click() })
+      await flushEffects()
+      // The directory path stages the whole subtree (`git add -A -- <dir>`).
+      expect(stage).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session' }), 'src/deep', MAIN)
+
+      const stagedDir = dirAction('docs', t('unstageAll'))
+      await act(async () => { stagedDir.click() })
+      await flushEffects()
+      expect(unstage).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session' }), 'docs', MAIN)
+
+      // Neither click folded its row: the action is a sibling of the
+      // disclosure button (and stops propagation anyway).
+      expect(container.querySelector('button[data-dir="src/deep"]')!.getAttribute('aria-expanded')).toBe('true')
+      expect(container.querySelector('button[data-path="src/deep/a.ts"]')).not.toBeNull()
+      expect(container.querySelector('button[data-dir="docs"]')!.getAttribute('aria-expanded')).toBe('true')
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+
+  it('resolves no icon for a status poll whose change list did not change', async () => {
+    vi.useFakeTimers()
+    const fileIcons: string[] = []
+    const folderIcons: string[] = []
+    /** The icon resolvers are the re-render probe: they run inside the rows,
+     *  so one entry per call means one row actually re-rendered. */
+    const service = {
+      subscribe: () => () => {},
+      fileIcon: (path: string) => { fileIcons.push(path); return null },
+      folderIcon: (path: string, open: boolean) => { folderIcons.push(`${path}:${String(open)}`); return null },
+    } as unknown as BetterSidebarService
+    const ctx = { get: (name: string) => (name === 'betterSidebar' ? service : undefined) } as unknown as Context
+
+    const { container, root } = makeRoot()
+    try {
+      vi.spyOn(api, 'gitWorktrees').mockResolvedValue([{ path: MAIN, branch: 'main', current: true, changes: 2 }])
+      // Every poll answers with a fresh object and a fresh entries array (the
+      // store's real shape). The FIRST answer carries no repository list and
+      // the later ones do — a field OUTSIDE the change list moves, so the store
+      // cannot preserve the snapshot identity and hands the lens a new array
+      // whose content is equal. Only the CONTENT key plus the memoized rows
+      // hold there; identity alone would rebuild the tree and re-render rows.
+      let poll = 0
+      vi.spyOn(api, 'gitStatus').mockImplementation(async () => {
+        poll += 1
+        return {
+          isRepo: true,
+          branch: 'main',
+          ...(poll === 1 ? {} : { repositories: [MAIN] }),
+          // One compressed directory row (folder icon) + its two file rows.
+          entries: [{ path: 'src/deep/a.ts', xy: ' M' }, { path: 'src/deep/b.ts', xy: ' M' }],
+        }
+      })
+      vi.spyOn(api, 'gitBranch').mockResolvedValue({ current: 'main', names: ['main'] })
+      vi.spyOn(api, 'gitLog').mockResolvedValue([])
+
+      mountGit(root, { ctx })
+      await flushEffects()
+      expect(fileIcons).toEqual(['src/deep/a.ts', 'src/deep/b.ts'])
+      expect(folderIcons).toEqual(['src/deep:true'])
+
+      fileIcons.length = 0
+      folderIcons.length = 0
+      // Tick 1: a NEW snapshot object with an equal-content change list.
+      await act(async () => { await vi.advanceTimersByTimeAsync(2_600) })
+      await flushEffects()
+      expect(fileIcons).toEqual([])
+      expect(folderIcons).toEqual([])
+
+      fileIcons.length = 0
+      folderIcons.length = 0
+      // Tick 2: a byte-identical answer (the store reuses the snapshot object).
+      await act(async () => { await vi.advanceTimersByTimeAsync(2_600) })
+      await flushEffects()
+      expect(fileIcons).toEqual([])
+      expect(folderIcons).toEqual([])
+      // The probe measured stability, not loss: every row is still there.
+      expect(container.querySelectorAll('[data-path]')).toHaveLength(2)
+      expect(container.querySelectorAll('button[data-dir="src/deep"]')).toHaveLength(1)
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+      vi.useRealTimers()
     }
   })
 })

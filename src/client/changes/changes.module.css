@@ -103,23 +103,23 @@
   border-left: 1px solid var(--dsw-alias-border-l1);
 }
 
-/* One directory row: disclosure chevron + folder artwork + label + count. */
+/* A directory row's disclosure button. It shares the `.row` band with a file
+   row (the band owns the hover/selected fill and the trailing action), so this
+   button is only the row's main hit area. */
 .dirRow {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
-  min-height: 28px;
-  padding: 0 6px 0 2px;
   border: none;
-  border-radius: 4px;
   background: transparent;
+  padding: 0;
   color: var(--dsw-alias-label-secondary);
   font: inherit;
   cursor: pointer;
   text-align: left;
 }
-.dirRow:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .dirRow:focus-visible { outline: 2px solid var(--dsw-alias-interactive-bg-hover-accent); outline-offset: -1px; }
 
 .chevron { flex: none; display: inline-flex; color: var(--dsw-alias-label-tertiary); transition: transform 140ms var(--ds-ease-in-out); }

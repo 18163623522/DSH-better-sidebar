@@ -14,12 +14,13 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { validateHeaderValue } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
 import { apply } from '../src/index.ts'
 import { archiveUrl } from '../src/client/api.ts'
-import { archiveNameOf, collectZipEntries } from '../src/archive-route.ts'
+import { archiveNameOf, collectZipEntries, contentDispositionOf, disambiguateArchiveNames } from '../src/archive-route.ts'
 import { crc32, buildZip, type ZipEntry } from '../src/zip.ts'
 import { SidebarError } from '../src/wire.ts'
 import type { SidebarWebRoute, SidebarWebUpgradeRoute } from '../src/context-types.ts'
@@ -224,12 +225,74 @@ describe('buildZip', () => {
       .rejects.toMatchObject({ code: 'fs-error' })
   })
 
+  it('enforces the byte bound BEFORE reading the payload (stat first)', async () => {
+    const root = tempRoot()
+    const huge = join(root, 'huge.bin')
+    writeFileSync(huge, Buffer.alloc(4 * 1024 * 1024, 7))
+    // A source far past the budget is refused on its stat, with the archive's
+    // own ceiling in the message (never an internal budget number)…
+    await expect(buildZip([{ path: huge, name: 'huge.bin' }], { maxBytes: 1024 }))
+      .rejects.toThrow(/exceeds the 1024 byte limit/)
+    await expect(buildZip([{ path: huge, name: 'huge.bin' }], { maxBytes: 1024 }))
+      .rejects.toMatchObject({ code: 'fs-error' })
+    // maxBytes: 0 refuses even a one-byte source.
+    const one = join(root, 'one.txt')
+    writeFileSync(one, 'x')
+    await expect(buildZip([{ path: one, name: 'one.txt' }], { maxBytes: 0 }))
+      .rejects.toThrow(/exceeds the 0 byte limit/)
+    // …and a source that exactly fills the budget is accepted.
+    const two = join(root, 'two.txt')
+    writeFileSync(two, 'xy')
+    expect(readZip(await buildZip([{ path: two, name: 't.txt' }], { maxBytes: 2 }))[0]!.size).toBe(2)
+    // The budget is the REMAINING allowance: the second entry no longer fits
+    // (an exhausted budget refuses even a zero-byte source, so a FIFO can
+    // never be opened — see the probe below).
+    const empty = join(root, 'empty.txt')
+    writeFileSync(empty, '')
+    await expect(buildZip([{ path: two, name: 'a.txt' }, { path: empty, name: 'b.txt' }], { maxBytes: 2 }))
+      .rejects.toMatchObject({ code: 'fs-error' })
+  })
+
+  it('never opens a source the size probe already refused (FIFO)', async () => {
+    if (process.platform === 'win32') return // no FIFOs there
+    const root = tempRoot()
+    const fifo = join(root, 'pipe')
+    const made = spawnSync('mkfifo', [fifo], { encoding: 'utf8' })
+    if (made.error !== undefined || made.status !== 0) return // binary absent: skip
+    // A 2-byte file consumes the whole 2-byte budget, so the FIFO's remaining
+    // allowance is 0. Reading an unwritten FIFO BLOCKS FOREVER, so this test
+    // can only complete when the size probe refuses it before open() — with the
+    // read-then-check order it hangs and vitest fails it on timeout instead.
+    // (This is the discriminating guard for F3: a "rejects quickly" timing
+    // probe does NOT discriminate, because the reverted code also rejects.)
+    const two = join(root, 'two.txt')
+    writeFileSync(two, 'xy')
+    await expect(buildZip([{ path: two, name: 'a.txt' }, { path: fifo, name: 'p' }], { maxBytes: 2 }))
+      .rejects.toThrow(/exceeds the 2 byte limit/)
+  }, 5_000)
+
   it('reports an unreadable source as fs-error and refuses traversal names', async () => {
     const root = tempRoot()
     await expect(buildZip([{ path: join(root, 'missing.txt'), name: 'missing.txt' }]))
       .rejects.toMatchObject({ code: 'fs-error' })
     await expect(buildZip([{ path: join(root, 'x'), name: '../escape.txt' }]))
       .rejects.toMatchObject({ code: 'bad-request' })
+  })
+
+  it('keeps a backslash as part of the file name (POSIX names are literal)', async () => {
+    const root = tempRoot()
+    // `a\b.txt` is ONE legal POSIX file name; splitting it into a directory
+    // would silently rename the member (F8).
+    const path = join(root, 'a\\b.txt')
+    writeFileSync(path, 'literal\n')
+    const archive = await buildZip([{ path, name: 'a\\b.txt' }])
+    const entries = readZip(archive)
+    expect(entries).toHaveLength(1)
+    expect(entries[0]!.name).toBe('a\\b.txt')
+    expect(entries[0]!.data.toString('utf8')).toBe('literal\n')
+    // A traversal name is still refused, and so is a bare '..'.
+    await expect(buildZip([{ path, name: 'dir/../../x' }])).rejects.toMatchObject({ code: 'bad-request' })
+    await expect(buildZip([{ path, name: '..' }])).rejects.toMatchObject({ code: 'bad-request' })
   })
 
   it('passes `unzip -t` when the binary exists (skipped otherwise)', async () => {
@@ -307,6 +370,52 @@ describe('archiveNameOf', () => {
   })
 })
 
+describe('contentDispositionOf', () => {
+  it('never puts a non-latin1 character in the header value', () => {
+    const header = contentDispositionOf('报告.zip')
+    // Node's writeHead rejects any header value above U+00FF — the whole
+    // reason the raw name cannot be used (it 500s the route). Control: the
+    // exact shape this fix replaced must FAIL the same check.
+    expect(() => validateHeaderValue('content-disposition', 'attachment; filename="报告.zip"'))
+      .toThrow(/Invalid character in header content/)
+    expect([...header].every(char => char.codePointAt(0)! <= 0xFF)).toBe(true)
+    expect(validateHeaderValue('content-disposition', header)).toBeUndefined()
+    expect(header).toBe(`attachment; filename="download.zip"; filename*=UTF-8''${encodeURIComponent('报告.zip')}`)
+  })
+
+  it('keeps a plain ASCII name in both halves (suffix stripped for the fallback stem only)', () => {
+    const header = contentDispositionOf('docs.zip')
+    expect(header).toBe(`attachment; filename="docs.zip"; filename*=UTF-8''docs.zip`)
+    expect(validateHeaderValue('content-disposition', header)).toBeUndefined()
+    // A mixed name keeps whatever ASCII survives in the fallback.
+    expect(contentDispositionOf('報告 Q3.zip')).toContain('filename=" Q3.zip"')
+  })
+})
+
+describe('disambiguateArchiveNames', () => {
+  it('keeps the basename when nothing collides', () => {
+    expect(disambiguateArchiveNames(['/ws/src', '/ws/notes.md'])).toEqual(['src', 'notes.md'])
+  })
+
+  it('prepends parent directories only for the colliding selections', () => {
+    expect(disambiguateArchiveNames(['/ws/a/index.ts', '/ws/b/index.ts']))
+      .toEqual(['a/index.ts', 'b/index.ts'])
+    // The unaffected selection keeps its short name.
+    expect(disambiguateArchiveNames(['/ws/a/index.ts', '/ws/notes.md']))
+      .toEqual(['index.ts', 'notes.md'])
+  })
+
+  it('walks further up while ancestors still collide', () => {
+    // Both are `src/index.ts` relative to their own parent: one more level.
+    expect(disambiguateArchiveNames(['/ws/a/src/index.ts', '/ws/b/src/index.ts']))
+      .toEqual(['a/src/index.ts', 'b/src/index.ts'])
+  })
+
+  it('falls back to the full path when no ancestor can separate the names', () => {
+    expect(disambiguateArchiveNames(['/ws/a.txt', '/ws/a.txt'])).toEqual(['ws/a.txt', 'ws/a.txt'])
+  })
+})
+
 describe('/sidebar/archive route', () => {
   it('archiveUrl builds the GET URL the route parses (repeated path, encoded)', () => {
     const url = archiveUrl({ sessionId: 's-1', cwd: '/work tree' }, ['/work tree/a b.txt', '/work tree/子目录'], 'my zip.zip')
@@ -335,7 +444,10 @@ describe('/sidebar/archive route', () => {
     const response = await get(route, url)
     expect(response.status).toBe(200)
     expect(response.headers['content-type']).toBe('application/zip')
-    expect(response.headers['content-disposition']).toBe('attachment; filename="我的打包.zip"')
+    // F1: the name is never header-raw. See the real-HTTP case below for the
+    // node:http proof that a non-latin1 name no longer 500s.
+    expect(response.headers['content-disposition'])
+      .toBe(`attachment; filename="download.zip"; filename*=UTF-8''${encodeURIComponent('我的打包.zip')}`)
     expect(Number(response.headers['content-length'])).toBe(response.body.byteLength)
     const entries = readZip(response.body)
     expect(entries.map(entry => entry.name)).toEqual([
@@ -348,6 +460,63 @@ describe('/sidebar/archive route', () => {
     const byName = new Map(entries.map(entry => [entry.name, entry]))
     expect(byName.get('src/index.ts')!.data.toString('utf8')).toBe('export {}\n')
     expect(byName.get('notes.md')!.data.toString('utf8')).toBe('# notes\n')
+  })
+
+  it('serves a non-latin1 download name through REAL node:http (no 500, RFC 5987)', async () => {
+    const root = tempRoot()
+    const workspace = join(root, 'workspace')
+    mkdirSync(join(workspace, '报告'), { recursive: true })
+    writeFileSync(join(workspace, '报告', '数据.txt'), 'x\n')
+    const route = mountArchive()
+    const name = '报告.zip'
+    const url = `/sidebar/archive?sessionId=s-zip&cwd=${encodeURIComponent(workspace)}`
+      + `&name=${encodeURIComponent(name)}`
+      + `&path=${encodeURIComponent(join(workspace, '报告'))}`
+    // The route handler answers a REAL ServerResponse here: node:http's
+    // writeHead validates header values, which the plain-object stub in the
+    // other cases cannot do — that is exactly how the Chinese-name 500 hid.
+    const { createServer } = await import('node:http')
+    const server = createServer((req, res) => { void route.handler(req as never, res as never) })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    try {
+      const address = server.address()
+      if (address === null || typeof address === 'string') throw new Error('test setup: no server port')
+      const response = await fetch(`http://127.0.0.1:${address.port}${url}`)
+      expect(response.status).toBe(200)
+      const disposition = response.headers.get('content-disposition') ?? ''
+      // The ASCII half is what old clients read; the RFC 5987 half carries the
+      // real name and is what every current browser picks.
+      expect(disposition).toContain(`filename*=UTF-8''${encodeURIComponent(name)}`)
+      expect(disposition).toContain('filename="download.zip"')
+      // The header VALUE must be latin1-clean (Node's own rule).
+      expect([...disposition].every(char => char.codePointAt(0)! <= 0xFF)).toBe(true)
+      const entries = readZip(Buffer.from(await response.arrayBuffer()))
+      expect(entries.map(entry => entry.name)).toEqual(['报告/', '报告/数据.txt'])
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()))
+    }
+  })
+
+  it('disambiguates same-name selections with their parent directories', async () => {
+    const root = tempRoot()
+    const workspace = join(root, 'workspace')
+    mkdirSync(join(workspace, 'a'), { recursive: true })
+    mkdirSync(join(workspace, 'b'), { recursive: true })
+    writeFileSync(join(workspace, 'a', 'index.ts'), 'from a\n')
+    writeFileSync(join(workspace, 'b', 'index.ts'), 'from b\n')
+    const route = mountArchive()
+    const url = `/sidebar/archive?sessionId=s-zip&cwd=${encodeURIComponent(workspace)}`
+      + `&path=${encodeURIComponent(join(workspace, 'a', 'index.ts'))}`
+      + `&path=${encodeURIComponent(join(workspace, 'b', 'index.ts'))}`
+    const response = await get(route, url)
+    expect(response.status).toBe(200)
+    const entries = readZip(response.body)
+    const names = entries.map(entry => entry.name)
+    expect(new Set(names).size).toBe(names.length)
+    expect(names).toEqual(['a/index.ts', 'b/index.ts'])
+    const byName = new Map(entries.map(entry => [entry.name, entry]))
+    expect(byName.get('a/index.ts')!.data.toString('utf8')).toBe('from a\n')
+    expect(byName.get('b/index.ts')!.data.toString('utf8')).toBe('from b\n')
   })
 
   it('never follows a symlink out of the workspace', async () => {
@@ -415,11 +584,11 @@ describe('/sidebar/archive route', () => {
     const path = encodeURIComponent(join(workspace, 'a.txt'))
     const scope = `sessionId=s-zip&cwd=${encodeURIComponent(workspace)}&path=${path}`
     const traversal = await get(route, `/sidebar/archive?${scope}&name=${encodeURIComponent('../evil")b.zip')}`)
-    expect(traversal.headers['content-disposition']).toBe('attachment; filename="evil)b.zip"')
+    expect(traversal.headers['content-disposition']).toContain('filename="evil)b.zip"')
     const bare = await get(route, `/sidebar/archive?${scope}&name=docs`)
-    expect(bare.headers['content-disposition']).toBe('attachment; filename="docs.zip"')
+    expect(bare.headers['content-disposition']).toContain('filename="docs.zip"')
     const fallback = await get(route, `/sidebar/archive?${scope}`)
-    expect(fallback.headers['content-disposition']).toBe('attachment; filename="archive.zip"')
+    expect(fallback.headers['content-disposition']).toContain('filename="archive.zip"')
   })
 
   it('rejects a non-GET method', async () => {

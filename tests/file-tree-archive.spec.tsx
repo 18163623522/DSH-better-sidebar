@@ -314,4 +314,44 @@ describe('FileTree zip and download', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
     await settleDownload()
   })
+
+  it('shows a loading line while the archive is being built, and hides it after', async () => {
+    let release: (response: Response) => void = () => {}
+    fetchMock.mockImplementation(async () => await new Promise<Response>(resolve => { release = resolve }))
+    harness = await mountTree()
+    const busyLine = (): HTMLElement | null => harness.container.querySelector<HTMLElement>('[data-kind="loading"]')
+    // Nothing is shown before the request starts…
+    expect(busyLine()).toBeNull()
+    rightClick(rowByName(harness.container, 'sub'))
+    clickMenuitem('Zip and download')
+    // …the in-flight request keeps one visible, announced line…
+    const line = busyLine()
+    expect(line).not.toBeNull()
+    expect(line?.textContent).toBe('Loading…')
+    expect(line?.getAttribute('role')).toBe('status')
+    // …a repeated pick is still guarded (no second fetch) AND still not silent.
+    rightClick(rowByName(harness.container, 'sub'))
+    clickMenuitem('Zip and download')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(busyLine()).not.toBeNull()
+    await act(async () => { release(okResponse()) })
+    await settleDownload()
+    expect(busyLine()).toBeNull()
+    expect(downloads).toEqual(['blob:mock-1|sub.zip'])
+  })
+
+  it('hides the loading line when the archive fails too', async () => {
+    let release: (response: Response) => void = () => {}
+    fetchMock.mockImplementation(async () => await new Promise<Response>(resolve => { release = resolve }))
+    harness = await mountTree()
+    rightClick(rowByName(harness.container, 'sub'))
+    clickMenuitem('Zip and download')
+    expect(harness.container.querySelector('[data-kind="loading"]')).not.toBeNull()
+    await act(async () => { release(errorResponse(413, { ok: false, error: { message: 'too big' } })) })
+    await settleDownload()
+    expect(harness.container.querySelector('[data-kind="loading"]')).toBeNull()
+    // The busy line yields to the error strip: both never race for the slot.
+    expect(harness.container.querySelector('[role="alert"]')?.textContent)
+      .toContain('Archive failed: too big')
+  })
 })

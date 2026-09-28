@@ -162,11 +162,31 @@ describe('FileTree plugin open-with menu', () => {
       'File Manager', 'VS Code', 'Cursor', 'Zed', 'Windsurf',
     ])
     expect(submenuRows().every(item => item.querySelector('[class*="openWithPin"]') !== null)).toBe(true)
-    // Pinned state is announced per row (and swaps the pushpin glyph).
+    // Pinned state is carried per row by the pin's TITLE (it swaps the glyph
+    // and the hover hint).
     const vscodeRow = submenuRows().find(item => item.textContent?.trim() === 'VS Code')
     const cursorRow = submenuRows().find(item => item.textContent?.trim() === 'Cursor')
-    expect(vscodeRow?.querySelector('[aria-label="Unpin"]')).not.toBeNull()
-    expect(cursorRow?.querySelector('[aria-label="Pin to menu"]')).not.toBeNull()
+    expect(vscodeRow?.querySelector('[title="Unpin"]')).not.toBeNull()
+    expect(cursorRow?.querySelector('[title="Pin to menu"]')).not.toBeNull()
+  })
+
+  it('keeps the pin a mouse hot zone, never a fake nested control', async () => {
+    // The Menu renders each row as `<button role="menuitem">`, so ANY
+    // role=button/tabIndex on the pin would be invalid nesting AND
+    // unreachable by keyboard (the row button owns focus). It is deliberately
+    // a plain span: the pin's nameable affordance is its `title`, and the
+    // reachable path to the same pinned list is the settings panel.
+    harness = await mountTree()
+    openMenu(harness.container)
+    act(() => { submenuParent().click() })
+    const vscodePin = submenuRows().find(item => item.textContent?.trim() === 'VS Code')!
+      .querySelector<HTMLElement>('[class*="openWithPin"]')!
+    expect(vscodePin.tagName).toBe('SPAN')
+    expect(vscodePin.getAttribute('role')).toBeNull()
+    expect(vscodePin.hasAttribute('tabindex')).toBe(false)
+    expect(vscodePin.getAttribute('title')).toBe('Unpin')
+    // The row itself stays the only interactive element of the entry.
+    expect(vscodePin.closest('[role="menuitem"]')?.tagName).toBe('BUTTON')
   })
 
   it('pin click toggles without selecting the row or closing the menu', async () => {
@@ -195,16 +215,20 @@ describe('FileTree plugin open-with menu', () => {
     expect(menuItems()).toHaveLength(0)
   })
 
-  it('appends the SSH hint to VSCode-family labels in remote mode', async () => {
+  it('appends the SSH hint to VSCode-family labels in remote mode (reveal stays)', async () => {
+    // The SSH-resolved list keeps `explorer` (see resolveOpenWithTargets):
+    // reveal runs on the machine that owns the workspace, and it is the only
+    // reveal left when the DSH host's open-in-app capability is unavailable.
+    // Dropping it here would test a list the caller never produces.
     harness = await mountTree({
       openWithSsh: true,
-      openWithTargets: targets.filter(target => !target.localOnly),
+      openWithTargets: targets.filter(target => !target.localOnly || target.kind === 'reveal'),
       openWithPinned: [],
     })
     openMenu(harness.container)
     act(() => { submenuParent().click() })
     expect(submenuRows().map(item => item.textContent?.trim())).toEqual([
-      'VS Code (SSH)', 'Cursor (SSH)', 'Windsurf (SSH)',
+      'File Manager', 'VS Code (SSH)', 'Cursor (SSH)', 'Windsurf (SSH)',
     ])
   })
 

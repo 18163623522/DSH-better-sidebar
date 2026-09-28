@@ -47,12 +47,26 @@ interface DirDraft {
   files: ChangeFile[]
 }
 
-/** Directories before files, then by name — case-insensitively, with the raw
- *  name breaking ties so the order never depends on the locale's collation. */
+/**
+ * Directories before files, then by name — case-insensitively.
+ *
+ * The collation is PINNED (`'en'`, `sensitivity: 'base'`) rather than left to
+ * the runtime's default locale: `localeCompare(other)` alone follows whatever
+ * locale the browser/Node happens to run under, so the same change list could
+ * order differently on two machines. Base sensitivity makes case and accent
+ * variants compare equal, and the code-point tiebreak below then decides —
+ * a total order that does not move when the input order changes.
+ */
+function compareNames(left: string, right: string): number {
+  const collated = left.localeCompare(right, 'en', { sensitivity: 'base' })
+  if (collated !== 0) return collated
+  if (left === right) return 0
+  return left < right ? -1 : 1
+}
+
 function compareNodes(left: ChangeNode, right: ChangeNode): number {
   if (left.kind !== right.kind) return left.kind === 'dir' ? -1 : 1
-  const folded = left.name.toLowerCase().localeCompare(right.name.toLowerCase())
-  return folded !== 0 ? folded : left.name.localeCompare(right.name)
+  return compareNames(left.name, right.name)
 }
 
 /** The number of changed files under a finished child list. */

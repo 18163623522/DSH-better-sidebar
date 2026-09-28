@@ -90,6 +90,24 @@ function joinRoot(root: string, rel: string): string {
   return `${base}/${rel.replace(/^[\\/]+/, '')}`
 }
 
+/**
+ * Whether two status snapshots carry the same information. Compared field by
+ * field (never by serializing the whole object): the entries are the payload
+ * and their order is stable, so a length + pairwise compare is enough.
+ */
+function sameStatus(a: GitStatusResult, b: GitStatusResult): boolean {
+  if (a === b) return true
+  if (a.isRepo !== b.isRepo || a.branch !== b.branch || a.root !== b.root
+    || a.truncated !== b.truncated || a.entries.length !== b.entries.length) return false
+  if (a.repositories?.length !== b.repositories?.length) return false
+  if (a.repositories !== undefined && b.repositories !== undefined
+    && a.repositories.some((root, index) => root !== b.repositories![index])) return false
+  return a.entries.every((entry, index) => {
+    const other = b.entries[index]!
+    return entry.path === other.path && entry.xy === other.xy
+  })
+}
+
 interface Index {
   /** Normalized absolute path → status (files only). */
   files: Map<string, GitFileStatus>
@@ -177,6 +195,15 @@ function fetchSlot(slot: Slot): void {
   api.gitStatus(scope, slot.worktree)
     .then((snapshot) => {
       if (generation !== slot.generation) return
+      // Idle polls return the same answer as a NEW object every 2.5s. Keeping
+      // the previous identity when nothing changed is what lets every
+      // downstream memo (the changes tree, the file tree's row model, the
+      // icon index) hold across ticks — without it the whole list re-rendered
+      // and re-resolved icons on every poll.
+      if (slot.snapshot !== null && sameStatus(slot.snapshot, snapshot)) {
+        slot.error = false
+        return
+      }
       slot.snapshot = snapshot
       slot.error = false
     })

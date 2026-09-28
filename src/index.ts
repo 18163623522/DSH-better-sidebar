@@ -38,7 +38,7 @@ import { isTrustedApiRequest } from './trust-fence.ts'
 import { registerBundleRoute } from './bundle-route.ts'
 import { createDirectoryWatchers, type DirectoryWatchers } from './fs-watch.ts'
 import { launchExternal } from './open-external.ts'
-import { archiveNameOf, collectZipEntries } from './archive-route.ts'
+import { archiveNameOf, collectZipEntries, contentDispositionOf, disambiguateArchiveNames } from './archive-route.ts'
 import { buildZip, type ZipEntry } from './zip.ts'
 import * as git from './git.ts'
 import { SettingsConflictError } from '@deepseek-ai/dsh-settings'
@@ -68,10 +68,10 @@ export type {
   FileViewerProps,
   FileFetchStrategy,
 } from './client/service.ts'
-// The archive walk + name sanitizer are exercised directly by tests/zip.spec.ts:
+// The archive walk + name helpers are exercised directly by tests/zip.spec.ts:
 // their bounds live inside the collector, so the suite needs them observable
 // without creating 10 000 rows first.
-export { archiveNameOf, collectZipEntries } from './archive-route.ts'
+export { archiveNameOf, collectZipEntries, contentDispositionOf, disambiguateArchiveNames } from './archive-route.ts'
 
 /** Plugin identity for cordis.yml rows. */
 export const name = 'dsh-better-sidebar'
@@ -945,15 +945,22 @@ export function apply(ctx: Context, config?: SidebarConfig): void {
         const name = archiveNameOf(url.searchParams.get('name'))
         const cwd = await sessionCwdOf(ctx, sessionId, url.searchParams.get('cwd') ?? undefined)
         const fenceOn = fenceEnabledOf(() => settingsFace)
+        const selected: string[] = []
+        for (const raw of paths) selected.push(await ensureWorkspacePath(cwd, raw, fenceOn))
+        // Same-basename selections (a/index.ts + b/index.ts) get parent
+        // segments prepended, so no two archive members collide and an
+        // extractor cannot overwrite one with the other.
         const entries: ZipEntry[] = []
-        for (const raw of paths) {
-          const absolute = await ensureWorkspacePath(cwd, raw, fenceOn)
-          await collectZipEntries(absolute, basename(absolute), entries)
+        const names = disambiguateArchiveNames(selected)
+        for (const [index, absolute] of selected.entries()) {
+          await collectZipEntries(absolute, names[index]!, entries)
         }
         const body = await buildZip(entries)
         res.writeHead(200, {
           'content-type': 'application/zip',
-          'content-disposition': `attachment; filename="${name}"`,
+          // Never the raw name: a non-latin1 value (中文目录 → 报告.zip) makes
+          // Node's writeHead throw and turns the download into a 500.
+          'content-disposition': contentDispositionOf(name),
           'content-length': String(body.byteLength),
           'cache-control': 'no-cache',
         })
