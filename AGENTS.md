@@ -38,6 +38,7 @@
 - **宿主 web profile 组成**：新增 desktop-only `product-analytics` / `desktop-product-telemetry`（web 上 `disabled`）；`time-context` / `schedule` / `ui-schedule`（本就 `disabled`）移入可选 `dsh-experimental-schedule-bundle`。挂载 lane 的「宿主 tab 恰好 1 条（terminal）、browser 缺席」断言不受影响。插件**不依赖**宿主 schedule 服务。
 - **生态连带**：可选集成 `@huanlin/dsh-plugin-better-locale` 的 peer 钉 `^0.1.x`（最新 0.4.3 也钉 `^0.1.5-rc.2`），在 0.2.0 上必被预检禁用 → `pnpm peers check` 会报它的 5 条 unmet peer，属上游未适配，与本插件自身 14 条 peer 无关。
 - **本机 dev 树**：先 `pnpm install --registry https://registry.npmjs.org`（npmmirror 对新预发布滞后，直接 `pnpm install` 会 `ERR_PNPM_NO_MATCHING_VERSION`）。
+- **用户 profile 自己的 pin 也要同批抬**（2026-09-28 实测踩到）：profile 的 `pnpm-workspace.yaml` 里若有 `overrides: '@deepseek-ai/dsh-*'`（例如历史上为修「旧宿主包遮蔽 bundle」而加的 `dsh-settings` pin），**升级宿主时必须与宿主版本同批更新**。忘了抬的后果：profile 顶层留住旧版 `dsh-settings`，它用精确版本拉来旧版 `dsh-config-editor` 并遮蔽 bundle 自带的 0.2.0 版本 → 预检禁用 `config-editor` 行 → `settings` 行永远 `pending (waiting for service: configEditor)` → 界面报「加载提供商目录失败: settings service is absent」。症状与原因隔着好几层，先看宿主日志里的 `disabling profile plugin row` 与 `pending (waiting for service: …)` 两行。
 
 ### 3.1~3.4 历史：DSH 0.1.7 适配要点（0.1.7-rc.1+ 基线，v0.21.1–v0.23.0）
 
