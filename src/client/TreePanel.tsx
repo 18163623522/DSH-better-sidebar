@@ -27,6 +27,7 @@ import type { SidebarStore } from './state.ts'
 import { FileTree } from './FileTree.tsx'
 import { IconUploadOutline16 } from './icons.tsx'
 import type { OpenInApp } from './open-in-app.ts'
+import type { OpenWithTarget } from './open-with.ts'
 import { t } from './locales.ts'
 import { resolveSidebarPath } from './paths.ts'
 import { IconButton } from './ui/index.ts'
@@ -61,8 +62,15 @@ export function TreePanel(props: {
   /** File context-menu "open to the side" (passed through to FileTree). */
   onOpenFileSide?: (path: string) => void
   /** The host's open-in-app handle (passed through to FileTree; absent →
-   *  the whole section is hidden). */
+   *  the HOST half of the "打开方式" section is hidden). */
   openInApp?: OpenInApp
+  /** The plugin's own open-with targets (passed through to FileTree; coexists
+   *  with `openInApp`; absent → no plugin half). */
+  openWithTargets?: OpenWithTarget[]
+  openWithPinned?: string[]
+  openWithSsh?: boolean
+  onOpenWith?: (targetId: string, path: string) => void
+  onToggleOpenWithPin?: (targetId: string) => void
   onReferenceFile: (path: string, isDir: boolean) => void
   /** A tree rename landed (passed through to FileTree for tab retargeting). */
   onPathRenamed?: (oldPath: string, newPath: string) => void
@@ -79,7 +87,8 @@ export function TreePanel(props: {
 }) {
   const {
     sessionId, cwd, store, expanded, revealed, onToggle, onOpenFile, onOpenFileNewTab, onOpenFileSide,
-    openInApp, onReferenceFile, onPathRenamed, onPathDeleted, visible, full, service,
+    openInApp, openWithTargets, openWithPinned, openWithSsh, onOpenWith, onToggleOpenWithPin,
+    onReferenceFile, onPathRenamed, onPathDeleted, visible, full, service,
   } = props
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<{ matches: string[]; truncated: boolean } | null>(null)
@@ -281,6 +290,11 @@ export function TreePanel(props: {
         onOpenFileNewTab={onOpenFileNewTab}
         onOpenFileSide={onOpenFileSide}
         openInApp={openInApp}
+        openWithTargets={openWithTargets}
+        openWithPinned={openWithPinned}
+        openWithSsh={openWithSsh}
+        onOpenWith={onOpenWith}
+        onToggleOpenWithPin={onToggleOpenWithPin}
         onReferenceFile={onReferenceFile}
         onPathRenamed={onPathRenamed}
         onPathDeleted={onPathDeleted}

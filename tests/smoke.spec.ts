@@ -84,6 +84,7 @@ describe('host plugin smoke', () => {
       '/sidebar/api',
       '/sidebar/upload',
       '/sidebar/bundle',
+      '/sidebar/archive',
       '/sidebar/file',
       '/sidebar/html',
     ])
@@ -737,6 +738,25 @@ const mountWithSettings = (settings?: unknown, home?: string): SidebarWebRoute =
   apply(ctx as never)
   return routes.find(route => route.path === '/sidebar/api')!
 }
+
+describe('open.external route', () => {
+  it('rejects an unknown action with bad-request (before anything spawns)', async () => {
+    const route = mountWithSettings()
+    const result = await invoke(route, 'open.external', { action: 'open-ish', path: '/tmp/a.txt' })
+    expect(result).toMatchObject({ ok: false, error: { code: 'bad-request' } })
+  })
+
+  it('rejects http(s) URLs and relative reveal paths before spawning', async () => {
+    const route = mountWithSettings()
+    const https = await invoke(route, 'open.external', { action: 'url', url: 'https://example.com' })
+    expect(https).toMatchObject({ ok: false, error: { code: 'bad-request' } })
+    const relative = await invoke(route, 'open.external', { action: 'reveal', path: 'relative/path' })
+    expect(relative).toMatchObject({ ok: false, error: { code: 'fs-error' } })
+    // A missing field never reaches launchExternal either.
+    const empty = await invoke(route, 'open.external', { action: 'url' })
+    expect(empty).toMatchObject({ ok: false, error: { code: 'bad-request' } })
+  })
+})
 
 describe('side card settings routes', () => {
   it('serves the schema defaults when the settings service is absent', async () => {

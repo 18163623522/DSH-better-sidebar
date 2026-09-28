@@ -106,11 +106,17 @@ describe('ChangesTab', () => {
       mount(root)
       await flushEffects()
 
-      // Git lens: the changed-file row (badge letter + split name/directory).
+      // Git lens: the change reads as a TREE — the directory row owns the
+      // path segment, the file row its own name, its porcelain letter and the
+      // host's file artwork.
+      const dir = container.querySelector<HTMLButtonElement>('button[data-dir="src"]')
+      expect(dir).not.toBeNull()
+      expect(dir!.getAttribute('aria-expanded')).toBe('true')
       const row = container.querySelector<HTMLButtonElement>('button[data-path="src/a.ts"]')
-      expect(row).toBeDefined()
+      expect(row).not.toBeNull()
       expect(row!.textContent).toContain('a.ts')
-      expect(row!.textContent).toContain('src')
+      expect(row!.textContent).toContain('M')
+      expect(row!.querySelector('svg')).not.toBeNull()
 
       // Clicking the row previews inline (no diff tab minted): the shared
       // renderer draws the added row.

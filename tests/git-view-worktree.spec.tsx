@@ -421,3 +421,136 @@ describe('GitLens (changes tab, git lens) linked-worktree consistency', () => {
     }
   })
 })
+
+describe('GitLens (changes tab, git lens) change tree', () => {
+  /** Mount with one changed-file inventory; every test picks its own entries. */
+  async function mountTree(
+    container: HTMLElement,
+    root: Root,
+    entries: Array<{ path: string; xy: string }>,
+  ): Promise<void> {
+    const changes = entries.filter(row => row.xy !== '  ').length
+    vi.spyOn(api, 'gitWorktrees').mockResolvedValue([{ path: MAIN, branch: 'main', current: true, changes }])
+    vi.spyOn(api, 'gitStatus').mockResolvedValue({ isRepo: true, branch: 'main', entries })
+    vi.spyOn(api, 'gitBranch').mockResolvedValue({ current: 'main', names: ['main'] })
+    vi.spyOn(api, 'gitLog').mockResolvedValue([])
+    mountGit(root)
+    await flushEffects()
+  }
+
+  function makeRoot(): { container: HTMLDivElement; root: Root } {
+    const container = document.createElement('div')
+    document.body.append(container)
+    return { container, root: createRoot(container) }
+  }
+
+  it('folds a directory row per group, independently of the same path on the other side', async () => {
+    const { container, root } = makeRoot()
+    try {
+      await mountTree(container, root, [
+        { path: 'src/a.ts', xy: ' M' }, // unstaged side
+        { path: 'src/b.ts', xy: 'M ' }, // staged side
+      ])
+
+      const dirs = () => [...container.querySelectorAll<HTMLButtonElement>('button[data-dir="src"]')]
+      // One 'src' row per group: a path with changes on both sides appears in
+      // both trees.
+      expect(dirs()).toHaveLength(2)
+      expect(dirs()[0]!.getAttribute('aria-expanded')).toBe('true')
+      expect(dirs()[0]!.querySelector('svg')).not.toBeNull()
+      expect(container.querySelector('button[data-path="src/a.ts"]')).not.toBeNull()
+      expect(container.querySelector('button[data-path="src/a.ts"]')!.querySelector('svg')).not.toBeNull()
+
+      await act(async () => { dirs()[0]!.click() })
+      // Folded: the unstaged subtree is gone...
+      expect(dirs()[0]!.getAttribute('aria-expanded')).toBe('false')
+      expect(container.querySelector('button[data-path="src/a.ts"]')).toBeNull()
+      // ...while the staged group's own 'src' row stays open and keeps its file.
+      expect(dirs()[1]!.getAttribute('aria-expanded')).toBe('true')
+      expect(container.querySelector('button[data-path="src/b.ts"]')).not.toBeNull()
+
+      await act(async () => { dirs()[0]!.click() })
+      expect(container.querySelector('button[data-path="src/a.ts"]')).not.toBeNull()
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+
+  it('compresses a single-child directory chain into one labelled row', async () => {
+    const { container, root } = makeRoot()
+    try {
+      await mountTree(container, root, [
+        { path: 'src/client/changes/a.ts', xy: ' M' },
+        { path: 'src/client/changes/b.ts', xy: ' M' },
+      ])
+
+      // Three levels, one child each: one row, one label, two changes.
+      const row = container.querySelector<HTMLButtonElement>('button[data-dir="src/client/changes"]')
+      expect(row).not.toBeNull()
+      expect(row!.textContent).toContain('src/client/changes')
+      expect(container.querySelector('[data-group="unstaged"] [data-count]')?.textContent).toBe('2')
+      // Both files hang under that one row.
+      expect(container.querySelector('button[data-path="src/client/changes/a.ts"]')).not.toBeNull()
+      expect(container.querySelector('button[data-path="src/client/changes/b.ts"]')).not.toBeNull()
+      // Nothing on the staged side: only the empty band, no tree rows.
+      expect(container.querySelectorAll('[data-group="staged"] [data-path]')).toHaveLength(0)
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+
+  it('stages a file from a nested tree row and re-reads the shared status', async () => {
+    const { container, root } = makeRoot()
+    try {
+      await mountTree(container, root, [{ path: 'src/deep/a.ts', xy: ' M' }])
+      const stage = vi.spyOn(api, 'gitStage').mockResolvedValue({ ok: true })
+      const statusSpy = vi.mocked(api.gitStatus)
+      const statusCallsBefore = statusSpy.mock.calls.length
+
+      const action = container.querySelector<HTMLButtonElement>(`button[aria-label="${t('stage')}"]`)
+      expect(action).not.toBeNull()
+      await act(async () => { action!.click() })
+      await flushEffects()
+
+      // The auto-selected primary checkout rides along as the worktree target.
+      expect(stage).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session' }), 'src/deep/a.ts', MAIN)
+      expect(statusSpy.mock.calls.length).toBeGreaterThan(statusCallsBefore)
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+
+  it('bands each group with its count and a labelled stage-all action', async () => {
+    const { container, root } = makeRoot()
+    try {
+      await mountTree(container, root, [
+        { path: 'src/a.ts', xy: ' M' },
+        { path: 'docs/b.md', xy: ' M' },
+        { path: 'src/c.ts', xy: 'M ' },
+      ])
+
+      const unstaged = container.querySelector<HTMLElement>('[data-group="unstaged"]')!
+      const staged = container.querySelector<HTMLElement>('[data-group="staged"]')!
+      expect(unstaged.textContent).toContain(t('unstaged'))
+      expect(unstaged.querySelector('[data-count]')?.textContent).toBe('2')
+      expect(staged.querySelector('[data-count]')?.textContent).toBe('1')
+
+      const stageAll = unstaged.querySelector<HTMLButtonElement>(`button[aria-label="${t('stageAll')}"]`)
+      const unstageAll = staged.querySelector<HTMLButtonElement>(`button[aria-label="${t('unstageAll')}"]`)
+      expect(stageAll).not.toBeNull()
+      expect(unstageAll).not.toBeNull()
+
+      const stage = vi.spyOn(api, 'gitStage').mockResolvedValue({ ok: true })
+      await act(async () => { stageAll!.click() })
+      await flushEffects()
+      // "Stage all" stages the whole worktree: no path argument.
+      expect(stage).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session' }), undefined, MAIN)
+    } finally {
+      act(() => { root.unmount() })
+      container.remove()
+    }
+  })
+})

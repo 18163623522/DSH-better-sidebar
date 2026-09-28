@@ -239,6 +239,51 @@ function gitPayload(scope: SessionScope, worktree: string | undefined, extra: Re
   return scopePayload(scope, { ...(worktree !== undefined && worktree !== '' ? { worktree } : {}), ...extra })
 }
 
+/** One external-open request from the file tree. */
+type OpenExternalPayload =
+  | { action: 'reveal'; path: string }
+  | { action: 'url'; url: string }
+
+/** The host route's success shape. */
+type OpenExternalResult = { started: boolean }
+
+/**
+ * Remote VSCode-family URLs must be consumed on the browser/client machine:
+ * the DSH host can be a headless remote server with no editor or DISPLAY.
+ * Local editor URLs and reveal actions still belong to the host opener.
+ */
+function shouldOpenExternalOnClient(payload: OpenExternalPayload): payload is { action: 'url'; url: string } {
+  if (payload.action !== 'url') return false
+  let parsed: URL
+  try {
+    parsed = new URL(payload.url)
+  } catch {
+    return false
+  }
+  return parsed.protocol !== 'http:'
+    && parsed.protocol !== 'https:'
+    && parsed.hostname === 'vscode-remote'
+    && parsed.pathname.startsWith('/ssh-remote+')
+}
+
+/**
+ * Dispatch an external-open request to the correct machine. SSH remote-editor
+ * URLs stay in the synchronous user-click chain and navigate the client so
+ * its registered vscode:// / cursor:// handler can launch. Everything else
+ * keeps using the DSH host route.
+ */
+function openExternal(payload: OpenExternalPayload): Promise<OpenExternalResult> {
+  if (!shouldOpenExternalOnClient(payload)) {
+    return call<OpenExternalResult>('open.external', payload)
+  }
+  try {
+    window.location.assign(payload.url)
+    return Promise.resolve({ started: true })
+  } catch (error) {
+    return Promise.reject(error)
+  }
+}
+
 /** The sidebar API surface (session scope threaded through every call). */
 export const api = {
   sessionCwd: (scope: SessionScope, signal?: AbortSignal) =>
@@ -377,6 +422,10 @@ export const api = {
       patch,
       ...(expectedRevision !== undefined ? { expectedRevision } : {}),
     }),
+  /** External open for the file tree's "open with" menu. Remote SSH editor
+   *  URLs are launched on the browser/client machine; reveal and local URLs
+   *  keep using the host's platform opener. */
+  openExternal,
 }
 
 /** Absolute URL of the media route for one path (images only). */
@@ -388,6 +437,18 @@ export function mediaUrl(scope: SessionScope, path: string): string {
  *  `Content-Disposition: attachment`, so the browser saves the file. */
 export function downloadUrl(scope: SessionScope, path: string): string {
   return fileUrl(scope, path, true)
+}
+
+/**
+ * Absolute URL of the archive route: one ZIP of every `paths` entry (files
+ * and directories, recursive) served as an attachment. Same GET shape as
+ * {@link downloadUrl}; the repeated `path` parameter is the only difference.
+ */
+export function archiveUrl(scope: SessionScope, paths: readonly string[], name: string): string {
+  const params = new URLSearchParams({ sessionId: scope.sessionId, name })
+  if (scope.cwd !== undefined && scope.cwd !== '') params.set('cwd', scope.cwd)
+  for (const path of paths) params.append('path', path)
+  return `/sidebar/archive?${params.toString()}`
 }
 
 /** Shared URL builder for the /sidebar/file route (media vs download). */

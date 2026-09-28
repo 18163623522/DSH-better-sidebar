@@ -37,6 +37,9 @@ import { decodeHtmlUrl } from './html-route.ts'
 import { isTrustedApiRequest } from './trust-fence.ts'
 import { registerBundleRoute } from './bundle-route.ts'
 import { createDirectoryWatchers, type DirectoryWatchers } from './fs-watch.ts'
+import { launchExternal } from './open-external.ts'
+import { archiveNameOf, collectZipEntries } from './archive-route.ts'
+import { buildZip, type ZipEntry } from './zip.ts'
 import * as git from './git.ts'
 import { SettingsConflictError } from '@deepseek-ai/dsh-settings'
 import { AgentOpenRegistry, registerOpenTool, type AgentOpenRequest } from './agent-opens.ts'
@@ -65,6 +68,10 @@ export type {
   FileViewerProps,
   FileFetchStrategy,
 } from './client/service.ts'
+// The archive walk + name sanitizer are exercised directly by tests/zip.spec.ts:
+// their bounds live inside the collector, so the suite needs them observable
+// without creating 10 000 rows first.
+export { archiveNameOf, collectZipEntries } from './archive-route.ts'
 
 /** Plugin identity for cordis.yml rows. */
 export const name = 'dsh-better-sidebar'
@@ -529,6 +536,19 @@ function buildApi(
         throw new SidebarError('settings-rejected', error instanceof Error ? error.message : String(error), 400)
       }
     },
+    // External open for the file tree's "open with" menu: reveal a path in
+    // the OS file manager, or hand a custom-scheme URL (vscode://,
+    // cursor://, zed://, custom editors) to its registered handler. The
+    // client is a browser renderer where raw scheme navigation is
+    // unreliable, so the launch always goes through the host — the same
+    // fence as every other route, argv-only (no shell interpolation).
+    'open.external': (payload) => {
+      const record = payload as { action?: unknown } | null
+      const action = record?.action
+      if (action === 'reveal') return launchExternal('reveal', requireString(payload, 'path'))
+      if (action === 'url') return launchExternal('url', requireString(payload, 'url'))
+      throw new SidebarError('bad-request', 'action must be "reveal" or "url"')
+    },
     // Side Chat: create a side-thread child seeded with the parent's full
     // log up to now, deliver follow-ups (cold-resuming when the thread's
     // agent is gone), abort a running thread, and release a thread's agent.
@@ -897,6 +917,53 @@ export function apply(ctx: Context, config?: SidebarConfig): void {
   // (see bundle-route.ts / src/client/chunk-loader.ts).
   ctx.effect(() => registerBundleRoute(ctx, fence), 'dsh-better-sidebar: /sidebar/bundle chunk route')
 
+  // ── Archive route (zip one selection and download it) ───────────────────
+  // The file tree's "zip and download" action: every `path` is resolved
+  // through the SAME workspace fence as fs.tree / /sidebar/file, directories
+  // are walked recursively (a symlink is recorded as a link, never followed —
+  // no escape and no cycle), and the whole archive is built in memory and
+  // answered in one response. The entry-count/byte bounds live in zip.ts.
+  ctx.effect(() => ctx.webServer.register({
+    kind: 'exact',
+    path: '/sidebar/archive',
+    handler: async (req, res) => {
+      if (!fence(req)) {
+        writeJson(res, 403, { ok: false, error: { code: 'forbidden', message: 'forbidden' } })
+        return
+      }
+      if (req.method !== 'GET') {
+        writeJson(res, 405, { ok: false, error: { code: 'method-error', message: 'method not allowed' } })
+        return
+      }
+      try {
+        const url = new URL(req.url ?? '/', 'http://dsh.internal')
+        const sessionId = url.searchParams.get('sessionId')
+        const paths = url.searchParams.getAll('path').filter(value => value !== '')
+        if (sessionId === null || paths.length === 0) {
+          throw new SidebarError('bad-request', 'sessionId and at least one path are required')
+        }
+        const name = archiveNameOf(url.searchParams.get('name'))
+        const cwd = await sessionCwdOf(ctx, sessionId, url.searchParams.get('cwd') ?? undefined)
+        const fenceOn = fenceEnabledOf(() => settingsFace)
+        const entries: ZipEntry[] = []
+        for (const raw of paths) {
+          const absolute = await ensureWorkspacePath(cwd, raw, fenceOn)
+          await collectZipEntries(absolute, basename(absolute), entries)
+        }
+        const body = await buildZip(entries)
+        res.writeHead(200, {
+          'content-type': 'application/zip',
+          'content-disposition': `attachment; filename="${name}"`,
+          'content-length': String(body.byteLength),
+          'cache-control': 'no-cache',
+        })
+        res.end(body)
+      } catch (error) {
+        writeError(res, error)
+      }
+    },
+  }), 'dsh-better-sidebar: /sidebar/archive route')
+
   // ── Media route (images for the editor) ─────────────────────────────────
   ctx.effect(() => ctx.webServer.register({
     kind: 'prefix',
@@ -938,6 +1005,7 @@ export function apply(ctx: Context, config?: SidebarConfig): void {
       }
     },
   }), 'dsh-better-sidebar: /sidebar/file media route')
+
 
   // ── HTML preview route (sandboxed HTML + its relative assets) ───────────
   // Serves files under the session cwd for the built-in HTML previewer. The

@@ -16,6 +16,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 import { FileTree } from '../src/client/FileTree.tsx'
 import { createOpenInApp, type OpenInApp, type OpenInAppEntry } from '../src/client/open-in-app.ts'
+import type { OpenWithTarget } from '../src/client/open-with.ts'
 import { createSidebarStore } from '../src/client/state.ts'
 
 import { setupReactAct } from './test-utils.ts'
@@ -83,13 +84,28 @@ function makeHandle(overrides: Partial<OpenInApp> = {}): Handle {
 
 interface Harness {
   container: HTMLDivElement
+  onOpenWith: ReturnType<typeof vi.fn>
+  onToggleOpenWithPin: ReturnType<typeof vi.fn>
   unmount: () => void
 }
 
-async function mountTree(handle?: Handle): Promise<Harness> {
+/** The plugin targets a caller (EditorHost) may hand FileTree alongside the
+ *  host handle; names are distinct from FILE_APPS so assertions are exact. */
+const PLUGIN_TARGETS: OpenWithTarget[] = [
+  { id: 'explorer', nameKey: 'openWithExplorer', name: '', kind: 'reveal', isVscodeFamily: false, localOnly: true },
+  { id: 'custom:w', name: 'Windsurf', kind: 'url', urlTemplate: 'windsurf://file/{path}', isVscodeFamily: false, localOnly: false },
+]
+
+async function mountTree(handle?: Handle, plugin: {
+  targets?: OpenWithTarget[]
+  pinned?: string[]
+  ssh?: boolean
+} = {}): Promise<Harness> {
   const container = document.createElement('div')
   document.body.append(container)
   const root: Root = createRoot(container)
+  const onOpenWith = vi.fn()
+  const onToggleOpenWithPin = vi.fn()
   await act(async () => {
     root.render(createElement(FileTree, {
       sessionId: 's1',
@@ -102,17 +118,26 @@ async function mountTree(handle?: Handle): Promise<Harness> {
       onOpenFileNewTab: () => {},
       onOpenFileSide: () => {},
       ...(handle !== undefined ? { openInApp: handle.openInApp } : {}),
+      ...(plugin.targets !== undefined ? {
+        openWithTargets: plugin.targets,
+        openWithPinned: plugin.pinned ?? [],
+        openWithSsh: plugin.ssh ?? false,
+        onOpenWith,
+        onToggleOpenWithPin,
+      } : {}),
       onReferenceFile: () => {},
       refreshTick: 0,
       onUploadRequest: () => {},
       busy: false,
     }))
-    // Settle the async app listing the row menu triggers.
+    // Settle the async app listing / availability probe the menu triggers.
     await Promise.resolve()
     await Promise.resolve()
   })
   return {
     container,
+    onOpenWith,
+    onToggleOpenWithPin,
     unmount: () => { act(() => { root.unmount() }); container.remove() },
   }
 }
@@ -162,8 +187,13 @@ describe('FileTree open-in-app menu', () => {
     harness = await mountTree(handle)
     await openMenu(harness.container, 'a.ts')
     expect(handle.fileApps).toHaveBeenCalledWith('/tmp/a.ts')
-    // The section heading is a non-interactive label row.
-    expect(document.body.textContent).toContain('Open with')
+    // No heading row any more: the host group is read from the application
+    // names themselves (`openInApp` and `openWithMenu` are near-synonyms, so
+    // two labels in one menu read as a repeated item). A data label entry is
+    // a LEAF `role="presentation"` row inside the menu.
+    const menu = document.querySelector('[role="menuitem"]')!.closest('[role="menu"]')
+    expect([...(menu?.querySelectorAll('[role="presentation"]') ?? [])]
+      .filter(row => row.children.length === 0)).toEqual([])
     expect(menuLabels()).toContain('Open with default app')
     expect(menuLabels()).toContain('VS Code')
     expect(menuLabels()).toContain('Reveal in File Manager')
@@ -287,5 +317,86 @@ describe('FileTree open-in-app menu', () => {
     expect(menuLabels()).toContain('Open with default app')
     await act(async () => { clickMenuitem('Open with default app'); await Promise.resolve() })
     expect(calls.open).toEqual([{ path: '/tmp/a.ts' }])
+  })
+})
+
+describe('FileTree open-in-app + plugin open-with coexistence', () => {
+  let harness: Harness
+  afterEach(() => {
+    harness.unmount()
+    document.body.innerHTML = ''
+  })
+
+  /** The label rows of the single open menu, in DOM order. */
+  function labelsOf(items: string[]): number[] {
+    const labels = menuLabels()
+    return items.map(item => labels.indexOf(item))
+  }
+
+  it('stacks the host rows above the plugin rows and ends with the host reveal', async () => {
+    const handle = makeHandle()
+    harness = await mountTree(handle, { targets: PLUGIN_TARGETS, pinned: ['custom:w'] })
+    await openMenu(harness.container, 'a.ts')
+    const [hostDefault, hostApp, pinnedPlugin, submenu, reveal] = labelsOf([
+      'Open with default app', 'VS Code', 'Windsurf', 'Open with', 'Reveal in File Manager',
+    ])
+    // Every row exists, in the frozen order: host group → plugin group →
+    // reveal.
+    expect([hostDefault, hostApp, pinnedPlugin, submenu, reveal]).not.toContain(-1)
+    expect(hostDefault!).toBeLessThan(hostApp!)
+    expect(hostApp!).toBeLessThan(pinnedPlugin!)
+    expect(pinnedPlugin!).toBeLessThan(submenu!)
+    expect(submenu!).toBeLessThan(reveal!)
+    // The plugin's `explorer` target is replaced by the host reveal row.
+    expect(menuLabels()).not.toContain('File Manager')
+    // Separator rows between each group.
+    expect(document.querySelectorAll('[role="separator"]').length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('keeps the plugin rows — explorer included — when the host cannot open desktop paths', async () => {
+    const handle = makeHandle({ available: () => false })
+    harness = await mountTree(handle, { targets: PLUGIN_TARGETS, pinned: ['custom:w'] })
+    await openMenu(harness.container, 'a.ts')
+    // No host rows at all…
+    expect(menuLabels()).not.toContain('Open with default app')
+    expect(menuLabels()).not.toContain('Reveal in File Manager')
+    // …but the plugin's own reveal target survives, so reveal is never lost.
+    expect(menuLabels()).toContain('Windsurf')
+    const parent = menuItems().find(item => item.getAttribute('aria-haspopup') === 'menu')!
+    act(() => { parent.click() })
+    expect([...document.querySelectorAll<HTMLElement>('[role="menu"] [role="menu"] [role="menuitem"]')]
+      .map(item => item.textContent?.trim())).toEqual(['File Manager', 'Windsurf'])
+  })
+
+  it('keeps the plugin rows when no host handle was injected at all', async () => {
+    harness = await mountTree(undefined, { targets: PLUGIN_TARGETS, pinned: [] })
+    await openMenu(harness.container, 'a.ts')
+    expect(menuLabels()).not.toContain('Reveal in File Manager')
+    expect(menuLabels()).toContain('Open with')
+  })
+
+  it('hands the plugin target id and path to onOpenWith (SSH suffix intact)', async () => {
+    const handle = makeHandle({ available: () => false })
+    harness = await mountTree(handle, { targets: PLUGIN_TARGETS, pinned: [], ssh: true })
+    await openMenu(harness.container, 'a.ts')
+    const parent = menuItems().find(item => item.getAttribute('aria-haspopup') === 'menu')!
+    act(() => { parent.click() })
+    const windsurf = [...document.querySelectorAll<HTMLElement>('[role="menu"] [role="menu"] [role="menuitem"]')]
+      .find(item => item.textContent?.trim() === 'Windsurf (SSH)')!
+    act(() => { windsurf.click() })
+    expect(harness.onOpenWith).toHaveBeenCalledWith('custom:w', '/tmp/a.ts')
+  })
+
+  it('routes a pin click to onToggleOpenWithPin without selecting a row', async () => {
+    const handle = makeHandle({ available: () => false })
+    harness = await mountTree(handle, { targets: PLUGIN_TARGETS, pinned: [] })
+    await openMenu(harness.container, 'a.ts')
+    act(() => { menuItems().find(item => item.getAttribute('aria-haspopup') === 'menu')!.click() })
+    const pin = [...document.querySelectorAll<HTMLElement>('[role="menu"] [role="menu"] [role="menuitem"]')]
+      .find(item => item.textContent?.trim() === 'Windsurf')!
+      .querySelector<HTMLElement>('[class*="openWithPin"]')!
+    act(() => { pin.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })) })
+    expect(harness.onToggleOpenWithPin).toHaveBeenCalledWith('custom:w')
+    expect(harness.onOpenWith).not.toHaveBeenCalled()
   })
 })

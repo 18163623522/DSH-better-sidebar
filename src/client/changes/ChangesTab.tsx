@@ -225,6 +225,7 @@ export function ChangesTab({ ctx, store, scope, tab, visible, onOpenFile, onOpen
       {lens === 'git'
         ? (
           <GitLens
+            ctx={ctx}
             scope={scope}
             store={store}
             visible={visible}

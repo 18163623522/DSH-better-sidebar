@@ -1,11 +1,18 @@
 /**
  * The Git lens of the changes tab: repository truth — the changed files
- * (unstaged / staged), stage/unstage, commit with a message box, branch and
- * checkout switching, and a VSCode-like history with decorations, author and
- * relative time. Clicking a changed file or a history row previews it in the
- * tab's shared bottom pane (see {@link DiffPane}); rows carry right-click
- * context menus with advanced operations (open in editor, discard, revert,
- * cherry-pick, copy paths/hashes).
+ * (unstaged / staged) as a directory tree, stage/unstage, commit with a
+ * message box, branch and checkout switching, and a VSCode-like history with
+ * decorations, author and relative time. Clicking a changed file or a history
+ * row previews it in the tab's shared bottom pane (see {@link DiffPane}); rows
+ * carry right-click context menus with advanced operations (open in editor,
+ * discard, revert, cherry-pick, copy paths/hashes).
+ *
+ * The change list is a TREE, not a flat list: {@link buildChangeTree} folds
+ * each group's paths into directories (single-child chains compressed), so a
+ * nested change reads as structure instead of as a wall of rows. Directory
+ * rows disclose their subtree (`aria-expanded`); file rows carry the host's
+ * own file artwork, the porcelain letter and the trailing stage action, which
+ * only shows on hover/focus to keep the row quiet.
  *
  * The git status itself is NOT fetched here: it comes from the plugin's one
  * shared store (`ui/git-status.ts`), which the file tree also subscribes to,
@@ -19,13 +26,15 @@
  * failures used to land under the commit box, which read as "your commit
  * failed" for an action the user never ran.
  */
-import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import {
-  Button, IconCodeOutlineRegular, IconCopyOutlineRegular, IconPlusOutlineRegular,
+  Button, IconChevronRightOutlineRegular, IconCodeOutlineRegular, IconCopyOutlineRegular, IconPlusOutlineRegular,
   IconTrashOutlineRegular, Input, Menu, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { Context } from '../../context-types.ts'
 import type { GitLogEntry, GitStatusEntry, GitStatusResult, GitWorktree, SessionScope } from '../api.ts'
 import { api } from '../api.ts'
+import { builtinFileIcon, builtinFolderIcon } from '../file-icons.tsx'
 import { usePolling } from '../use-polling.ts'
 import { baseName, isWithinWorkspace, relativeTo } from '../paths.ts'
 import { resolveSidebarPath } from '../paths.ts'
@@ -35,6 +44,7 @@ import {
   ConfirmDialog, IconButton, Notice, SectionHeader, StatusBadge, invalidateGitStatus, statusOfXY,
   useGitStatus, type GitFileStatus, type GitTone, type StatusTone,
 } from '../ui/index.ts'
+import { buildChangeTree, type ChangeDir, type ChangeFile, type ChangeNode } from './change-tree.ts'
 import css from './changes.module.css'
 
 /** Whether the entry carries STAGED (index) changes — the X letter is set. */
@@ -49,9 +59,10 @@ function isUnstagedEntry(entry: GitStatusEntry): boolean {
   return statusOfXY(entry.xy)?.unstaged === true
 }
 
-/** Whether the entry is untracked (`??`): git diff never includes it. */
-function isUntracked(entry: GitStatusEntry): boolean {
-  return entry.xy === '??'
+/** Whether a row is untracked (`??`): git diff never includes it, so the
+ *  preview and the discard action must know. */
+function isUntrackedStatus(status: GitFileStatus): boolean {
+  return status.tone === 'untracked'
 }
 
 /** The porcelain tone → the kit badge tone (a copy reads as a rename). */
@@ -63,13 +74,6 @@ const BADGE_TONE: Record<GitTone, StatusTone> = {
   renamed: 'renamed',
   copied: 'renamed',
   conflict: 'conflict',
-}
-
-/** Split a repo-relative path into the row's name (kept) and its directory
- *  (dimmed context). */
-function splitPath(path: string): { name: string; dir: string } {
-  const at = path.lastIndexOf('/')
-  return at === -1 ? { name: path, dir: '' } : { name: path.slice(at + 1), dir: path.slice(0, at) }
 }
 
 /** The ref names of one log row's decorations (`HEAD -> main` → `main`), deduped. */
@@ -98,6 +102,15 @@ interface ConfirmState {
   onConfirm: () => Promise<unknown>
 }
 
+/** One open file-row context menu (cursor position for the portaled Menu). */
+interface FileMenuState {
+  path: string
+  staged: boolean
+  untracked: boolean
+  x: number
+  y: number
+}
+
 /** History batch size: the log loads lazily in pages so a long history never
  *  floods the panel at once (the end of the log is reached by paging). */
 const LOG_BATCH = 20
@@ -108,11 +121,15 @@ const LOG_BATCH = 20
  *  within ~30s, without a second git process per status tick. */
 const WORKTREE_POLL_MS = 30_000
 
-/** One changed file's row: badge letter + file name + dimmed directory +
- *  the trailing stage/unstage action. The ONE renderer both sections use. */
-function ChangeRow(props: {
-  entry: GitStatusEntry
-  status: GitFileStatus | undefined
+/** A stable empty entry list: the tree memo must not rebuild on every render
+ *  just because `snapshot?.entries ?? []` minted a new array. */
+const NO_ENTRIES: readonly GitStatusEntry[] = []
+
+/** One changed file's row: the host's file artwork + porcelain letter + name
+ *  + the trailing stage action (revealed on hover/focus). */
+function FileRow(props: {
+  node: ChangeFile
+  icon: ReactNode
   staged: boolean
   busy: boolean
   selected: boolean
@@ -120,33 +137,54 @@ function ChangeRow(props: {
   onContextMenu(event: MouseEvent): void
   onToggleStage(): void
 }): ReactNode {
-  const { entry, status, staged, busy, selected } = props
-  const { name, dir } = splitPath(entry.path)
+  const { node, staged, busy, selected } = props
   const action = staged ? t('unstage') : t('stage')
   return (
     <div className={css.row} data-selected={selected ? 'true' : undefined}>
       <button
         type="button"
         className={css.rowMain}
-        data-path={entry.path}
-        title={entry.path}
+        data-path={node.path}
+        title={node.path}
         onClick={props.onPreview}
         onContextMenu={props.onContextMenu}
       >
-        <StatusBadge tone={status === undefined ? 'neutral' : BADGE_TONE[status.tone]}>
-          {status?.letter ?? '?'}
-        </StatusBadge>
-        <span className={css.rowName}>{name}</span>
-        {dir !== '' && <span className={css.rowDir}>{dir}</span>}
+        <span className={css.rowIcon} aria-hidden="true">{props.icon}</span>
+        <StatusBadge tone={BADGE_TONE[node.status.tone]} title={node.path}>{node.status.letter}</StatusBadge>
+        <span className={css.rowName}>{node.name}</span>
       </button>
       <IconButton
         size="sm"
+        className={css.rowAction}
         disabled={busy}
         label={action}
         icon={staged ? <IconTrashOutlineRegular size={14} /> : <IconPlusOutlineRegular size={14} />}
         onClick={props.onToggleStage}
       />
     </div>
+  )
+}
+
+/** One directory row: the disclosure chevron + folder artwork + the label
+ *  (a compressed chain reads as one 'a/b/c' line) + how much changed below. */
+function DirRow(props: { node: ChangeDir; icon: ReactNode; open: boolean; onToggle(): void }): ReactNode {
+  const { node, open } = props
+  return (
+    <button
+      type="button"
+      className={css.dirRow}
+      data-dir={node.path}
+      aria-expanded={open}
+      title={node.path}
+      onClick={props.onToggle}
+    >
+      <span className={css.chevron} data-open={open ? 'true' : undefined} aria-hidden="true">
+        <IconChevronRightOutlineRegular size={12} />
+      </span>
+      <span className={css.rowIcon} aria-hidden="true">{props.icon}</span>
+      <span className={css.dirName}>{node.name}</span>
+      <span className={css.countPill}>{node.changes}</span>
+    </button>
   )
 }
 
@@ -163,10 +201,23 @@ export interface GitLensProps {
   visible: boolean
   /** Bumped by the tab header's refresh action (0 = never asked). */
   refreshTick?: number
+  /** The tab's context, for the registered file/folder icon chain (absent →
+   *  the host's built-in artwork, exactly like the file tree falls back). */
+  ctx?: Context
 }
 
 export function GitLens(props: GitLensProps) {
-  const { scope, store, onOpenFile, onPreview, selectedRef, visible, refreshTick = 0 } = props
+  const { scope, store, onOpenFile, onPreview, selectedRef, visible, refreshTick = 0, ctx } = props
+
+  const service = ctx?.get('betterSidebar')
+  /** The file row's artwork: a registered icon wins, else the host's own
+   *  (the same chain the file tree runs, so both pages agree). */
+  const fileGlyph = useCallback((path: string): ReactNode => (
+    service === undefined ? builtinFileIcon(path, 14) : service.fileIcon(path, 14)
+  ), [service])
+  const folderGlyph = useCallback((path: string, open: boolean): ReactNode => (
+    service === undefined ? builtinFolderIcon(open, 14) : service.folderIcon(path, open, 14)
+  ), [service])
 
   const [worktrees, setWorktrees] = useState<GitWorktree[]>([])
   const [selectedWorktree, setSelectedWorktree] = useState<string | undefined>()
@@ -191,11 +242,15 @@ export function GitLens(props: GitLensProps) {
   const [viewError, setViewError] = useState<string | null>(null)
 
   /** The open file-row context menu (cursor position for the portaled Menu). */
-  const [fileMenu, setFileMenu] = useState<{ entry: GitStatusEntry; staged: boolean; x: number; y: number } | null>(null)
+  const [fileMenu, setFileMenu] = useState<FileMenuState | null>(null)
   /** The open history-row context menu. */
   const [historyMenu, setHistoryMenu] = useState<{ entry: GitLogEntry; x: number; y: number } | null>(null)
   /** The pending destructive action awaiting confirmation. */
   const [confirm, setConfirm] = useState<ConfirmState | null>(null)
+  /** Collapsed directory rows, keyed per GROUP + path: a directory that has
+   *  changes on both sides folds independently in each section (and the two
+   *  groups never fight over one key). Default: everything expanded. */
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set<string>())
 
   /** The selected checkout, readable synchronously by the refresh chain
    *  without making every callback depend on the state it writes. */
@@ -418,9 +473,9 @@ export function GitLens(props: GitLensProps) {
 
   const stageError = (reason: unknown): string => t('changesStageFailed', { message: errorMessage(reason) })
 
-  const stageEntry = (entry: GitStatusEntry, staged: boolean): void => {
+  const stageEntry = (path: string, staged: boolean): void => {
     void runAction(
-      () => (staged ? api.gitUnstage(gitScopeNow(), entry.path, selectedWorktree) : api.gitStage(gitScopeNow(), entry.path, selectedWorktree)),
+      () => (staged ? api.gitUnstage(gitScopeNow(), path, selectedWorktree) : api.gitStage(gitScopeNow(), path, selectedWorktree)),
       stageError,
     )
   }
@@ -520,10 +575,10 @@ export function GitLens(props: GitLensProps) {
     void writeClipboard(text)
   }
 
-  const openFileMenu = (event: MouseEvent, entry: GitStatusEntry, staged: boolean): void => {
+  const openFileMenu = (event: MouseEvent, path: string, staged: boolean, untracked: boolean): void => {
     event.preventDefault()
     event.stopPropagation()
-    setFileMenu({ entry, staged, x: event.clientX, y: event.clientY })
+    setFileMenu({ path, staged, untracked, x: event.clientX, y: event.clientY })
   }
 
   const openHistoryMenu = (event: MouseEvent, entry: GitLogEntry): void => {
@@ -533,11 +588,11 @@ export function GitLens(props: GitLensProps) {
   }
 
   /** The preview ref for one changed file (one ref per path+side). */
-  const worktreeRefOf = (entry: GitStatusEntry, staged: boolean): SidebarDiffRef => ({
+  const worktreeRefOf = (path: string, untracked: boolean, staged: boolean): SidebarDiffRef => ({
     kind: 'worktree',
-    path: entry.path,
+    path,
     staged,
-    untracked: isUntracked(entry),
+    untracked,
     worktree: selectedWorktree,
     repoRoot,
   })
@@ -553,33 +608,76 @@ export function GitLens(props: GitLensProps) {
   })
 
   /** Whether a worktree row is the one currently previewed. */
-  const isPreviewedWorktree = (entry: GitStatusEntry, staged: boolean): boolean => {
+  const isPreviewedWorktree = (path: string, staged: boolean): boolean => {
     if (selectedRef === null || selectedRef.kind !== 'worktree') return false
-    return selectedRef.path === entry.path && selectedRef.staged === staged
+    return selectedRef.path === path && selectedRef.staged === staged
       && (selectedRef.worktree ?? '') === (selectedWorktree ?? '')
   }
 
-  const entries = snapshot?.entries ?? []
-  const stagedEntries = entries.filter(isStagedEntry)
-  const unstagedEntries = entries.filter(isUnstagedEntry)
+  const entries = snapshot?.entries ?? NO_ENTRIES
+  // One fold per group, memoized on the snapshot's own entry array: the tree
+  // (compression + sorting + counts) is rebuilt only when git answers anew.
+  const { stagedEntries, unstagedEntries, stagedTree, unstagedTree } = useMemo(() => {
+    const staged = entries.filter(isStagedEntry)
+    const unstaged = entries.filter(isUnstagedEntry)
+    return {
+      stagedEntries: staged,
+      unstagedEntries: unstaged,
+      stagedTree: buildChangeTree(staged),
+      unstagedTree: buildChangeTree(unstaged),
+    }
+  }, [entries])
   const isRepo = snapshot?.isRepo === true
   const branch = snapshot?.branch ?? ''
   const branchOptions = branch === '' ? branchNames : [branch, ...branchNames.filter(name => name !== branch)]
   const clean = isRepo && stagedEntries.length === 0 && unstagedEntries.length === 0
 
-  /** One change row (the single renderer of both sections). */
-  const renderEntry = (entry: GitStatusEntry, staged: boolean): ReactNode => (
-    <ChangeRow
-      key={`${staged ? 's' : 'u'}:${entry.path}`}
-      entry={entry}
-      status={statusOfXY(entry.xy)}
+  /** Fold or unfold one directory row (keyed per group, see `collapsed`). */
+  const toggleDir = (key: string): void => {
+    setCollapsed((current) => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  /** One file row of a group's tree (the single file-row renderer). */
+  const renderFile = (node: ChangeFile, staged: boolean): ReactNode => (
+    <FileRow
+      key={`${staged ? 's' : 'u'}:${node.path}`}
+      node={node}
+      icon={fileGlyph(node.path)}
       staged={staged}
       busy={busy}
-      selected={isPreviewedWorktree(entry, staged)}
-      onPreview={() => { onPreview(worktreeRefOf(entry, staged)) }}
-      onContextMenu={(event) => { openFileMenu(event, entry, staged) }}
-      onToggleStage={() => { stageEntry(entry, staged) }}
+      selected={isPreviewedWorktree(node.path, staged)}
+      onPreview={() => { onPreview(worktreeRefOf(node.path, isUntrackedStatus(node.status), staged)) }}
+      onContextMenu={(event) => { openFileMenu(event, node.path, staged, isUntrackedStatus(node.status)) }}
+      onToggleStage={() => { stageEntry(node.path, staged) }}
     />
+  )
+
+  /** One directory row plus its (default-expanded) subtree. */
+  const renderDir = (node: ChangeDir, staged: boolean): ReactNode => {
+    const key = `${staged ? 's' : 'u'}:${node.path}`
+    const open = !collapsed.has(key)
+    return (
+      <div key={key}>
+        <DirRow node={node} icon={folderGlyph(node.path, open)} open={open} onToggle={() => { toggleDir(key) }} />
+        {open && (
+          <div className={css.treeChildren}>
+            {node.children.map(child => (child.kind === 'dir' ? renderDir(child, staged) : renderFile(child, staged)))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  /** One group's whole tree. */
+  const renderTree = (nodes: readonly ChangeNode[], staged: boolean): ReactNode => (
+    <div className={css.tree}>
+      {nodes.map(node => (node.kind === 'dir' ? renderDir(node, staged) : renderFile(node, staged)))}
+    </div>
   )
 
   return (
@@ -639,30 +737,50 @@ export function GitLens(props: GitLensProps) {
 
       {isRepo && !clean && (
         <>
-          <SectionHeader
-            label={t('unstaged')}
-            count={unstagedEntries.length}
-            action={unstagedEntries.length > 0
-              ? (
-                <button type="button" className={css.link} disabled={busy} onClick={() => { stageAll(false) }}>
-                  {t('stageAll')}
-                </button>
-              )
-              : undefined}
-          />
-          {unstagedEntries.map(entry => renderEntry(entry, false))}
-          <SectionHeader
-            label={t('staged')}
-            count={stagedEntries.length}
-            action={stagedEntries.length > 0
-              ? (
-                <button type="button" className={css.link} disabled={busy} onClick={() => { stageAll(true) }}>
-                  {t('unstageAll')}
-                </button>
-              )
-              : undefined}
-          />
-          {stagedEntries.map(entry => renderEntry(entry, true))}
+          {/* Each group is its own block so its sticky header is released (and
+              replaced) exactly when the group scrolls away. */}
+          <div className={css.group} data-group="unstaged">
+            <SectionHeader
+              className={css.groupHeader}
+              label={t('unstaged')}
+              action={unstagedEntries.length > 0
+                ? (
+                  <IconButton
+                    className={css.headerAction}
+                    size="sm"
+                    disabled={busy}
+                    label={t('stageAll')}
+                    icon={<IconPlusOutlineRegular size={14} />}
+                    onClick={() => { stageAll(false) }}
+                  />
+                )
+                : undefined}
+            >
+              <span className={css.countPill} data-count={unstagedEntries.length}>{unstagedEntries.length}</span>
+            </SectionHeader>
+            {renderTree(unstagedTree, false)}
+          </div>
+          <div className={css.group} data-group="staged">
+            <SectionHeader
+              className={css.groupHeader}
+              label={t('staged')}
+              action={stagedEntries.length > 0
+                ? (
+                  <IconButton
+                    className={css.headerAction}
+                    size="sm"
+                    disabled={busy}
+                    label={t('unstageAll')}
+                    icon={<IconTrashOutlineRegular size={14} />}
+                    onClick={() => { stageAll(true) }}
+                  />
+                )
+                : undefined}
+            >
+              <span className={css.countPill} data-count={stagedEntries.length}>{stagedEntries.length}</span>
+            </SectionHeader>
+            {renderTree(stagedTree, true)}
+          </div>
         </>
       )}
 
@@ -753,13 +871,13 @@ export function GitLens(props: GitLensProps) {
           // action for that checkout so the menu does not offer a no-op
           // that confuses the user; with the fence disarmed (the
           // `workspaceFence` pref) the open is allowed through.
-          ...(fileMenu !== null && (store.getPrefs().workspaceFence === false || isWithinWorkspace(scope.cwd ?? '', resolveSidebarPath(repoRoot ?? selectedWorktree ?? scope.cwd, fileMenu.entry.path)))
+          ...(fileMenu !== null && (store.getPrefs().workspaceFence === false || isWithinWorkspace(scope.cwd ?? '', resolveSidebarPath(repoRoot ?? selectedWorktree ?? scope.cwd, fileMenu.path)))
             ? [{ id: 'open', label: t('openEditor'), icon: <IconCodeOutlineRegular size={14} /> }]
             : []),
           fileMenu?.staged === true
             ? { id: 'stage', label: t('unstage'), icon: <IconTrashOutlineRegular size={14} /> }
             : { id: 'stage', label: t('stage'), icon: <IconPlusOutlineRegular size={14} /> },
-          ...(fileMenu !== null && !isUntracked(fileMenu.entry)
+          ...(fileMenu !== null && !fileMenu.untracked
             ? [{ id: 'discard', label: t('discard'), icon: <IconTrashOutlineRegular size={14} />, danger: true }]
             : []),
           { type: 'separator', id: 'sep1' },
@@ -771,7 +889,7 @@ export function GitLens(props: GitLensProps) {
           if (target === null) return
           setFileMenu(null)
           if (id === 'open') {
-            const resolved = resolveSidebarPath(repoRoot ?? selectedWorktree ?? scope.cwd, target.entry.path)
+            const resolved = resolveSidebarPath(repoRoot ?? selectedWorktree ?? scope.cwd, target.path)
             // Defense-in-depth: the menu hides this action when the
             // resolved path escapes the session workspace, but a
             // racing repo switch could still reach here with a path
@@ -782,23 +900,23 @@ export function GitLens(props: GitLensProps) {
             return
           }
           if (id === 'stage') {
-            stageEntry(target.entry, target.staged)
+            stageEntry(target.path, target.staged)
             return
           }
           if (id === 'discard') {
             runConfirmed({
               title: t('discardTitle'),
-              description: t('discardDesc', { path: target.entry.path }),
+              description: t('discardDesc', { path: target.path }),
               confirmLabel: t('discard'),
-              onConfirm: () => api.gitDiscard(gitScopeNow(), target.entry.path, selectedWorktree),
+              onConfirm: () => api.gitDiscard(gitScopeNow(), target.path, selectedWorktree),
             })
             return
           }
           if (id === 'relative') {
-            copy(relativeTo(repoRoot ?? selectedWorktree ?? scope.cwd ?? '', target.entry.path))
+            copy(relativeTo(repoRoot ?? selectedWorktree ?? scope.cwd ?? '', target.path))
             return
           }
-          if (id === 'absolute') copy(resolveSidebarPath(repoRoot ?? selectedWorktree ?? scope.cwd, target.entry.path))
+          if (id === 'absolute') copy(resolveSidebarPath(repoRoot ?? selectedWorktree ?? scope.cwd, target.path))
         }}
         portal
         compact

@@ -49,30 +49,125 @@
 /* A single branch has nothing to choose: it reads as the row's label. */
 .branchLabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxxs-11); }
 
-/* The section band's text action ("stage all" / "unstage all"). */
-.link { border: none; background: transparent; padding: 0; font: var(--dsw-font-xxxs-strong-11); color: var(--dsw-alias-brand-primary); cursor: pointer; }
-.link:hover:not(:disabled) { text-decoration: underline; }
-.link:disabled { opacity: 0.4; cursor: default; }
+/* ── Change groups (one directory tree each) ───────────────────────────── */
 
-/* One changed file: badge + name + dimmed directory + the trailing action. */
+/* One group is its own block so its sticky header is released exactly when the
+   group scrolls past (two headers in one block would stack on top of each
+   other). */
+.group { display: flex; flex-direction: column; padding-bottom: 2px; }
+
+/* The header band stays readable while its group scrolls under it. The extra
+   class keeps the opaque fill above the kit's transparent band no matter which
+   sheet lands first in the bundle. */
+.group .groupHeader {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--dsw-alias-bg-base);
+}
+
+/* The group's change count, as a small capsule on the label's baseline. */
+.countPill {
+  flex: none;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xxxs-strong-11);
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A band action (stage all / unstage all) stays out of the way until the band
+   is hovered or holds focus — a keyboard tab reveals it too. Touch devices
+   have no hover, so there it is always visible. */
+.group .headerAction { opacity: 0; transition: opacity 120ms var(--ds-ease-in-out); }
+.group .groupHeader:hover .headerAction,
+.group .groupHeader:focus-within .headerAction { opacity: 1; }
+@media (hover: none) {
+  .group .headerAction { opacity: 1; }
+}
+
+/* The tree body: rows are flush bands, the gutter lives here. */
+.tree { display: flex; flex-direction: column; padding: 0 6px; }
+
+/* One nesting level: 12px of indent, with the guide line drawn at its edge so
+   the depth stays readable without a second colour. */
+.treeChildren {
+  display: flex;
+  flex-direction: column;
+  margin-left: 11px;
+  border-left: 1px solid var(--dsw-alias-border-l1);
+}
+
+/* One directory row: disclosure chevron + folder artwork + label + count. */
+.dirRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 6px 0 2px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.dirRow:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.dirRow:focus-visible { outline: 2px solid var(--dsw-alias-interactive-bg-hover-accent); outline-offset: -1px; }
+
+.chevron { flex: none; display: inline-flex; color: var(--dsw-alias-label-tertiary); transition: transform 140ms var(--ds-ease-in-out); }
+.chevron[data-open='true'] { transform: rotate(90deg); }
+
+.dirName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--dsw-font-xxs-12); }
+
+/* One changed file: file artwork + porcelain badge + name + the trailing
+   action (revealed on hover/focus). */
 .row {
   display: flex;
   align-items: center;
   gap: 6px;
+  position: relative;
   min-height: 28px;
-  margin: 0 6px;
-  padding: 0 4px 0 8px;
+  padding: 0 2px;
   border-radius: 4px;
   animation: dsh-row-in 150ms var(--ds-ease-in-out);
 }
 .row:hover { background: var(--dsw-alias-interactive-bg-hover); }
-.row[data-selected='true'] { background: var(--dsw-alias-interactive-bg-active); }
+/* Selected and hovered are different pictures: the selected row keeps the
+   active fill AND the design's 2px accent marker — a pseudo element inset 4px
+   (the tasks page's own recipe), so the row stays shadowless and no metric
+   shifts between rows. */
+.row[data-selected='true'],
+.opRow[data-selected='true'],
+.logRow[data-selected='true'] {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+.row[data-selected='true']::before,
+.opRow[data-selected='true']::before,
+.logRow[data-selected='true']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--dsw-alias-state-business-primary);
+}
 
 .rowMain {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
   border: none;
   background: transparent;
@@ -80,17 +175,30 @@
   cursor: pointer;
   text-align: left;
 }
+.rowMain:focus-visible { outline: 2px solid var(--dsw-alias-interactive-bg-hover-accent); outline-offset: -1px; }
 
-.rowName { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dsw-alias-label-primary); }
-/* The directory is context, not identity: it shrinks first and stays quiet. */
-.rowDir { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dsw-alias-label-tertiary); font: var(--dsw-font-xxxs-11); direction: rtl; text-align: left; }
+/* The row's icons are content at the plugin's own scale, not chrome. */
+.rowIcon { flex: none; display: inline-flex; align-items: center; }
+
+.rowName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--dsw-font-xxs-12); color: var(--dsw-alias-label-primary); }
+
+/* The row action is invisible until its row is hovered or holds focus (a
+   keyboard tab lands on it and reveals it). The three-class form outranks the
+   kit's own disabled rule, which would otherwise pin every button to a dim but
+   visible 0.4 whenever a git action is in flight. */
+.row:not(:hover):not(:focus-within) .rowAction { opacity: 0; }
+@media (hover: none) {
+  .row:not(:hover):not(:focus-within) .rowAction { opacity: 1; }
+}
 
 /* ── Commit bar (docked to the bottom edge of the scroll area) ─────────── */
 
 .commitBar {
   position: sticky;
   bottom: 0;
-  z-index: 1;
+  /* Above the sticky group headers: the commit bar is the surface the user
+     interacts with when they scroll to the bottom of the list. */
+  z-index: 3;
   flex: none;
   display: flex;
   flex-direction: column;
@@ -104,26 +212,34 @@
 
 /* ── History ───────────────────────────────────────────────────────────── */
 
-/* A history row: line 1 = hash + subject, line 2 = ref badges + author/date
-   (badges live on the second line so they never crowd the subject). */
+/* A history row: line 1 = short-hash badge + subject, line 2 = ref pills +
+   author·time flushed right (the badges live on the second line so they never
+   crowd the subject, and the time never pushes the refs around). */
 .logRow {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 4px 12px;
+  gap: 3px;
+  padding: 6px 10px;
   margin: 0 6px;
   border-radius: 4px;
   cursor: pointer;
 }
 .logRow:hover { background: var(--dsw-alias-interactive-bg-hover); }
-.logRow[data-selected='true'] { background: var(--dsw-alias-interactive-bg-active); }
 
 .logLine1 { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.logHash { flex: none; font: var(--dsw-font-markdown-code-block-small); color: var(--dsw-alias-label-tertiary); }
+.logHash {
+  flex: none;
+  padding: 1px 4px;
+  border-radius: 2px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-markdown-code-block-small);
+}
 .logLine2 { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
-.logRef { flex: none; padding: 0 5px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 2px; font: var(--dsw-font-xxxs-strong-11); color: var(--dsw-alias-brand-primary); white-space: nowrap; }
-.logSubject { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dsw-alias-label-primary); }
-.logMeta { font: var(--dsw-font-xxxs-11); color: var(--dsw-alias-label-tertiary); }
+.logRef { flex: none; padding: 0 6px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 999px; font: var(--dsw-font-xxxs-strong-11); color: var(--dsw-alias-brand-primary); white-space: nowrap; }
+.logSubject { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--dsw-font-xxs-strong-12); color: var(--dsw-alias-label-primary); }
+.logMeta { margin-left: auto; font: var(--dsw-font-xxxs-11); color: var(--dsw-alias-label-tertiary); white-space: nowrap; }
 
 .logMore {
   display: block;
@@ -152,9 +268,8 @@
 .filePath { display: block; color: var(--dsw-alias-label-tertiary); font-family: var(--ds-font-family-code, monospace); font-size: 11px; padding: 6px 4px 2px; word-break: break-all; }
 .fileGroup:first-child .filePath { padding-top: 2px; }
 
-.opRow { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 24px; border: 0; border-radius: 4px; background: transparent; color: var(--dsw-alias-label-primary); font: inherit; font-size: 11px; padding: 0 5px; cursor: pointer; text-align: left; }
+.opRow { position: relative; display: flex; align-items: center; gap: 6px; width: 100%; min-height: 24px; border: 0; border-radius: 4px; background: transparent; color: var(--dsw-alias-label-primary); font: inherit; font-size: 11px; padding: 0 5px; cursor: pointer; text-align: left; }
 .opRow:hover { background: var(--dsw-alias-interactive-bg-hover); }
-.opRow[data-selected='true'] { background: var(--dsw-alias-interactive-bg-active); }
 /* A failed op carries a quiet error inset bar (the flag chip names it). */
 .opRow[data-op-error='true'] { box-shadow: inset 2px 0 0 var(--dsw-alias-state-error-primary); }
 /* Size + relative time ride as one right-aligned cluster so the kind badges
@@ -197,10 +312,9 @@
   from { opacity: 0; }
 }
 
-/* Keyboard focus rings match the shared sidebar convention (the kit atoms
-   carry their own). */
-.link:focus-visible, .rowMain:focus-visible, .logRow:focus-visible,
-.logMore:focus-visible, .select:focus-visible, .dragHandle:focus-visible {
+/* Keyboard focus rings match the shared sidebar convention (the kit atoms and
+   the tree rows carry their own). */
+.logRow:focus-visible, .logMore:focus-visible, .select:focus-visible, .dragHandle:focus-visible {
   outline: 2px solid var(--dsw-alias-interactive-bg-hover-accent);
   outline-offset: -1px;
 }

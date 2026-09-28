@@ -407,3 +407,72 @@ ChangesTab
 - 真实挂载 lane：`DSH_CMD='npx -y --package @deepseek-ai/dsh@0.1.7-rc.1 dsh' pnpm test:mount` → **7/7 通过**（含 tab sweep、perf lane）。
 - 截图级证据（临时 Playwright 取证脚本，已删除，不留在仓库）：真实宿主上文件树行显示 **M/U 字母与状态色**、右键菜单出现宿主探测到的应用列表、文件变动页显示 36px `Git | Session` 头 + 未暂存/已暂存分组 + 吸底提交条 + 历史。
 - 仍属未验证：拖拽上传的视觉观感与手动多选手感（只有 token/尺度证据与行为测试）、Windows 宿主差异。
+
+---
+
+## 9. 第二轮：open-with 与宿主能力并存 + 打包下载 + 文件变动树（用户追加需求）
+
+用户追加三条：
+
+1. **打开方式 = 宿主探测到的本机关联应用 + 插件自研 open-with**（两者并存，不是二选一）；
+2. **文件页多选时右键新增「压缩打包并下载」**；
+3. **文件变动页再次重构：更美观 + 以层级（树）方式显示更改**。
+
+### 9.1 冻结接口
+
+#### A. open-with 恢复并与 open-in-app 并存
+
+- 恢复 `src/client/open-with.ts`（`OpenWithConfig` / `OpenWithTarget` / `parseOpenWithConfig` / `resolveOpenWithTargets` / `openWithUrl` / `openWithSshActive` / `newCustomEditorId` / `isValidCustomEditor`，与 main 逐字一致）、`src/client/open-with-settings.tsx`、`src/client/plugin-settings.ts`、宿主 `src/open-external.ts` 与 `open.external` 路由、`api.openExternal`、editor descriptor 的 `settings.render`，以及 20 个 `openWith*` 词条。
+- `FileTree` / `TreePanel` 恢复 main 的可选 props：`openWithTargets` / `openWithPinned` / `openWithSsh` / `onOpenWith` / `onToggleOpenWithPin`，与既有 `openInApp` **并存**。
+- 菜单形状（`打开方式` 段）：
+  1. 宿主行（`openInApp` 可用时）：`用默认应用打开` + 各系统关联应用；
+  2. 插件行：pinned 目标直达 + `在应用中打开 >` 子菜单（含图钉，main 原样）；**当宿主可用时隐藏插件的 `explorer` 目标**（宿主已有「在文件管理器中显示」，避免重复）；
+  3. 分隔线 + 宿主 `在文件管理器中显示`（宿主不可用时该行不出现，插件的 `explorer` 目标保留，保证仍能 reveal）。
+- 宿主完全不可用（`available() === false` / 无 handle）时：宿主行整段隐藏，插件行照旧可用（SSH 远端场景因此保持可用）。
+
+#### B. 压缩打包并下载
+
+- 新增 `src/zip.ts`：`buildZip(entries, opts)` 产出 ZIP（store + `zlib.deflateRaw` 两种方法按压缩收益选择；UTF-8 名称标志位；目录条目；CRC32；无第三方依赖）。
+- 新增宿主 GET 路由 `/sidebar/archive?sessionId=&cwd=&name=<archive.zip>&path=<p>&path=<p>…`：每个 `path` 经既有 workspace fence 校验，文件/目录（递归）都接受；上限（条目数 / 总字节）超限返回 JSON 错误；成功时 `content-type: application/zip` + `content-disposition: attachment`。
+- 客户端 `api.archiveUrl(scope, paths, name)`（与 `downloadUrl` 同形的 GET URL）。
+- 交互：多选（≥2）时右键菜单出现 `压缩并下载（{count} 项）`；单选且为目录时同样出现（单文件不出，避免与「下载」重复）。
+- 新词条：`zipDownload` / `zipDownloadCount` / `zipFailed`。
+
+#### C. 文件变动页层级显示
+
+- Git 视角的两个分组（未暂存 / 已暂存）各自渲染为**目录树**：单子目录压缩（`a/b/c` 一行显示为 `a/b`），目录行有 disclosure chevron + 文件夹图标，文件行有文件图标 + 状态字母 + 名称 + 弱化目录；行尾仍可暂存/取消暂存；默认展开。
+- 纯函数 `buildChangeTree(entries)`（`src/client/changes/change-tree.ts`）产出树 + 压缩规则，独立单测。
+- 视觉打磨：分组头吸顶、计数胶囊、hover 与选中态、缩进参考线、提交条与历史行间距统一到 §1 尺度。
+
+### 9.2 分工与写入范围
+
+| 范围 | 归属 |
+|---|---|
+| 计划文档、验证裁决、集成、最终门禁 | Lead |
+| `src/index.ts`、`src/zip.ts`、`src/client/api.ts`、`src/client/open-with.ts`、`src/client/open-with-settings.tsx`、`src/client/plugin-settings.ts`、`src/open-external.ts`、`src/client/EditorHost.tsx`、`src/client/builtins/tabs.tsx`、相关测试 | 宿主接入实现者 |
+| `src/client/FileTree.tsx`、`src/client/TreePanel.tsx`、`src/client/sidebar.module.css`、文件页测试 | 文件页实现者 |
+| `src/client/changes/**`、`src/client/diff/**`、变动页测试 | 文件变动页实现者 |
+| `src/client/locales-*.ts`（19 份） | 词典实现者 |
+| 独立验证 | 验证者 |
+
+### 9.3 实施记录（第二轮）
+
+- **打开方式并存**（落地形状）：菜单段无标题行 —— 宿主行（`用默认应用打开` + 系统关联应用，仅宿主可用）→ 分隔线 → 插件 pinned 直达行 + `在应用中打开 >` 子菜单（图钉 / SSH 后缀原样）→ 分隔线 → 宿主 `在文件管理器中显示`。宿主可用时过滤插件的 `explorer` 目标；宿主不可用/无 handle 时只留插件行（含 `explorer`，reveal 不丢）。
+  - 自研链路逐字恢复：`src/client/open-with.ts`、`open-with-settings.tsx`、`plugin-settings.ts`、`src/open-external.ts`、`open.external` 路由、`api.openExternal`、editor descriptor 的 `settings.render`，以及 20 个 `openWith*` 词条（19 份词典从 `git show main:` 逐字取回）。
+  - 因菜单去掉标题行，`openInApp` 词条成为死键 → 已从 21 份词典删除（zh 507 键）。
+  - 子菜单需要 `useSubmenuFlip`：第一轮删除的 `src/client/menu-flip.ts` + `layout.css` 翻转规则 + `tests/menu-flip.spec.tsx` 一并恢复。
+- **压缩打包下载**：新增 `src/zip.ts`（自研 ZIP 写入器，无第三方依赖）+ `src/archive-route.ts`（下载名净化 + 递归收集）+ `GET /sidebar/archive` + `api.archiveUrl`；`FileTree` 多选右键「压缩并下载（N 项）」（单选目录亦可，单文件不出），下载走 `fetch → blob → objectURL`，**路由错误（超限 / fence 拒绝 / 非 GET）现在会以 `zipFailed` 显示在错误条**。
+  - 上限：10 000 条目 / 256 MiB 未压缩负载（收集期即中止）。
+  - 实施中由系统 `unzip` 抓到的真实缺陷：central directory 只写 MS-DOS 位而 version-made-by 声称 Unix → Info-ZIP 把每个文件解成 `mode 000`；改为 Unix 语义（`0o100644 * 0x10000`，注意 `<< 16` 溢出 int32）。复验：mode 644/755、UTF-8 名、`unzip -t` 无错。
+- **文件变动层级树**：新增 `src/client/changes/change-tree.ts`（`buildChangeTree`：'/' 分段、单子目录链压缩成一行、目录先于文件、大小写不敏感排序、文件带 `GitFileStatus`、目录带下级变更数），两个分组各自渲染树；折叠状态按「组 + 路径」独立保存、默认展开；分组头吸顶 + 计数胶囊；`Stage all`/`Unstage all` 改为带 aria-label 的 IconButton；选中 = `interactive-bg-active` + 2px 内嵌强调条；12px/级缩进 + `-l1` 参考线；历史行 hash 徽标 / ref 胶囊 / 作者·时间右对齐。
+  - 契约偏差（已批准）：文件行不再重复渲染目录文本（树已用父行表达层级，重复是噪声）；`ChangeDir` 额外带 `changes` 计数以免每行重扫子树。
+
+### 9.4 第二轮验证证据
+
+- `pnpm typecheck` / `pnpm lint` / `pnpm test`（**134 文件、1422 通过、9 跳过**）/ `pnpm build` 全绿。
+- 真实挂载 lane：`DSH_CMD='npx -y --package @deepseek-ai/dsh@0.1.7-rc.1 dsh' pnpm test:mount` → **7/7 通过**。
+- 截图取证（临时 Playwright 脚本，已删除）：真实宿主上确认
+  ① 文件树多选 5 项 + 右键菜单同时含 **宿主探测应用**（Open with default app / Visual Studio Code / QuickTime Player）与 **插件 `Open with >` 子菜单** + **Zip and download (5 items)**；
+  ② 变动页 Git 视角以树显示：`src/client/changes`（单子目录链压缩成一行，带计数胶囊 1）→ `GitLens.tsx`（M 徽标），已暂存组 `src` → `app.ts`。
+- 单文件页回归：14 个 spec / 91 用例绿（含新增 `file-tree-archive.spec.tsx` 9 例：出现条件、成功链、三条失败路径、in-flight 守卫）。
+- 仍未验证：真实浏览器里 ZIP 的落盘行为（jsdom spy 证据）、拖拽/多选手感、Windows 宿主差异。

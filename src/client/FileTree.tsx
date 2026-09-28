@@ -42,16 +42,21 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import {
-  IconCloseFillRegular, IconCodeOutlineRegular, IconCopyOutlineRegular, IconDownloadOutlineRegular,
+  IconArchiveOutlineRegular, IconChevronRightOutlineRegular, IconCloseFillRegular, IconCodeOutlineRegular, IconCopyOutlineRegular,
+  IconDownloadOutlineRegular,
   IconEditOutlineRegular, IconFolderOpenRegular, IconLinkOutlineRegular, IconPlusOutlineRegular, IconTrashOutlineRegular,
   Menu, type MenuEntry, type MenuItem, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import { api, downloadUrl, isOutsideWorkspaceMessage, type FsEntry } from './api.ts'
+import { SiCursor, SiZedindustries } from 'react-icons/si'
+import { VscFolderOpened, VscLinkExternal, VscPin, VscPinned } from 'react-icons/vsc'
+import { api, archiveUrl, downloadUrl, isOutsideWorkspaceMessage, type FsEntry } from './api.ts'
 import { FenceErrorNotice } from './FenceErrorNotice.tsx'
 import { builtinFileIcon, builtinFolderIcon } from './file-icons.tsx'
-import { IconUploadOutline16 } from './icons.tsx'
+import { IconUploadOutline16, IconVscode16 } from './icons.tsx'
 import { isImeComposition } from './ime-guard.ts'
+import { useSubmenuFlip } from './menu-flip.ts'
 import type { OpenInApp, OpenInAppEntry } from './open-in-app.ts'
+import type { OpenWithTarget } from './open-with.ts'
 import { relativeTo } from './paths.ts'
 import { t } from './locales.ts'
 import type { BetterSidebarService } from './service.ts'
@@ -344,9 +349,23 @@ export function FileTree(props: {
   /**
    * The host's open-in-app handle (EditorHost builds it and injects it).
    * Absent, or reporting the host cannot hand paths to the desktop, hides the
-   * whole "open in app" section.
+   * HOST half of the "打开方式" section (the plugin's own targets stay).
    */
   openInApp?: OpenInApp
+  /**
+   * The PLUGIN's own "open with" menu: resolved external targets (already
+   * SSH-filtered and in menu order). Absent → no plugin half. Coexists with
+   * {@link openInApp} — the section lists both.
+   */
+  openWithTargets?: OpenWithTarget[]
+  /** Ids of targets pinned to the menu's top level (subset of the ids). */
+  openWithPinned?: string[]
+  /** Whether the workspace is remote (appends the SSH hint to target labels). */
+  openWithSsh?: boolean
+  /** Open one plugin target externally (reveal or URL — the caller decides). */
+  onOpenWith?: (targetId: string, path: string) => void
+  /** Toggle one plugin target's pinned state (the submenu row's pushpin). */
+  onToggleOpenWithPin?: (targetId: string) => void
   /** Insert `@<relative path>` into the composer draft (file vs directory). */
   onReferenceFile: (path: string, isDir: boolean) => void
   /** A rename landed (old row path → new path): the caller retargets open tabs. */
@@ -382,7 +401,8 @@ export function FileTree(props: {
   // callbacks must not change identity when the caller re-renders).
   const {
     sessionId, cwd, store, expanded, revealed, onOpenFileNewTab, onOpenFileSide,
-    openInApp, onReferenceFile, onPathRenamed, onPathDeleted, refreshTick, onUploadRequest, busy, hidden, visible, service,
+    openInApp, openWithTargets, openWithPinned, openWithSsh, onOpenWith, onToggleOpenWithPin,
+    onReferenceFile, onPathRenamed, onPathDeleted, refreshTick, onUploadRequest, busy, hidden, visible, service,
   } = props
   /** The live props for the stable callbacks below (identity churns per render). */
   const propsRef = useRef(props)
@@ -414,6 +434,9 @@ export function FileTree(props: {
   const [copiedPath, setCopiedPath] = useState<string | null>(null)
   /** Open context menu: the row path (and whether it is a directory) plus the cursor position. */
   const [rowMenu, setRowMenu] = useState<{ path: string; isDir: boolean; x: number; y: number } | null>(null)
+  // The plugin submenu can tower past the viewport; publish its flip geometry
+  // for layout.css while the row menu is open.
+  useSubmenuFlip(rowMenu)
   /** The open-in-app rows for the open menu (null entries = listing failed). */
   const [apps, setApps] = useState<{ path: string; entries: readonly OpenInAppEntry[] | null } | null>(null)
   /** The row being renamed inline: its path plus the edit buffer. */
@@ -893,12 +916,6 @@ export function FileTree(props: {
   }, [])
 
   /**
-   * The open menu's app rows are fetched while the menu is open: the host
-   * resolves a file's registered applications (or a directory's application
-   * catalogue). Availability is re-read per open — a host that cannot hand
-   * paths to the desktop hides the section entirely.
-   */
-  /**
    * Whether the host can hand paths to a native desktop — probed ONCE per
    * handle, on mount. The adapter starts in its `null` (unprobed) state, and
    * only the probe publishes the answer, so the menu reads this state instead
@@ -928,6 +945,12 @@ export function FileTree(props: {
     return () => { cancelled = true }
   }, [openInApp])
 
+  /**
+   * The open menu's app rows are fetched while the menu is open: the host
+   * resolves a file's registered applications (or a directory's application
+   * catalogue). A host that cannot hand paths to a desktop keeps `appReady`
+   * false, so no listing is attempted.
+   */
   useEffect(() => {
     if (rowMenu === null || openInApp === undefined || !appReady) {
       setApps(null)
@@ -962,22 +985,110 @@ export function FileTree(props: {
     void handle.reveal(path).then((ok) => { if (!ok) reportOpenFailure(path) }).catch(() => { reportOpenFailure(path) })
   }, [reportOpenFailure])
 
+  /** The menu label of one plugin open target: a locale key for the built-ins,
+   *  the user's own name for custom editors, plus the SSH hint in remote mode. */
+  const openWithLabelOf = (target: OpenWithTarget): string => {
+    const name = target.nameKey !== undefined ? t(target.nameKey) : target.name
+    return openWithSsh === true && !target.localOnly ? `${name}${t('openWithSshSuffix')}` : name
+  }
+
   /**
-   * The menu's "open in app" section for one row: a heading label plus the
-   * host's rows (the default-application row first for files), a separator,
-   * and reveal-in-file-manager. Absent when the caller wired no handle or the
-   * host cannot open desktop paths; an empty/failed listing degrades to one
-   * disabled line so the section never silently disappears mid-interaction.
+   * The PLUGIN half of the "open with" section: the pinned targets as DIRECT
+   * rows, then the parent row with every target as a nested submenu (main's
+   * shape — pins, chevron, SSH suffixes). The section only renders when the
+   * caller wired the feature and at least one target is left.
+   *
+   * `hostReady` filters out the built-in `explorer` target: the host's own
+   * reveal row replaces it, and two identical "File Manager" rows would be
+   * noise. When the host is NOT ready the target stays, so reveal is never
+   * lost.
    */
-  const openInAppEntries = (target: { path: string; isDir: boolean }): MenuEntry[] => {
-    if (openInApp === undefined || !appReady) return []
-    const head: MenuEntry = { type: 'label', id: 'open-in-app-label', text: t('openInApp') }
-    const entries = apps !== null && apps.path === target.path ? apps.entries : undefined
-    if (entries === undefined) return [head, { id: 'open-in-app-loading', label: t('loading'), disabled: true }]
-    if (entries === null || entries.length === 0) {
-      return [head, { id: 'open-in-app-empty', label: t('openInAppEmpty'), disabled: true }]
+  const openWithEntries = (hostReady: boolean): MenuEntry[] => {
+    if (openWithTargets === undefined || onOpenWith === undefined) return []
+    const targets = hostReady ? openWithTargets.filter(target => target.id !== 'explorer') : openWithTargets
+    if (targets.length === 0) return []
+    const pinnedIds = openWithPinned ?? []
+    /** Brand marks for the built-ins (monochrome silhouettes, currentColor);
+     *  reveal gets the folder glyph, custom editors a generic code mark.
+     *  The compact menu's icon slot is 14px, so every mark renders at 14. */
+    const itemIcon = (target: OpenWithTarget): ReactNode => {
+      if (target.kind === 'reveal') return <VscFolderOpened size={14} />
+      if (target.id === 'vscode') return <IconVscode16 size={14} />
+      if (target.id === 'cursor') return <SiCursor size={14} />
+      if (target.id === 'zed') return <SiZedindustries size={14} />
+      return <IconCodeOutlineRegular size={14} />
     }
-    const rows: MenuItem[] = []
+    const pinned = targets
+      .filter(target => pinnedIds.includes(target.id))
+      .map<MenuItem>(target => ({
+        id: `open-with:${target.id}`,
+        label: openWithLabelOf(target),
+        icon: itemIcon(target),
+      }))
+    const submenu = targets.map<MenuItem>(target => {
+      const pinnedNow = pinnedIds.includes(target.id)
+      return {
+        id: `open-with:${target.id}`,
+        label: (
+          <span className={css.openWithLabel}>
+            <span className={css.openWithName}>{openWithLabelOf(target)}</span>
+            {/* The pushpin: a span (never a button — the Menu row itself is
+                a button, so a nested interactive element would be invalid).
+                Clicking it pins/unpins the target at the menu's top level
+                WITHOUT selecting the row: the pin stops propagation, so the
+                menu stays open and the icon flips on the next render. */}
+            <span
+              role="button"
+              tabIndex={-1}
+              className={clsx(css.openWithPin, pinnedNow && css.openWithPinActive)}
+              aria-label={pinnedNow ? t('unpinOpenWith') : t('pinOpenWith')}
+              title={pinnedNow ? t('unpinOpenWith') : t('pinOpenWith')}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                onToggleOpenWithPin?.(target.id)
+              }}
+            >
+              {pinnedNow ? <VscPinned size={12} /> : <VscPin size={12} />}
+            </span>
+          </span>
+        ),
+        icon: itemIcon(target),
+      }
+    })
+    return [
+      ...pinned,
+      ...(pinned.length > 0 ? [{ id: 'open-with-sep', type: 'separator' } as MenuEntry] : []),
+      {
+        id: 'open-with-menu',
+        // The primitives Menu renders no chevron for submenu parents — the
+        // trailing arrow is supplied inside the label (full-width flex row,
+        // right-aligned), matching how the submenu rows right-align the pin.
+        label: (
+          <span className={css.openWithLabel}>
+            <span className={css.openWithName}>{t('openWithMenu')}</span>
+            <IconChevronRightOutlineRegular size={14} className={css.openWithChevron} aria-hidden />
+          </span>
+        ),
+        icon: <VscLinkExternal size={14} />,
+        submenu,
+      },
+    ]
+  }
+
+  /**
+   * The HOST half of the section: the default-application row (files, when the
+   * OS reports one) followed by every registered handler. A pending listing
+   * shows one disabled line, an empty/failed listing the disabled
+   * `openInAppEmpty` line — the reveal row below still renders either way.
+   */
+  const hostAppEntries = (target: { path: string; isDir: boolean }): MenuEntry[] => {
+    const entries = apps !== null && apps.path === target.path ? apps.entries : undefined
+    if (entries === undefined) return [{ id: 'open-in-app-loading', label: t('loading'), disabled: true }]
+    if (entries === null || entries.length === 0) {
+      return [{ id: 'open-in-app-empty', label: t('openInAppEmpty'), disabled: true }]
+    }
+    const rows: MenuEntry[] = []
     const fallback = entries.find(entry => entry.isDefault)
     if (!target.isDir && fallback !== undefined) {
       rows.push({ id: 'open-in-app:default', label: t('openInAppDefault'), icon: <AppGlyph entry={fallback} /> })
@@ -986,12 +1097,60 @@ export function FileTree(props: {
       if (!target.isDir && entry.isDefault) continue
       rows.push({ id: `open-in-app:${entry.id}`, label: entry.name, icon: <AppGlyph entry={entry} /> })
     }
-    return [
-      head,
-      ...rows,
-      { id: 'open-in-app-sep', type: 'separator' },
-      { id: 'reveal-in-file-manager', label: t('revealInFileManager'), icon: <IconFolderOpenRegular size={14} /> },
-    ]
+    return rows
+  }
+
+  /**
+   * The menu's "打开方式" section, where the host's capability and the plugin's
+   * own targets COEXIST (the user asked for both). No heading row: the host
+   * group is self-describing (application names + "用默认应用打开"), and
+   * `openInApp` / `openWithMenu` read as near-duplicates in every dictionary —
+   * two synonyms stacked in one menu read as a repeated item. The frozen order:
+   *   host rows → separator → plugin rows (pinned direct + submenu) →
+   *   separator → host reveal.
+   * Separators only appear between two non-empty groups. The host rows (and
+   * reveal) vanish entirely when no handle was injected or the host cannot
+   * hand paths to a desktop; the plugin rows then stand alone, which is what
+   * keeps a remote/SSH session usable. The plugin's `explorer` target is
+   * dropped only while the host is ready (see {@link openWithEntries}).
+   */
+  const openWithSection = (target: { path: string; isDir: boolean }): MenuEntry[] => {
+    const plugin = openWithEntries(appReady)
+    if (!appReady && plugin.length === 0) return []
+    const entries: MenuEntry[] = []
+    const separate = (): void => {
+      if (entries.length > 0) entries.push({ id: `open-with-group-${entries.length}`, type: 'separator' })
+    }
+    if (appReady) entries.push(...hostAppEntries(target))
+    if (plugin.length > 0) {
+      separate()
+      entries.push(...plugin)
+    }
+    if (appReady) {
+      separate()
+      entries.push({ id: 'reveal-in-file-manager', label: t('revealInFileManager'), icon: <IconFolderOpenRegular size={14} /> })
+    }
+    return entries
+  }
+
+  /**
+   * The selection's ZIP row: two or more selected rows archive together, and a
+   * LONE directory archives its own subtree. A lone FILE is skipped — it would
+   * only duplicate the plain download row.
+   */
+  const zipEntries = (target: { path: string; isDir: boolean }): MenuEntry[] => {
+    const count = selected.size
+    if (count >= 2) {
+      return [{
+        id: 'archive-selection',
+        label: t('zipDownloadCount', { count }),
+        icon: <IconArchiveOutlineRegular size={14} />,
+      }]
+    }
+    if (count === 1 && target.isDir) {
+      return [{ id: 'archive-selection', label: t('zipDownload'), icon: <IconArchiveOutlineRegular size={14} /> }]
+    }
+    return []
   }
 
   /** Download a file through the host route (raw bytes, binary-safe). */
@@ -1003,6 +1162,59 @@ export function FileTree(props: {
     document.body.appendChild(anchor)
     anchor.click()
     anchor.remove()
+  }
+
+  /**
+   * Download one archive of `paths` through the host route. Unlike the
+   * single-file download — a bare anchor whose failures belong to the browser
+   * — the archive route answers the plugin's JSON error envelope for its caps
+   * and refusals, and an anchor would happily save that envelope as a broken
+   * `.zip`. So the bytes are fetched explicitly: a non-2xx answer is parsed for
+   * its `{error: {message}}` envelope (the shape `api.ts` reads) and reported
+   * through `zipFailed`; a 2xx body becomes an object URL handed to the same
+   * hidden-anchor mechanics. `archiveBusyRef` keeps a double click from
+   * packaging the same selection twice.
+   */
+  const archiveBusyRef = useRef(false)
+  const downloadArchive = (paths: readonly string[]): void => {
+    if (archiveBusyRef.current) return
+    const name = paths.length === 1 ? `${baseName(paths[0]!)}.zip` : 'archive.zip'
+    let url: string
+    try {
+      url = archiveUrl({ sessionId, cwd }, paths, name)
+    } catch (error: unknown) {
+      setActionError(t('zipFailed', { message: error instanceof Error ? error.message : String(error) }))
+      return
+    }
+    archiveBusyRef.current = true
+    void fetch(url)
+      .then(async (response) => {
+        if (!response.ok) {
+          const envelope: { error?: { message?: string } } | null = await response.json().catch(() => null)
+          throw new Error(envelope?.error?.message ?? `HTTP ${response.status}`)
+        }
+        return await response.blob()
+      })
+      .then((blob) => {
+        setActionError(null)
+        const objectUrl = URL.createObjectURL(blob)
+        const anchor = document.createElement('a')
+        anchor.href = objectUrl
+        anchor.download = name
+        anchor.style.display = 'none'
+        document.body.appendChild(anchor)
+        anchor.click()
+        anchor.remove()
+        // Revoke on the next task, not synchronously: some engines have not
+        // committed the download when click() returns, and revoking the URL
+        // under them loses the file. One tick is enough and keeps the blob
+        // from outliving the download.
+        window.setTimeout(() => { URL.revokeObjectURL(objectUrl) }, 0)
+      })
+      .catch((error: unknown) => {
+        setActionError(t('zipFailed', { message: error instanceof Error ? error.message : String(error) }))
+      })
+      .finally(() => { archiveBusyRef.current = false })
   }
 
   const root = cwd
@@ -1357,7 +1569,7 @@ export function FileTree(props: {
           ...(rowMenu?.isDir === false && onOpenFileSide !== undefined
             ? [{ id: 'open-side', label: t('openFileSide'), icon: <IconFolderOpenRegular size={14} /> }]
             : []),
-          ...(rowMenu === null ? [] : openInAppEntries(rowMenu)),
+          ...(rowMenu === null ? [] : openWithSection(rowMenu)),
           // Download applies to files only (the host route refuses directories).
           ...(rowMenu?.isDir === false
             ? [{ id: 'download', label: t('download'), icon: <IconDownloadOutlineRegular size={14} /> }]
@@ -1370,6 +1582,8 @@ export function FileTree(props: {
           ...(rowMenu?.isDir === true
             ? [{ id: 'new-folder', label: t('newFolder'), icon: <IconPlusOutlineRegular size={14} /> }]
             : []),
+          // ZIP of the current selection (≥2 rows, or one lone directory).
+          ...(rowMenu === null ? [] : zipEntries(rowMenu)),
           { id: 'relative', label: t('copyRelative'), icon: <IconCopyOutlineRegular size={14} /> },
           { id: 'absolute', label: t('copyAbsolute'), icon: <IconCopyOutlineRegular size={14} /> },
           // Explorer mutations close the menu; the workspace ROOT row is the
@@ -1402,8 +1616,18 @@ export function FileTree(props: {
             openWithApp(target.path, id.slice('open-in-app:'.length))
             return
           }
+          // The plugin's own targets share one id space (pinned rows and
+          // submenu children alike), so the caller gets the target id + path.
+          if (id.startsWith('open-with:')) {
+            onOpenWith?.(id.slice('open-with:'.length), target.path)
+            return
+          }
           if (id === 'reveal-in-file-manager') {
             revealPath(target.path)
+            return
+          }
+          if (id === 'archive-selection') {
+            downloadArchive([...selected])
             return
           }
           if (id === 'download') {
@@ -1418,8 +1642,7 @@ export function FileTree(props: {
           if (id === 'new-folder') {
             startNewFolder(target.path)
             return
-          }
-          if (id === 'rename') {
+          }          if (id === 'rename') {
             setRenaming({ path: target.path, value: baseName(target.path) })
             return
           }
