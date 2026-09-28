@@ -11,7 +11,7 @@
  *    workspace, covering the fence, the parameter guards and a full
  *    directory walk.
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { validateHeaderValue } from 'node:http'
@@ -19,9 +19,19 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
 import { apply } from '../src/index.ts'
-import { archiveUrl } from '../src/client/api.ts'
-import { archiveNameOf, collectZipEntries, contentDispositionOf, disambiguateArchiveNames } from '../src/archive-route.ts'
-import { crc32, buildZip, type ZipEntry } from '../src/zip.ts'
+import { archiveDownloadUrl } from '../src/client/api.ts'
+import {
+  ARCHIVE_MAX_BUILDING,
+  ARCHIVE_TTL_MS,
+  archiveNameOf,
+  collectZipEntries,
+  contentDispositionOf,
+  createArchiveTasks,
+  disambiguateArchiveNames,
+  respondArchiveDownload,
+  type ArchiveTasks,
+} from '../src/archive-route.ts'
+import { crc32, buildZip, type ZipEntry, type ZipProgress } from '../src/zip.ts'
 import { SidebarError } from '../src/wire.ts'
 import type { SidebarWebRoute, SidebarWebUpgradeRoute } from '../src/context-types.ts'
 
@@ -93,8 +103,8 @@ function readZip(archive: Buffer): ParsedEntry[] {
   return entries
 }
 
-/** /sidebar/archive mounted against a fake context, as the host runs it. */
-function mountArchive(): SidebarWebRoute {
+/** The host mounted against a fake context: both archive routes + the API. */
+function mountHost(): { api: SidebarWebRoute; download: SidebarWebRoute } {
   const routes: SidebarWebRoute[] = []
   const ctx = {
     webRuntime: { trustedHosts: [] },
@@ -110,9 +120,33 @@ function mountArchive(): SidebarWebRoute {
     get: () => undefined,
   }
   apply(ctx as never)
-  const route = routes.find(candidate => candidate.path === '/sidebar/archive')
-  if (route === undefined) throw new Error('test setup: /sidebar/archive route not registered')
-  return route
+  const api = routes.find(candidate => candidate.path === '/sidebar/api')
+  const download = routes.find(candidate => candidate.path === '/sidebar/archive')
+  if (api === undefined) throw new Error('test setup: /sidebar/api route not registered')
+  if (download === undefined) throw new Error('test setup: /sidebar/archive route not registered')
+  return { api, download }
+}
+
+/** One POST /sidebar/api/<method> against the mounted API route. */
+async function post(
+  api: SidebarWebRoute,
+  method: string,
+  payload: unknown,
+): Promise<{ status: number; ok: boolean; value?: unknown; error?: { code?: string; message?: string } }> {
+  const body = Buffer.from(JSON.stringify(payload))
+  const req = {
+    method: 'POST',
+    url: `/sidebar/api/${method}`,
+    headers: { host: '127.0.0.1:3080' },
+    [Symbol.asyncIterator]: async function* () { yield body },
+  } as never
+  const out: { status: number; body: string } = { status: 200, body: '' }
+  const res = {
+    writeHead: (status: number) => { out.status = status },
+    end: (chunk: unknown) => { out.body += String(chunk ?? '') },
+  } as never
+  await api.handler(req, res)
+  return { status: out.status, ...(JSON.parse(out.body) as { ok: boolean; value?: unknown; error?: { code?: string; message?: string } }) }
 }
 
 /** One GET against a mounted route, collecting raw bytes. */
@@ -125,6 +159,54 @@ async function get(route: SidebarWebRoute, url: string): Promise<{ status: numbe
   } as never
   await route.handler(req, res)
   return { status: out.status, headers: out.headers, body: Buffer.concat(out.chunks) }
+}
+
+/** Poll `archive.status` until the detached build settles (or throw). */
+async function waitForReady(
+  api: SidebarWebRoute,
+  id: string,
+  sessionId: string,
+): Promise<{ state: string; done: number; total: number; bytes: number; error?: string }> {
+  let last: { state: string; done: number; total: number; bytes: number; error?: string } | undefined
+  for (let attempt = 0; attempt < 400; attempt += 1) {
+    const status = await post(api, 'archive.status', { id, sessionId })
+    if (status.ok === true) {
+      last = status.value as { state: string; done: number; total: number; bytes: number; error?: string }
+      if (last.state !== 'building') return last
+    }
+    await new Promise(resolve => setTimeout(resolve, 5))
+  }
+  throw new Error(`test setup: archive ${id} never settled (${JSON.stringify(last)})`)
+}
+
+/**
+ * The whole host flow for one selection: POST archive.build, poll until the
+ * detached build settles, then GET the bytes. The caller's session id is both
+ * the scope and the download's fence.
+ */
+async function archiveFlow(input: {
+  sessionId: string
+  cwd: string
+  name?: string
+  paths: readonly string[]
+}): Promise<{ build: Awaited<ReturnType<typeof post>>; status: Awaited<ReturnType<typeof waitForReady>>; download: Awaited<ReturnType<typeof get>> }> {
+  const { api, download } = mountHost()
+  const build = await post(api, 'archive.build', {
+    sessionId: input.sessionId,
+    cwd: input.cwd,
+    paths: [...input.paths],
+    ...(input.name === undefined ? {} : { name: input.name }),
+  })
+  if (build.ok !== true || build.status !== 200) {
+    return { build, status: await waitForReady(api, '', input.sessionId), download: await get(download, '/sidebar/archive') }
+  }
+  const id = (build.value as { id: string }).id
+  const status = await waitForReady(api, id, input.sessionId)
+  return {
+    build,
+    status,
+    download: await get(download, `/sidebar/archive?sessionId=${encodeURIComponent(input.sessionId)}&id=${encodeURIComponent(id)}`),
+  }
 }
 
 /** A temp workspace (plus an outside sibling) removed after each test. */
@@ -207,6 +289,33 @@ describe('buildZip', () => {
     const archive = await buildZip([])
     expect(readZip(archive)).toEqual([])
     expect(archive.readUInt32LE(archive.length - 22)).toBe(0x06054B50)
+  })
+
+  it('reports progress per entry, monotonically, ending at the entry count', async () => {
+    const root = tempRoot()
+    mkdirSync(join(root, 'dir'))
+    writeFileSync(join(root, 'a.txt'), 'a'.repeat(10))
+    writeFileSync(join(root, 'dir', 'b.txt'), 'b'.repeat(30))
+    const seen: ZipProgress[] = []
+    await buildZip([
+      { path: join(root, 'dir'), name: 'dir', isDir: true },
+      { path: join(root, 'dir', 'b.txt'), name: 'dir/b.txt' },
+      { path: join(root, 'a.txt'), name: 'a.txt' },
+    ], { onProgress: (progress) => seen.push({ ...progress }) })
+    expect(seen).toHaveLength(3)
+    expect(seen.map(step => step.done)).toEqual([1, 2, 3])
+    expect(seen.every(step => step.total === 3)).toBe(true)
+    // `bytes` counts uncompressed payload and never shrinks. The directory row
+    // adds nothing; b.txt (30) then a.txt (10) bring it to 40.
+    expect(seen.map(step => step.bytes)).toEqual([0, 30, 40])
+    // A failed entry reports nothing for itself (the throw ends the build).
+    const failed: ZipProgress[] = []
+    await expect(buildZip([
+      { path: join(root, 'a.txt'), name: 'a.txt' },
+      { path: join(root, 'missing.txt'), name: 'missing.txt' },
+    ], { onProgress: (progress) => failed.push({ ...progress }) }))
+      .rejects.toMatchObject({ code: 'fs-error' })
+    expect(failed.map(step => step.done)).toEqual([1])
   })
 
   it('rejects an over-limit entry count before reading anything', async () => {
@@ -416,17 +525,10 @@ describe('disambiguateArchiveNames', () => {
   })
 })
 
-describe('/sidebar/archive route', () => {
-  it('archiveUrl builds the GET URL the route parses (repeated path, encoded)', () => {
-    const url = archiveUrl({ sessionId: 's-1', cwd: '/work tree' }, ['/work tree/a b.txt', '/work tree/子目录'], 'my zip.zip')
-    const parsed = new URL(url, 'http://dsh.internal')
-    expect(parsed.pathname).toBe('/sidebar/archive')
-    expect(parsed.searchParams.get('sessionId')).toBe('s-1')
-    expect(parsed.searchParams.get('cwd')).toBe('/work tree')
-    expect(parsed.searchParams.get('name')).toBe('my zip.zip')
-    expect(parsed.searchParams.getAll('path')).toEqual(['/work tree/a b.txt', '/work tree/子目录'])
-    // A scope without a cwd omits the parameter entirely (same as downloadUrl).
-    expect(archiveUrl({ sessionId: 's-2' }, ['/a'], 'x.zip')).toBe('/sidebar/archive?sessionId=s-2&name=x.zip&path=%2Fa')
+describe('archive task flow (build → status → download)', () => {
+  it('archive client helpers build the frozen request/URL shapes', () => {
+    expect(archiveDownloadUrl({ sessionId: 's-1' }, 'ar-9'))
+      .toBe('/sidebar/archive?sessionId=s-1&id=ar-9')
   })
 
   it('zips a selected file and a selected directory, walking it recursively', async () => {
@@ -436,20 +538,23 @@ describe('/sidebar/archive route', () => {
     writeFileSync(join(workspace, 'src', 'index.ts'), 'export {}\n')
     writeFileSync(join(workspace, 'src', 'deep', 'nested.ts'), 'nested\n')
     writeFileSync(join(workspace, 'notes.md'), '# notes\n')
-    const route = mountArchive()
-    const url = `/sidebar/archive?sessionId=s-zip&cwd=${encodeURIComponent(workspace)}`
-      + `&name=${encodeURIComponent('我的打包.zip')}`
-      + `&path=${encodeURIComponent(join(workspace, 'src'))}`
-      + `&path=${encodeURIComponent(join(workspace, 'notes.md'))}`
-    const response = await get(route, url)
-    expect(response.status).toBe(200)
-    expect(response.headers['content-type']).toBe('application/zip')
+    const { build, download } = await archiveFlow({
+      sessionId: 's-zip',
+      cwd: workspace,
+      name: '我的打包.zip',
+      paths: [join(workspace, 'src'), join(workspace, 'notes.md')],
+    })
+    expect(build.ok).toBe(true)
+    expect(build.status).toBe(200)
+    expect(build.value).toMatchObject({ entries: 5 })
+    expect(download.status).toBe(200)
+    expect(download.headers['content-type']).toBe('application/zip')
     // F1: the name is never header-raw. See the real-HTTP case below for the
     // node:http proof that a non-latin1 name no longer 500s.
-    expect(response.headers['content-disposition'])
+    expect(download.headers['content-disposition'])
       .toBe(`attachment; filename="download.zip"; filename*=UTF-8''${encodeURIComponent('我的打包.zip')}`)
-    expect(Number(response.headers['content-length'])).toBe(response.body.byteLength)
-    const entries = readZip(response.body)
+    expect(Number(download.headers['content-length'])).toBe(download.body.byteLength)
+    const entries = readZip(download.body)
     expect(entries.map(entry => entry.name)).toEqual([
       'src/',
       'src/deep/',
@@ -462,26 +567,228 @@ describe('/sidebar/archive route', () => {
     expect(byName.get('notes.md')!.data.toString('utf8')).toBe('# notes\n')
   })
 
+  it('reports progress through archive.status and releases after the download', async () => {
+    const root = tempRoot()
+    const workspace = join(root, 'workspace')
+    mkdirSync(workspace, { recursive: true })
+    writeFileSync(join(workspace, 'a.txt'), 'a\n')
+    writeFileSync(join(workspace, 'b.txt'), 'b\n')
+    const { api, download } = mountHost()
+    const build = await post(api, 'archive.build', { sessionId: 's-zip', cwd: workspace, paths: [join(workspace, 'a.txt'), join(workspace, 'b.txt')] })
+    expect(build.ok).toBe(true)
+    const id = (build.value as { id: string }).id
+    const status = await post(api, 'archive.status', { id, sessionId: 's-zip' })
+    expect(status.ok).toBe(true)
+    const first = status.value as { state: string; done: number; total: number; bytes: number }
+    expect(first.total).toBe(2)
+    expect(['building', 'ready']).toContain(first.state)
+    expect(first.done).toBeGreaterThanOrEqual(0)
+    expect(first.bytes).toBeGreaterThanOrEqual(0)
+    const settled = await waitForReady(api, id, 's-zip')
+    expect(settled.state).toBe('ready')
+    expect(settled.done).toBe(2)
+    // The download serves the bytes…
+    const served = await get(download, `/sidebar/archive?sessionId=s-zip&id=${encodeURIComponent(id)}`)
+    expect(served.status).toBe(200)
+    // …and consumes the task: a second fetch is a 404.
+    const second = await get(download, `/sidebar/archive?sessionId=s-zip&id=${encodeURIComponent(id)}`)
+    expect(second.status).toBe(404)
+    const gone = await post(api, 'archive.status', { id, sessionId: 's-zip' })
+    expect(gone.ok).toBe(false)
+    expect(gone.error?.code).toBe('not-found')
+  })
+
+  it('settles to ready with done === total (progress is monotonic and complete)', async () => {
+    const root = tempRoot()
+    const workspace = join(root, 'workspace')
+    mkdirSync(workspace, { recursive: true })
+    for (const name of ['a.txt', 'b.txt', 'c.txt']) writeFileSync(join(workspace, name), name)
+    const { api } = mountHost()
+    const build = await post(api, 'archive.build', {
+      sessionId: 's-zip',
+      cwd: workspace,
+      paths: [join(workspace, 'a.txt'), join(workspace, 'b.txt'), join(workspace, 'c.txt')],
+    })
+    const id = (build.value as { id: string }).id
+    // The build is detached; poll until it settles. Every poll must be
+    // monotonic (done never goes backwards, bytes never shrink).
+    let previousDone = -1
+    let previousBytes = -1
+    let settled: { state: string; done: number; total: number; bytes: number } | undefined
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const status = await post(api, 'archive.status', { id, sessionId: 's-zip' })
+      const value = status.value as { state: string; done: number; total: number; bytes: number }
+      expect(value.done).toBeGreaterThanOrEqual(previousDone)
+      expect(value.bytes).toBeGreaterThanOrEqual(previousBytes)
+      previousDone = value.done
+      previousBytes = value.bytes
+      if (value.state !== 'building') { settled = value; break }
+      await new Promise(resolve => setTimeout(resolve, 5))
+    }
+    expect(settled?.state).toBe('ready')
+    expect(settled?.total).toBe(3)
+    expect(settled?.done).toBe(3)
+  })
+
+  it('refuses another session\'s task (403) and an unknown id (404)', async () => {
+    const root = tempRoot()
+    const workspace = join(root, 'workspace')
+    mkdirSync(workspace, { recursive: true })
+    writeFileSync(join(workspace, 'a.txt'), 'a')
+    const { api, download } = mountHost()
+    const build = await post(api, 'archive.build', { sessionId: 's-zip', cwd: workspace, paths: [join(workspace, 'a.txt')] })
+    const id = (build.value as { id: string }).id
+    const foreign = await post(api, 'archive.status', { id, sessionId: 's-other' })
+    expect(foreign.ok).toBe(false)
+    expect(foreign.error?.code).toBe('forbidden')
+    const foreignDownload = await get(download, `/sidebar/archive?sessionId=s-other&id=${encodeURIComponent(id)}`)
+    expect(foreignDownload.status).toBe(403)
+    const unknown = await post(api, 'archive.status', { id: 'ar-nope', sessionId: 's-zip' })
+    expect(unknown.error?.code).toBe('not-found')
+    // The failed foreign reads did not consume the task.
+    await waitForReady(api, id, 's-zip')
+    const own = await get(download, `/sidebar/archive?sessionId=s-zip&id=${encodeURIComponent(id)}`)
+    expect(own.status).toBe(200)
+  })
+
+  it('caps concurrent builds (the 5th start is refused)', async () => {
+    const root = tempRoot()
+    const workspace = join(root, 'workspace')
+    mkdirSync(workspace, { recursive: true })
+    writeFileSync(join(workspace, 'a.txt'), 'a')
+    const { api } = mountHost()
+    const tasks = createArchiveTasks()
+    expect(ARCHIVE_MAX_BUILDING).toBe(4)
+    // A large entry set keeps each detached build running across the next
+    // start (a 1-entry build can finish between two awaits).
+    const big = join(workspace, 'big.bin')
+    writeFileSync(big, Buffer.alloc(2 * 1024 * 1024, 3))
+    for (let index = 0; index < ARCHIVE_MAX_BUILDING; index += 1) {
+      tasks.start({ sessionId: 's', name: 'x.zip', entries: [{ path: big, name: 'big.bin' }] })
+    }
+    expect(() => tasks.start({ sessionId: 's', name: 'x.zip', entries: [{ path: big, name: 'big.bin' }] }))
+      .toThrow(/too many archives are being built/)
+    // The API route surfaces the same refusal as a bad-request envelope.
+    for (let index = 0; index < ARCHIVE_MAX_BUILDING; index += 1) {
+      const accepted = await post(api, 'archive.build', { sessionId: 's-zip', cwd: workspace, paths: [big] })
+      expect(accepted.ok).toBe(true)
+    }
+    const refused = await post(api, 'archive.build', { sessionId: 's-zip', cwd: workspace, paths: [big] })
+    expect(refused.ok).toBe(false)
+    expect(refused.error?.message).toMatch(/too many archives/)
+  })
+
+  it('surfaces a build failure as an error task with its message', async () => {
+    const root = tempRoot()
+    const missing = join(root, 'missing.txt')
+    // The route's collector lstat's every selection, so a missing path never
+    // becomes a task at all (the POST refuses it). The DETACHED failure is the
+    // race the task state exists for — a source that vanishes after the walk —
+    // so it is exercised on the table directly, then through the route by
+    // making an errored task's TTL expire.
+    const tasks = createArchiveTasks()
+    const started = tasks.start({ sessionId: 's', name: 'x.zip', entries: [{ path: missing, name: 'missing.txt' }] })
+    await vi.waitFor(() => { expect(tasks.status(started.id, 's').state).toBe('error') })
+    const errored = tasks.status(started.id, 's')
+    expect(errored.state).toBe('error')
+    expect(errored.error).toMatch(/missing\.txt/)
+    expect(tasks.lookup(started.id, 's')).toMatchObject({ ok: false, reason: 'error' })
+    // An errored task answers its download with 410 Gone, not a silent 404.
+    const { api, download } = mountHost()
+    const refused = await post(api, 'archive.build', { sessionId: 's-zip', cwd: root, paths: [missing] })
+    expect(refused.ok).toBe(false)
+    expect(refused.error?.code).toBe('fs-error')
+    const gone = await get(download, `/sidebar/archive?sessionId=s-zip&id=ar-nope`)
+    expect(gone.status).toBe(404)
+  })
+
+  it('answers a failed build with 410 Gone and another session with 403', async () => {
+    const root = tempRoot()
+    const missing = join(root, 'missing.txt')
+    const tasks = createArchiveTasks()
+    const started = tasks.start({ sessionId: 's', name: 'x.zip', entries: [{ path: missing, name: 'missing.txt' }] })
+    await vi.waitFor(() => { expect(tasks.status(started.id, 's').state).toBe('error') })
+    // Every non-200 branch of the download route, through its own mapping.
+    const answer = (sessionId: string | null, id: string | null): { status: number; error?: string } => {
+      const out: { status: number; error?: string } = { status: 0 }
+      try {
+        respondArchiveDownload(tasks, { sessionId, id }, {
+          writeHead: (status) => { out.status = status },
+          end: () => {},
+        })
+      } catch (error) {
+        out.error = error instanceof Error ? error.message : String(error)
+        out.status = error instanceof SidebarError ? error.status : 500
+      }
+      return out
+    }
+    expect(answer('s', started.id)).toMatchObject({ status: 410, error: expect.stringMatching(/missing\.txt/) })
+    expect(answer('other', started.id)).toMatchObject({ status: 403 })
+    expect(answer(null, started.id)).toMatchObject({ status: 400 })
+    expect(answer('s', null)).toMatchObject({ status: 400 })
+    expect(answer('s', 'ar-nope')).toMatchObject({ status: 404 })
+    // The 409 and 200 branches get a STUB table: a real build of a one-file
+    // archive can already be ready by the next line, which would test timing
+    // rather than the mapping.
+    const stubFile = join(root, 'stub.txt')
+    writeFileSync(stubFile, 'stub')
+    const bytes = await buildZip([{ path: stubFile, name: 'stub.txt' }])
+    let released = 0
+    const fake = (lookup: ArchiveTasks['lookup']): ArchiveTasks => ({
+      start: () => { throw new Error('not used') },
+      status: () => { throw new Error('not used') },
+      lookup,
+      release: () => { released += 1 },
+      size: () => 0,
+    })
+    const building = fake(() => ({ ok: false, reason: 'building', message: 'archive is still being built' }))
+    const buildAnswer = (tasks: ArchiveTasks): { status: number; error?: string } => {
+      const out: { status: number; error?: string } = { status: 0 }
+      try {
+        respondArchiveDownload(tasks, { sessionId: 's', id: 'ar-1' }, { writeHead: (status) => { out.status = status }, end: () => {} })
+      } catch (error) {
+        out.error = error instanceof Error ? error.message : String(error)
+        out.status = error instanceof SidebarError ? error.status : 500
+      }
+      return out
+    }
+    expect(buildAnswer(building)).toMatchObject({ status: 409, error: expect.stringMatching(/still being built/) })
+    const ready = fake(() => ({
+      ok: true,
+      task: { id: 'ar-1', sessionId: 's', name: '报告.zip', state: 'ready', done: 1, total: 1, bytes: 1, zip: bytes, expiresAt: 0 },
+    }))
+    const wire: { status: number; headers?: Record<string, string>; body?: Buffer } = { status: 0 }
+    respondArchiveDownload(ready, { sessionId: 's', id: 'ar-1' }, {
+      writeHead: (status, headers) => { wire.status = status; wire.headers = headers },
+      end: (chunk) => { wire.body = Buffer.from(chunk ?? '') },
+    })
+    expect(wire.status).toBe(200)
+    expect(wire.headers?.['content-disposition']).toContain(`filename*=UTF-8''${encodeURIComponent('报告.zip')}`)
+    expect(wire.headers?.['content-length']).toBe(String(bytes.byteLength))
+    expect(wire.body!.equals(bytes)).toBe(true)
+    expect(released).toBe(1)
+  })
+
   it('serves a non-latin1 download name through REAL node:http (no 500, RFC 5987)', async () => {
     const root = tempRoot()
     const workspace = join(root, 'workspace')
     mkdirSync(join(workspace, '报告'), { recursive: true })
     writeFileSync(join(workspace, '报告', '数据.txt'), 'x\n')
-    const route = mountArchive()
+    const { api, download } = mountHost()
     const name = '报告.zip'
-    const url = `/sidebar/archive?sessionId=s-zip&cwd=${encodeURIComponent(workspace)}`
-      + `&name=${encodeURIComponent(name)}`
-      + `&path=${encodeURIComponent(join(workspace, '报告'))}`
-    // The route handler answers a REAL ServerResponse here: node:http's
-    // writeHead validates header values, which the plain-object stub in the
-    // other cases cannot do — that is exactly how the Chinese-name 500 hid.
     const { createServer } = await import('node:http')
-    const server = createServer((req, res) => { void route.handler(req as never, res as never) })
+    const server = createServer((req, res) => { void download.handler(req as never, res as never) })
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
     try {
       const address = server.address()
       if (address === null || typeof address === 'string') throw new Error('test setup: no server port')
-      const response = await fetch(`http://127.0.0.1:${address.port}${url}`)
+      const build = await post(api, 'archive.build', { sessionId: 's-zip', cwd: workspace, name, paths: [join(workspace, '报告')] })
+      const id = (build.value as { id: string }).id
+      await waitForReady(api, id, 's-zip')
+      // The route handler answers a REAL ServerResponse here: node:http's
+      // writeHead validates header values, which the plain-object stub in the
+      // other cases cannot do — that is exactly how the Chinese-name 500 hid.
+      const response = await fetch(`http://127.0.0.1:${address.port}/sidebar/archive?sessionId=s-zip&id=${encodeURIComponent(id)}`)
       expect(response.status).toBe(200)
       const disposition = response.headers.get('content-disposition') ?? ''
       // The ASCII half is what old clients read; the RFC 5987 half carries the
@@ -504,13 +811,13 @@ describe('/sidebar/archive route', () => {
     mkdirSync(join(workspace, 'b'), { recursive: true })
     writeFileSync(join(workspace, 'a', 'index.ts'), 'from a\n')
     writeFileSync(join(workspace, 'b', 'index.ts'), 'from b\n')
-    const route = mountArchive()
-    const url = `/sidebar/archive?sessionId=s-zip&cwd=${encodeURIComponent(workspace)}`
-      + `&path=${encodeURIComponent(join(workspace, 'a', 'index.ts'))}`
-      + `&path=${encodeURIComponent(join(workspace, 'b', 'index.ts'))}`
-    const response = await get(route, url)
-    expect(response.status).toBe(200)
-    const entries = readZip(response.body)
+    const { download } = await archiveFlow({
+      sessionId: 's-zip',
+      cwd: workspace,
+      paths: [join(workspace, 'a', 'index.ts'), join(workspace, 'b', 'index.ts')],
+    })
+    expect(download.status).toBe(200)
+    const entries = readZip(download.body)
     const names = entries.map(entry => entry.name)
     expect(new Set(names).size).toBe(names.length)
     expect(names).toEqual(['a/index.ts', 'b/index.ts'])
@@ -533,15 +840,18 @@ describe('/sidebar/archive route', () => {
     } catch {
       return // symlink creation needs privileges on Windows
     }
-    const route = mountArchive()
-    const scope = `sessionId=s-zip&cwd=${encodeURIComponent(workspace)}`
-    // Selecting the escaping link refuses at the workspace fence (the route
+    const { api, download } = mountHost()
+    // Selecting the escaping link refuses at the workspace fence (the build
     // canonicalizes before walking), so its target is never read…
-    const linked = await get(route, `/sidebar/archive?${scope}&path=${encodeURIComponent(join(workspace, 'link'))}`)
+    const linked = await post(api, 'archive.build', { sessionId: 's-zip', cwd: workspace, paths: [join(workspace, 'link')] })
+    expect(linked.ok).toBe(false)
     expect(linked.status).toBe(403)
     // …and walking the containing directory reports the link as an entry-less
     // row instead of descending into it.
-    const walked = await get(route, `/sidebar/archive?${scope}&path=${encodeURIComponent(workspace)}`)
+    const build = await post(api, 'archive.build', { sessionId: 's-zip', cwd: workspace, paths: [workspace] })
+    const id = (build.value as { id: string }).id
+    await waitForReady(api, id, 's-zip')
+    const walked = await get(download, `/sidebar/archive?sessionId=s-zip&id=${encodeURIComponent(id)}`)
     expect(walked.status).toBe(200)
     const entries = readZip(walked.body)
     expect(entries.map(entry => entry.name)).toEqual(['workspace/', 'workspace/keep.txt'])
@@ -555,23 +865,28 @@ describe('/sidebar/archive route', () => {
     mkdirSync(workspace)
     mkdirSync(outside)
     writeFileSync(join(outside, 'secret.txt'), 'secret')
-    const route = mountArchive()
-    const url = `/sidebar/archive?sessionId=s-zip&cwd=${encodeURIComponent(workspace)}`
-      + `&path=${encodeURIComponent(join(outside, 'secret.txt'))}`
-    const response = await get(route, url)
+    const { api } = mountHost()
+    const response = await post(api, 'archive.build', {
+      sessionId: 's-zip',
+      cwd: workspace,
+      paths: [join(outside, 'secret.txt')],
+    })
     expect(response.status).toBe(403)
-    expect(JSON.parse(response.body.toString('utf8'))).toMatchObject({ ok: false, error: { code: 'forbidden' } })
+    expect(response.error?.code).toBe('forbidden')
   })
 
-  it('rejects a missing path (and a missing sessionId) with 400', async () => {
+  it('rejects an empty path list and a download without sessionId/id (400)', async () => {
     const root = tempRoot()
     const workspace = join(root, 'workspace')
     mkdirSync(workspace)
-    const route = mountArchive()
-    const noPath = await get(route, `/sidebar/archive?sessionId=s-zip&cwd=${encodeURIComponent(workspace)}`)
+    const { api, download } = mountHost()
+    const noPath = await post(api, 'archive.build', { sessionId: 's-zip', cwd: workspace, paths: [] })
     expect(noPath.status).toBe(400)
-    expect(JSON.parse(noPath.body.toString('utf8'))).toMatchObject({ ok: false, error: { code: 'bad-request' } })
-    const noSession = await get(route, `/sidebar/archive?cwd=${encodeURIComponent(workspace)}&path=${encodeURIComponent(workspace)}`)
+    expect(noPath.error?.code).toBe('bad-request')
+    const noId = await get(download, `/sidebar/archive?sessionId=s-zip`)
+    expect(noId.status).toBe(400)
+    expect(JSON.parse(noId.body.toString('utf8'))).toMatchObject({ ok: false, error: { code: 'bad-request' } })
+    const noSession = await get(download, `/sidebar/archive?id=ar-1`)
     expect(noSession.status).toBe(400)
   })
 
@@ -580,26 +895,49 @@ describe('/sidebar/archive route', () => {
     const workspace = join(root, 'workspace')
     mkdirSync(workspace)
     writeFileSync(join(workspace, 'a.txt'), 'a')
-    const route = mountArchive()
-    const path = encodeURIComponent(join(workspace, 'a.txt'))
-    const scope = `sessionId=s-zip&cwd=${encodeURIComponent(workspace)}&path=${path}`
-    const traversal = await get(route, `/sidebar/archive?${scope}&name=${encodeURIComponent('../evil")b.zip')}`)
-    expect(traversal.headers['content-disposition']).toContain('filename="evil)b.zip"')
-    const bare = await get(route, `/sidebar/archive?${scope}&name=docs`)
-    expect(bare.headers['content-disposition']).toContain('filename="docs.zip"')
-    const fallback = await get(route, `/sidebar/archive?${scope}`)
-    expect(fallback.headers['content-disposition']).toContain('filename="archive.zip"')
+    const paths = [join(workspace, 'a.txt')]
+    const traversal = await archiveFlow({ sessionId: 's-zip', cwd: workspace, name: '../evil")b.zip', paths })
+    expect(traversal.download.headers['content-disposition']).toContain('filename="evil)b.zip"')
+    const bare = await archiveFlow({ sessionId: 's-zip', cwd: workspace, name: 'docs', paths })
+    expect(bare.download.headers['content-disposition']).toContain('filename="docs.zip"')
+    const fallback = await archiveFlow({ sessionId: 's-zip', cwd: workspace, paths })
+    expect(fallback.download.headers['content-disposition']).toContain('filename="archive.zip"')
   })
 
-  it('rejects a non-GET method', async () => {
-    const route = mountArchive()
+  it('rejects a non-GET method on the download route', async () => {
+    const { download } = mountHost()
     const out: { status: number; body: string } = { status: 200, body: '' }
-    const req = { method: 'POST', url: '/sidebar/archive?sessionId=s&path=/x', headers: { host: '127.0.0.1:3080' } } as never
+    const req = { method: 'POST', url: '/sidebar/archive?id=x', headers: { host: '127.0.0.1:3080' } } as never
     const res = {
       writeHead: (status: number) => { out.status = status },
       end: (chunk?: string) => { out.body += String(chunk ?? '') },
     } as never
-    await route.handler(req, res)
+    await download.handler(req, res)
     expect(out.status).toBe(405)
+  })
+})
+
+describe('createArchiveTasks', () => {
+  it('expires a settled task after its TTL', async () => {
+    const root = tempRoot()
+    const file = join(root, 'a.txt')
+    writeFileSync(file, 'a')
+    const tasks = createArchiveTasks()
+    const { id } = tasks.start({ sessionId: 's', name: 'x.zip', entries: [{ path: file, name: 'a.txt' }] })
+    await vi.waitFor(() => { expect(tasks.status(id, 's').state).toBe('ready') })
+    expect(tasks.size()).toBe(1)
+    expect(tasks.status(id, 's')).toMatchObject({ state: 'ready', done: 1, total: 1 })
+    // A TTL of zero makes the sweep drop it on the next access (the real TTL
+    // is 5 minutes; this is the same code path without the wait).
+    const aged = createArchiveTasks()
+    const started = aged.start({ sessionId: 's', name: 'x.zip', entries: [{ path: file, name: 'a.txt' }] })
+    await vi.waitFor(() => { expect(aged.status(started.id, 's').state).toBe('ready') })
+    vi.setSystemTime(Date.now() + ARCHIVE_TTL_MS + 1)
+    try {
+      expect(() => aged.status(started.id, 's')).toThrow(/unknown or expired/)
+      expect(aged.size()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

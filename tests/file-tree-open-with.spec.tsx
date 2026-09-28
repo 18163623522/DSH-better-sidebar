@@ -1,11 +1,12 @@
 /**
- * FileTree's PLUGIN open-with menu (restored in round two, and coexisting with
- * the host's open-in-app rows — the coexistence cases live in
- * file-tree-open-in-app.spec.tsx). With no host handle injected, the "打开方式"
- * section is the plugin's own: the pinned targets as direct rows, the
- * `openWithMenu` parent row with every target as a nested submenu (per-row
- * pushpins that toggle without selecting the row), SSH suffixes in remote
- * mode, and the reveal target kept (nothing else can reveal without the host).
+ * FileTree's PLUGIN open-with menu. Round three folded every application into
+ * ONE submenu (`openWithMenu`), so with no host handle injected the level-1
+ * menu carries just that submenu row, and the plugin's targets (file manager /
+ * VS Code / Cursor / Zed / custom editors) are its rows — each with the
+ * per-row pushpin that toggles without selecting the row, SSH suffixes in
+ * remote mode, and (without the host) the reveal target kept, so reveal is
+ * never lost. The host/plugin VISIBILITY rules live in
+ * file-tree-open-in-app.spec.tsx.
  */
 // @vitest-environment jsdom
 import { beforeAll, afterEach, describe, expect, it, vi } from 'vitest'
@@ -39,7 +40,6 @@ vi.mock('../src/client/api.ts', () => ({
     gitStatus: async () => ({ isRepo: false, entries: [] }),
   },
   downloadUrl: () => '/sidebar/file',
-  archiveUrl: () => '/sidebar/archive',
   isOutsideWorkspaceMessage: () => false,
 }))
 
@@ -140,13 +140,15 @@ describe('FileTree plugin open-with menu', () => {
     document.body.removeAttribute('data-dsh-sidebar-submenu')
   })
 
-  it('renders the pinned direct row and the submenu parent for a file row', async () => {
+  it('keeps application rows out of level 1 and lists them under the open-with submenu', async () => {
     harness = await mountTree()
     openMenu(harness.container)
-    // The pinned VS Code sits at the top level (before the submenu parent).
-    expect(menuItems().map(item => item.textContent?.trim())).toContain('VS Code')
+    // Level 1: the one submenu parent — no application name sits on it.
+    expect(menuItems().map(item => item.textContent?.trim())).toContain('Open with')
+    for (const name of ['File Manager', 'VS Code', 'Cursor', 'Zed', 'Windsurf']) {
+      expect(menuItems().map(item => item.textContent?.trim())).not.toContain(name)
+    }
     const parent = submenuParent()
-    expect(parent.textContent).toContain('Open with')
     // The submenu parent carries the trailing chevron affordance (the
     // primitives Menu renders no arrow of its own), right-aligned inside a
     // full-width label row — the same structure the submenu children use.
@@ -154,7 +156,7 @@ describe('FileTree plugin open-with menu', () => {
     expect(parent.querySelector('[class*="openWithLabel"]')).not.toBeNull()
   })
 
-  it('opens the submenu on click and lists every target with pin toggles', async () => {
+  it('lists every target in the submenu, each with a pin toggle', async () => {
     harness = await mountTree()
     openMenu(harness.container)
     act(() => { submenuParent().click() })
@@ -232,7 +234,7 @@ describe('FileTree plugin open-with menu', () => {
     ])
   })
 
-  it('hides the plugin section when the caller wires no targets', async () => {
+  it('hides the submenu when the caller wires no targets (and no host handle)', async () => {
     harness = await mountTree({ openWithTargets: undefined })
     openMenu(harness.container)
     expect(menuItems().some(item => item.textContent?.includes('Open with'))).toBe(false)

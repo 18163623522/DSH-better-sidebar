@@ -71,6 +71,10 @@ export function TreePanel(props: {
   openWithSsh?: boolean
   onOpenWith?: (targetId: string, path: string) => void
   onToggleOpenWithPin?: (targetId: string) => void
+  /** Show the plugin's own open-with targets even when the host lists local
+   *  applications for the path (the `openWithPluginTargets` setting; passed
+   *  through to FileTree). */
+  openWithShowPluginTargets?: boolean
   onReferenceFile: (path: string, isDir: boolean) => void
   /** A tree rename landed (passed through to FileTree for tab retargeting). */
   onPathRenamed?: (oldPath: string, newPath: string) => void
@@ -88,6 +92,7 @@ export function TreePanel(props: {
   const {
     sessionId, cwd, store, expanded, revealed, onToggle, onOpenFile, onOpenFileNewTab, onOpenFileSide,
     openInApp, openWithTargets, openWithPinned, openWithSsh, onOpenWith, onToggleOpenWithPin,
+    openWithShowPluginTargets,
     onReferenceFile, onPathRenamed, onPathDeleted, visible, full, service,
   } = props
   const [query, setQuery] = useState('')
@@ -295,6 +300,7 @@ export function TreePanel(props: {
         openWithSsh={openWithSsh}
         onOpenWith={onOpenWith}
         onToggleOpenWithPin={onToggleOpenWithPin}
+        openWithShowPluginTargets={openWithShowPluginTargets}
         onReferenceFile={onReferenceFile}
         onPathRenamed={onPathRenamed}
         onPathDeleted={onPathDeleted}

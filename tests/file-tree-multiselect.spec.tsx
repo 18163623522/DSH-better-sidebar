@@ -12,6 +12,7 @@
  */
 // @vitest-environment jsdom
 import { beforeAll, afterEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
@@ -223,6 +224,35 @@ describe('FileTree multi-selection', () => {
     await act(async () => { confirm.click() })
     expect(fsRemove.mock.calls.map(call => call[1])).toEqual(['/tmp/a.ts', '/tmp/b.ts'])
     expect(selectionBar(harness.container)).toBeNull()
+  })
+
+  it('docks the batch bar at the BOTTOM of the tree scroll container', async () => {
+    harness = await mountTree()
+    click(rowByName(harness.container, 'a.ts'), { ctrlKey: true })
+    const body = harness.container.querySelector<HTMLElement>('[class*="explorerBody"]')!
+    const bar = harness.container.querySelector<HTMLElement>('[class*="explorerSelectionBar"]')!
+    // In flow AFTER every row (the menu's portal anchor and the hidden file
+    // input are the only trailing siblings) — never absolutely positioned
+    // over the rows, so scrolled to the bottom it sits BELOW the last row.
+    const rows = [...body.querySelectorAll<HTMLElement>('[class*="explorerRow"]')]
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows[rows.length - 1]!.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // The only trailing siblings are the menu's portal anchor and the hidden
+    // file input, so the bar IS the last piece of tree content.
+    const content = [...body.children].filter(child =>
+      child.tagName !== 'INPUT' && !(child as HTMLElement).className.includes('_root_'))
+    expect(content[content.length - 1]).toBe(bar)
+    // jsdom has no layout: the sheet is the evidence for the docking mechanic.
+    const sheet = readFileSync('src/client/sidebar.module.css', 'utf8')
+    const rule = sheet.match(/\.explorerSelectionBar \{([\s\S]*?)\n\}/)?.[1]
+    expect(rule, 'the .explorerSelectionBar rule must exist').toBeDefined()
+    expect(rule).toContain('position: sticky')
+    expect(rule).toContain('bottom: 0')
+    expect(rule).not.toContain('position: absolute')
+    expect(rule).not.toContain('position: fixed')
+    // Narrow panels WRAP the chips instead of clipping them or scrolling.
+    const actions = sheet.match(/\.explorerSelectionActions \{([\s\S]*?)\n\}/)?.[1]
+    expect(actions).toContain('flex-wrap: wrap')
   })
 
   it('stops the batch at the first failure and reports it in the strip', async () => {

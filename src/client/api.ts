@@ -440,15 +440,44 @@ export function downloadUrl(scope: SessionScope, path: string): string {
 }
 
 /**
- * Absolute URL of the archive route: one ZIP of every `paths` entry (files
- * and directories, recursive) served as an attachment. Same GET shape as
- * {@link downloadUrl}; the repeated `path` parameter is the only difference.
+ * Start one archive build. The host fences and walks the selection, then
+ * returns an id IMMEDIATELY — the zip itself is produced in the background and
+ * polled through {@link api.archiveStatus}. `paths` are absolute paths in the
+ * session's namespace (the same values `fsTree` / `downloadUrl` take).
  */
-export function archiveUrl(scope: SessionScope, paths: readonly string[], name: string): string {
-  const params = new URLSearchParams({ sessionId: scope.sessionId, name })
-  if (scope.cwd !== undefined && scope.cwd !== '') params.set('cwd', scope.cwd)
-  for (const path of paths) params.append('path', path)
-  return `/sidebar/archive?${params.toString()}`
+export function archiveBuild(
+  scope: SessionScope,
+  paths: readonly string[],
+  name: string,
+): Promise<{ id: string; entries: number }> {
+  return call<{ id: string; entries: number }>('archive.build', scopePayload(scope, { paths: [...paths], name }))
+}
+
+/** One archive build's progress (the shape `archive.status` returns). */
+export interface ArchiveBuildStatus {
+  state: 'building' | 'ready' | 'error'
+  /** Entries finished so far. */
+  done: number
+  /** Entries the archive will contain. */
+  total: number
+  /** Uncompressed bytes read so far. */
+  bytes: number
+  /** Present only when `state === 'error'`. */
+  error?: string
+}
+
+/** Poll one archive build (its id came from {@link archiveBuild}). */
+export function archiveStatus(id: string): Promise<ArchiveBuildStatus> {
+  return call<ArchiveBuildStatus>('archive.status', { id })
+}
+
+/**
+ * Absolute URL of one FINISHED archive's bytes (the `archive.status` result
+ * must be `ready` first): GET /sidebar/archive?id=…&sessionId=… The session
+ * scope rides along because the host answers only the session that built it.
+ */
+export function archiveDownloadUrl(scope: SessionScope, id: string): string {
+  return `/sidebar/archive?${new URLSearchParams({ sessionId: scope.sessionId, id }).toString()}`
 }
 
 /** Shared URL builder for the /sidebar/file route (media vs download). */

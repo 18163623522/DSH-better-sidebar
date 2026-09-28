@@ -31,13 +31,26 @@ export interface ZipEntry {
   isDir?: boolean
 }
 
-/** The archive bounds. */
+/** One progress report: entries finished, entries total, bytes read so far. */
+export interface ZipProgress {
+  /** Entries fully processed (payload read, compressed, hashed). */
+  done: number
+  /** Entries the archive will contain (known up front: the entries array). */
+  total: number
+  /** Uncompressed bytes accumulated so far. */
+  bytes: number
+}
+
+/** The archive bounds and the optional progress hook. */
 export interface ZipOptions {
   /** Total uncompressed byte bound; exceeding it throws fs-error. */
   maxBytes?: number
   /** Entry-count bound (directory entries included); exceeding it throws
    *  fs-error. */
   maxEntries?: number
+  /** Called once per finished entry, in archive order (never for a failed
+   *  one). A throw from the hook aborts the build. */
+  onProgress?: (progress: ZipProgress) => void
 }
 
 /** Default total uncompressed payload bound of one archive (256 MiB). */
@@ -205,9 +218,16 @@ export async function buildZip(entries: readonly ZipEntry[], opts: ZipOptions = 
   const members: ZipMember[] = []
   /** Total uncompressed payload (the bound is checked against it). */
   let totalBytes = 0
+  /** Entries finished so far (the progress hook's `done`). */
+  let done = 0
+  const report = (): void => {
+    opts.onProgress?.({ done, total: entries.length, bytes: totalBytes })
+  }
   for (const entry of entries) {
     if (entry.isDir === true) {
       members.push(directoryMember(archiveName(entry.name, true)))
+      done += 1
+      report()
       continue
     }
     const path = requireSourcePath(entry.path)
@@ -222,6 +242,8 @@ export async function buildZip(entries: readonly ZipEntry[], opts: ZipOptions = 
     }
     totalBytes += member.size
     members.push(member)
+    done += 1
+    report()
   }
 
   const out: Buffer[] = []

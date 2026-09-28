@@ -1,19 +1,18 @@
 /**
- * FileTree "zip and download": the context menu offers an archive row for a
- * multi-selection (≥2 rows) and for a LONE directory (a lone file is skipped —
- * the plain download row already covers it).
+ * FileTree "zip and download" over the host's ASYNC archive route.
  *
- * The row is NOT a bare anchor any more: the bytes are fetched through
- * `archiveUrl(scope, paths, name)`, because the archive route reports its caps
- * and refusals as the plugin's JSON error envelope — an anchor would save that
- * envelope as a broken `.zip`. So these cases pin:
- *   - the URL parameters (scope / paths / name) and the appearance gates;
- *   - success: the response body becomes an object URL, saved through a hidden
- *     `<a download={name}>`, revoked on the next task;
- *   - failure: a non-2xx JSON envelope (`{error:{message}}`), a non-JSON body
- *     (`HTTP <status>`) and a network rejection all land in the error strip
- *     with the `zipFailed` copy;
- *   - a click while one request is in flight does not package twice.
+ * The menu row starts a job (`api.archiveBuild`), the tree polls
+ * `api.archiveStatus` while it builds and shows the `zipProgress` line
+ * (`done/total` + percentage), then a `ready` status downloads
+ * `api.archiveDownloadUrl(id)` as a blob and saves it through a hidden
+ * `<a download={name}>`. Every failure path — build rejection, a status
+ * `error` state, a status rejection, the download's HTTP envelope — lands in
+ * the error strip with `zipFailed`, and a repeated pick while one job runs
+ * never starts a second job.
+ *
+ * Appearance gates stay as they were: ≥2 selected rows archive together, a
+ * LONE directory archives its own subtree, a lone FILE shows no archive row
+ * (the plain download row already covers it).
  */
 // @vitest-environment jsdom
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -31,8 +30,9 @@ beforeAll(() => {
   Object.defineProperty(window.navigator, 'language', { value: 'en-US', configurable: true })
 })
 
-const { archiveUrl, fetchMock } = vi.hoisted(() => ({
-  archiveUrl: vi.fn((_scope: unknown, _paths: readonly string[], name: string) => `/sidebar/archive?name=${encodeURIComponent(name)}`),
+const { archiveBuild, archiveStatus, fetchMock } = vi.hoisted(() => ({
+  archiveBuild: vi.fn(),
+  archiveStatus: vi.fn(),
   fetchMock: vi.fn(),
 }))
 
@@ -52,7 +52,11 @@ vi.mock('../src/client/api.ts', () => ({
     gitStatus: async () => ({ isRepo: false, entries: [] }),
   },
   downloadUrl: () => '/sidebar/file',
-  archiveUrl,
+  // The archive API is a set of standalone module exports (like downloadUrl),
+  // not methods on the `api` object.
+  archiveBuild,
+  archiveStatus,
+  archiveDownloadUrl: (_scope: unknown, id: string) => `/sidebar/archive/${id}`,
   isOutsideWorkspaceMessage: () => false,
 }))
 
@@ -74,6 +78,9 @@ beforeAll(() => {
     value: (url: string) => { revokedUrls.push(url) },
   })
 })
+
+/** The poll cadence the tree uses; advancing less than this must not poll. */
+const POLL_MS = 250
 
 interface Harness {
   container: HTMLDivElement
@@ -106,7 +113,6 @@ async function mountTree(): Promise<Harness> {
   }
 }
 
-/** One tree row by its displayed name (the root row included). */
 function rowByName(container: HTMLElement, name: string): HTMLElement {
   const row = [...container.querySelectorAll<HTMLElement>('[class*="explorerRow"]')]
     .find(el => el.querySelector('[class*="explorerName"]')?.textContent === name)
@@ -135,40 +141,35 @@ function clickMenuitem(label: string): void {
   act(() => { item.click() })
 }
 
-/**
- * Flush the fetch → blob → anchor chain. The chain crosses several async
- * function boundaries (fetch promise → `await response.blob()` → object URL →
- * revoke), so a single microtask/timer pair is not enough on a loaded machine:
- * three macrotask ticks let every hop land, including the revoke `setTimeout`.
- */
-async function settleDownload(): Promise<void> {
+/** The progress line (a `Notice kind="loading"` live region). */
+function progressLine(container: HTMLElement): HTMLElement | null {
+  return container.querySelector<HTMLElement>('[data-kind="loading"]')
+}
+
+/** Flush the pending promise chain (build / status / download). */
+async function flush(): Promise<void> {
   await act(async () => {
-    for (let tick = 0; tick < 3; tick += 1) {
-      await Promise.resolve()
-      await new Promise<void>(resolve => { window.setTimeout(resolve, 0) })
-    }
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
   })
 }
 
-/** A 200 answer carrying ZIP bytes. */
-function okResponse(bytes = 'zip-bytes'): Response {
-  return {
-    ok: true,
-    status: 200,
-    blob: async () => new Blob([bytes], { type: 'application/zip' }),
-  } as unknown as Response
+/** Let the poll timer fire and its promise chain settle. */
+async function poll(): Promise<void> {
+  await act(async () => {
+    vi.advanceTimersByTime(POLL_MS)
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+  })
 }
 
-/** A refused answer carrying the plugin's JSON envelope (or a non-JSON body). */
-function errorResponse(status: number, body?: unknown): Response {
-  return {
-    ok: false,
-    status,
-    json: async () => {
-      if (body === undefined) throw new Error('not json')
-      return body
-    },
-  } as unknown as Response
+/** A `ready` status row. */
+function readyStatus(done: number, total: number): {
+  state: 'ready'; done: number; total: number; bytes: number
+} {
+  return { state: 'ready', done, total, bytes: 128 }
 }
 
 let harness: Harness
@@ -179,51 +180,80 @@ const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementati
 })
 
 beforeEach(() => {
+  vi.useFakeTimers()
   vi.stubGlobal('fetch', fetchMock)
   fetchMock.mockReset()
-  fetchMock.mockResolvedValue(okResponse())
-  archiveUrl.mockClear()
-  archiveUrl.mockImplementation((_scope: unknown, _paths: readonly string[], name: string) =>
-    `/sidebar/archive?name=${encodeURIComponent(name)}`)
+  fetchMock.mockResolvedValue({
+    ok: true,
+    status: 200,
+    blob: async () => new Blob(['zip-bytes'], { type: 'application/zip' }),
+  } as unknown as Response)
+  archiveBuild.mockReset()
+  archiveBuild.mockResolvedValue({ id: 'job-1', entries: 2 })
+  archiveStatus.mockReset()
+  archiveStatus.mockResolvedValue(readyStatus(2, 2))
+  downloads.length = 0
+  createdUrls.length = 0
+  revokedUrls.length = 0
+  clickSpy.mockClear()
 })
 
 afterEach(() => {
   harness.unmount()
   document.body.innerHTML = ''
-  downloads.length = 0
-  createdUrls.length = 0
-  revokedUrls.length = 0
-  clickSpy.mockClear()
+  vi.useRealTimers()
   vi.unstubAllGlobals()
 })
 
 describe('FileTree zip and download', () => {
-  it('archives a multi-selection through one fetched row', async () => {
+  it('starts a job, shows done/total progress, then downloads the ready archive', async () => {
+    // The first status is held open so the "build phase" (total known, no
+    // progress yet) is observable: the poller runs its first tick immediately.
+    let releaseStatus: (status: { state: 'building'; done: number; total: number; bytes: number }) => void = () => {}
+    archiveStatus
+      .mockImplementationOnce(async () => await new Promise<{ state: 'building'; done: number; total: number; bytes: number }>(resolve => { releaseStatus = resolve }))
+      .mockResolvedValueOnce(readyStatus(2, 2))
     harness = await mountTree()
     click(rowByName(harness.container, 'a.ts'), { ctrlKey: true })
     click(rowByName(harness.container, 'b.ts'), { ctrlKey: true })
-    // Right-clicking a row INSIDE the selection keeps the batch.
     rightClick(rowByName(harness.container, 'b.ts'))
     expect(menuLabels()).toContain('Zip and download (2 items)')
     clickMenuitem('Zip and download (2 items)')
-    await settleDownload()
-    expect(archiveUrl).toHaveBeenCalledWith({ sessionId: 's1', cwd: '/tmp' }, ['/tmp/a.ts', '/tmp/b.ts'], 'archive.zip')
-    expect(fetchMock).toHaveBeenCalledWith('/sidebar/archive?name=archive.zip')
-    // The body became an object URL saved through a hidden anchor…
-    expect(createdUrls).toHaveLength(1)
+    await flush()
+
+    // The job was started for the whole selection…
+    expect(archiveBuild).toHaveBeenCalledWith({ sessionId: 's1', cwd: '/tmp' }, ['/tmp/a.ts', '/tmp/b.ts'], 'archive.zip')
+    // …the build phase shows the total it already knows…
+    expect(progressLine(harness.container)?.textContent).toBe('Archiving 0/2 · 0%')
+    // …the first poll advances the line…
+    await act(async () => {
+      releaseStatus({ state: 'building', done: 1, total: 2, bytes: 0 })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(progressLine(harness.container)?.textContent).toBe('Archiving 1/2 · 50%')
+
+    // …and the next poll reports ready: the download runs and the line clears.
+    await poll()
+    await flush()
+    expect(fetchMock).toHaveBeenCalledWith('/sidebar/archive/job-1')
     expect(downloads).toEqual(['blob:mock-1|archive.zip'])
-    // …and the object URL is released on the next task.
+    expect(progressLine(harness.container)).toBeNull()
+    // The object URL is released on the next task.
+    await act(async () => { await vi.advanceTimersByTimeAsync(1) })
     expect(revokedUrls).toEqual(['blob:mock-1'])
   })
 
   it('archives a lone directory under its own name', async () => {
+    archiveBuild.mockResolvedValue({ id: 'job-dir', entries: 3 })
     harness = await mountTree()
     rightClick(rowByName(harness.container, 'sub'))
     expect(menuLabels()).toContain('Zip and download')
     clickMenuitem('Zip and download')
-    await settleDownload()
-    expect(archiveUrl).toHaveBeenCalledWith({ sessionId: 's1', cwd: '/tmp' }, ['/tmp/sub'], 'sub.zip')
-    expect(fetchMock).toHaveBeenCalledWith('/sidebar/archive?name=sub.zip')
+    await flush()
+    await poll()
+    await flush()
+    expect(archiveBuild).toHaveBeenCalledWith({ sessionId: 's1', cwd: '/tmp' }, ['/tmp/sub'], 'sub.zip')
     expect(downloads).toEqual(['blob:mock-1|sub.zip'])
   })
 
@@ -231,8 +261,10 @@ describe('FileTree zip and download', () => {
     harness = await mountTree()
     rightClick(rowByName(harness.container, 'tmp'))
     clickMenuitem('Zip and download')
-    await settleDownload()
-    expect(archiveUrl).toHaveBeenCalledWith({ sessionId: 's1', cwd: '/tmp' }, ['/tmp'], 'tmp.zip')
+    await flush()
+    await poll()
+    await flush()
+    expect(archiveBuild).toHaveBeenCalledWith({ sessionId: 's1', cwd: '/tmp' }, ['/tmp'], 'tmp.zip')
   })
 
   it('offers nothing for a lone FILE (the download row already covers it)', async () => {
@@ -240,118 +272,121 @@ describe('FileTree zip and download', () => {
     rightClick(rowByName(harness.container, 'a.ts'))
     expect(menuLabels()).toContain('Download')
     expect(menuLabels().some(label => label.startsWith('Zip and download'))).toBe(false)
-    expect(archiveUrl).not.toHaveBeenCalled()
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(archiveBuild).not.toHaveBeenCalled()
   })
 
-  it('reports a route refusal with the envelope message (caps, fence, bad request)', async () => {
-    fetchMock.mockResolvedValue(errorResponse(413, { ok: false, error: { code: 'bad-request', message: 'archive would exceed 64 MB' } }))
+  it('reports a build failure in the error strip', async () => {
+    archiveBuild.mockRejectedValue(new Error('build refused'))
     harness = await mountTree()
     rightClick(rowByName(harness.container, 'sub'))
     clickMenuitem('Zip and download')
-    await settleDownload()
+    await flush()
+    expect(harness.container.querySelector('[role="alert"]')?.textContent)
+      .toContain('Archive failed: build refused')
+    expect(progressLine(harness.container)).toBeNull()
+    expect(archiveStatus).not.toHaveBeenCalled()
+    expect(downloads).toEqual([])
+  })
+
+  it('reports a status error state with the route message', async () => {
+    archiveStatus.mockResolvedValue({ state: 'error', done: 1, total: 2, bytes: 0, error: 'archive too large' })
+    harness = await mountTree()
+    rightClick(rowByName(harness.container, 'sub'))
+    clickMenuitem('Zip and download')
+    await flush()
+    await poll()
+    expect(harness.container.querySelector('[role="alert"]')?.textContent)
+      .toContain('Archive failed: archive too large')
+    expect(progressLine(harness.container)).toBeNull()
+    expect(downloads).toEqual([])
+  })
+
+  it('reports a status request that rejects', async () => {
+    archiveStatus.mockRejectedValue(new Error('status offline'))
+    harness = await mountTree()
+    rightClick(rowByName(harness.container, 'sub'))
+    clickMenuitem('Zip and download')
+    await flush()
+    await poll()
+    expect(harness.container.querySelector('[role="alert"]')?.textContent)
+      .toContain('Archive failed: status offline')
+    expect(downloads).toEqual([])
+  })
+
+  it('reports a download refused by the route envelope', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 413,
+      json: async () => ({ ok: false, error: { code: 'bad-request', message: 'archive would exceed 64 MB' } }),
+    } as unknown as Response)
+    harness = await mountTree()
+    rightClick(rowByName(harness.container, 'sub'))
+    clickMenuitem('Zip and download')
+    await flush()
+    await poll()
+    await flush()
     expect(harness.container.querySelector('[role="alert"]')?.textContent)
       .toContain('Archive failed: archive would exceed 64 MB')
-    // Nothing was downloaded, and no object URL leaked.
     expect(downloads).toEqual([])
     expect(createdUrls).toEqual([])
   })
 
-  it('falls back to the status when the refusal carries no JSON body', async () => {
-    fetchMock.mockResolvedValue(errorResponse(500))
+  it('falls back to the status when the download carries no JSON body', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => { throw new Error('not json') },
+    } as unknown as Response)
     harness = await mountTree()
     rightClick(rowByName(harness.container, 'sub'))
     clickMenuitem('Zip and download')
-    await settleDownload()
+    await flush()
+    await poll()
+    await flush()
     expect(harness.container.querySelector('[role="alert"]')?.textContent)
       .toContain('Archive failed: HTTP 500')
     expect(downloads).toEqual([])
   })
 
-  it('reports a network failure in the error strip', async () => {
-    fetchMock.mockRejectedValue(new Error('network down'))
-    harness = await mountTree()
-    rightClick(rowByName(harness.container, 'sub'))
-    clickMenuitem('Zip and download')
-    await settleDownload()
-    expect(harness.container.querySelector('[role="alert"]')?.textContent)
-      .toContain('Archive failed: network down')
-    expect(downloads).toEqual([])
-  })
-
-  it('reports a ZIP whose URL cannot be built without fetching', async () => {
-    archiveUrl.mockImplementation(() => { throw new Error('boom: too large') })
-    harness = await mountTree()
-    rightClick(rowByName(harness.container, 'sub'))
-    clickMenuitem('Zip and download')
-    await settleDownload()
-    expect(harness.container.querySelector('[role="alert"]')?.textContent)
-      .toContain('Archive failed: boom: too large')
-    expect(fetchMock).not.toHaveBeenCalled()
-    expect(downloads).toEqual([])
-  })
-
-  it('packages once while a request is in flight (double click guard)', async () => {
-    let release: (response: Response) => void = () => {}
-    fetchMock.mockImplementation(async () => await new Promise<Response>(resolve => { release = resolve }))
+  it('builds once while a job is in flight (double click guard)', async () => {
+    let release: (job: { id: string; entries: number }) => void = () => {}
+    archiveBuild.mockImplementation(async () => await new Promise<{ id: string; entries: number }>(resolve => { release = resolve }))
+    // Stay in the building state until the test says otherwise.
+    archiveStatus.mockResolvedValue({ state: 'building', done: 0, total: 1, bytes: 0 })
     harness = await mountTree()
     const pick = (): void => {
       rightClick(rowByName(harness.container, 'sub'))
       clickMenuitem('Zip and download')
     }
     pick()
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    // The row is still reachable (the menu closed on selection) and a second
-    // pick must not start a second archive.
+    await flush()
+    expect(archiveBuild).toHaveBeenCalledTimes(1)
+    // The row is still reachable and a second pick must not start a second job.
     pick()
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    await act(async () => { release(okResponse()) })
-    await settleDownload()
-    expect(downloads).toEqual(['blob:mock-1|sub.zip'])
-    // The guard releases once the request settled: another pick fetches again.
-    fetchMock.mockResolvedValue(okResponse())
+    await flush()
+    expect(archiveBuild).toHaveBeenCalledTimes(1)
+    expect(archiveStatus).not.toHaveBeenCalled()
+
+    await act(async () => { release({ id: 'job-2', entries: 1 }) })
+    await flush()
+    expect(progressLine(harness.container)?.textContent).toBe('Archiving 0/1 · 0%')
+    await poll()
+    // Still building: the line stays and the guard still holds.
+    expect(progressLine(harness.container)).not.toBeNull()
     pick()
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-    await settleDownload()
-  })
+    await flush()
+    expect(archiveBuild).toHaveBeenCalledTimes(1)
 
-  it('shows a loading line while the archive is being built, and hides it after', async () => {
-    let release: (response: Response) => void = () => {}
-    fetchMock.mockImplementation(async () => await new Promise<Response>(resolve => { release = resolve }))
-    harness = await mountTree()
-    const busyLine = (): HTMLElement | null => harness.container.querySelector<HTMLElement>('[data-kind="loading"]')
-    // Nothing is shown before the request starts…
-    expect(busyLine()).toBeNull()
-    rightClick(rowByName(harness.container, 'sub'))
-    clickMenuitem('Zip and download')
-    // …the in-flight request keeps one visible, announced line…
-    const line = busyLine()
-    expect(line).not.toBeNull()
-    expect(line?.textContent).toBe('Loading…')
-    expect(line?.getAttribute('role')).toBe('status')
-    // …a repeated pick is still guarded (no second fetch) AND still not silent.
-    rightClick(rowByName(harness.container, 'sub'))
-    clickMenuitem('Zip and download')
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(busyLine()).not.toBeNull()
-    await act(async () => { release(okResponse()) })
-    await settleDownload()
-    expect(busyLine()).toBeNull()
+    // Finish the job: the download runs, the line clears, the guard releases.
+    archiveStatus.mockResolvedValue(readyStatus(1, 1))
+    await poll()
+    await flush()
     expect(downloads).toEqual(['blob:mock-1|sub.zip'])
-  })
-
-  it('hides the loading line when the archive fails too', async () => {
-    let release: (response: Response) => void = () => {}
-    fetchMock.mockImplementation(async () => await new Promise<Response>(resolve => { release = resolve }))
-    harness = await mountTree()
-    rightClick(rowByName(harness.container, 'sub'))
-    clickMenuitem('Zip and download')
-    expect(harness.container.querySelector('[data-kind="loading"]')).not.toBeNull()
-    await act(async () => { release(errorResponse(413, { ok: false, error: { message: 'too big' } })) })
-    await settleDownload()
-    expect(harness.container.querySelector('[data-kind="loading"]')).toBeNull()
-    // The busy line yields to the error strip: both never race for the slot.
-    expect(harness.container.querySelector('[role="alert"]')?.textContent)
-      .toContain('Archive failed: too big')
+    archiveBuild.mockResolvedValue({ id: 'job-3', entries: 1 })
+    pick()
+    await flush()
+    expect(archiveBuild).toHaveBeenCalledTimes(2)
+    await poll()
+    await flush()
   })
 })

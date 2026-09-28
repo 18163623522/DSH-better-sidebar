@@ -1,13 +1,17 @@
 /**
- * FileTree "open in app" menu (the host's own capability, replacing the
- * plugin's removed open-with chain): a file row lists the host's registered
- * applications — the default-application row first, then one row per app —
- * followed by reveal-in-file-manager; a directory row lists the host's
- * application catalogue plus reveal. Clicking a row hands the absolute path
- * (plus the application id when one was chosen) to the injected handle, a
- * listing that yields nothing degrades to one DISABLED row, a host that
- * cannot open desktop paths hides the whole section, and a failure lands in
- * the tree's error strip.
+ * FileTree's host "open in app" rows, arranged by round three's menu
+ * hierarchy: the host's DEFAULT handler stays one click away at level 1, and
+ * every other application — the host's registered handlers AND (per the
+ * visibility rule) the plugin's own fixed targets — lives in the single
+ * `openWithMenu` submenu. Reveal-in-file-manager stays at level 1 while the
+ * host can hand paths to a desktop.
+ *
+ * Visibility ("有本机检测到的关联应用时就不显示固定的 openwith 项目"):
+ *   - the host lists applications for the path → plugin targets are hidden
+ *     unless `openWithShowPluginTargets` (the `openWithPluginTargets` setting)
+ *     turns them on;
+ *   - the host is unavailable, or the listing is empty/failed → the plugin
+ *     targets show (the file manager target included, so reveal is never lost).
  */
 // @vitest-environment jsdom
 import { beforeAll, afterEach, describe, expect, it, vi } from 'vitest'
@@ -38,7 +42,7 @@ vi.mock('../src/client/api.ts', () => ({
       truncated: false,
     }),
     // The tree reads the shared git-status store; a non-repo answer keeps
-    // every row plain (this spec is about the open-in-app section).
+    // every row plain (this spec is about the open-in-app rows).
     gitStatus: async () => ({ isRepo: false, entries: [] }),
   },
   downloadUrl: () => '/sidebar/file',
@@ -48,13 +52,19 @@ vi.mock('../src/client/api.ts', () => ({
 /** What the host reports for a file (the default entry first). */
 const FILE_APPS: readonly OpenInAppEntry[] = [
   { id: 'textedit', name: 'TextEdit', icon: null, isDefault: true },
-  { id: 'vscode', name: 'VS Code', icon: 'data:image/svg+xml,%3Csvg/%3E', isDefault: false },
+  { id: 'preview', name: 'Preview', icon: 'data:image/svg+xml,%3Csvg/%3E', isDefault: false },
 ]
 
 /** What the host reports for a directory (no default concept). */
 const DIRECTORY_APPS: readonly OpenInAppEntry[] = [
   { id: 'vscode', name: 'VS Code', icon: null, isDefault: false },
   { id: 'finder', name: 'Finder', icon: null, isDefault: false },
+]
+
+/** The plugin's own targets a caller (EditorHost) may hand FileTree. */
+const PLUGIN_TARGETS: OpenWithTarget[] = [
+  { id: 'explorer', nameKey: 'openWithExplorer', name: '', kind: 'reveal', isVscodeFamily: false, localOnly: true },
+  { id: 'custom:w', name: 'Windsurf', kind: 'url', urlTemplate: 'windsurf://file/{path}', isVscodeFamily: false, localOnly: false },
 ]
 
 interface Handle {
@@ -89,17 +99,11 @@ interface Harness {
   unmount: () => void
 }
 
-/** The plugin targets a caller (EditorHost) may hand FileTree alongside the
- *  host handle; names are distinct from FILE_APPS so assertions are exact. */
-const PLUGIN_TARGETS: OpenWithTarget[] = [
-  { id: 'explorer', nameKey: 'openWithExplorer', name: '', kind: 'reveal', isVscodeFamily: false, localOnly: true },
-  { id: 'custom:w', name: 'Windsurf', kind: 'url', urlTemplate: 'windsurf://file/{path}', isVscodeFamily: false, localOnly: false },
-]
-
 async function mountTree(handle?: Handle, plugin: {
   targets?: OpenWithTarget[]
   pinned?: string[]
   ssh?: boolean
+  showPluginTargets?: boolean
 } = {}): Promise<Harness> {
   const container = document.createElement('div')
   document.body.append(container)
@@ -125,6 +129,7 @@ async function mountTree(handle?: Handle, plugin: {
         onOpenWith,
         onToggleOpenWithPin,
       } : {}),
+      ...(plugin.showPluginTargets !== undefined ? { openWithShowPluginTargets: plugin.showPluginTargets } : {}),
       onReferenceFile: () => {},
       refreshTick: 0,
       onUploadRequest: () => {},
@@ -169,9 +174,38 @@ function menuLabels(): string[] {
   return menuItems().map(item => item.textContent ?? '')
 }
 
+/** The level-1 submenu parent row (the only one with aria-haspopup). */
+function submenuParent(): HTMLElement {
+  const parent = menuItems().find(item => item.getAttribute('aria-haspopup') === 'menu')
+  if (parent === undefined) throw new Error('open-with submenu parent not found')
+  return parent
+}
+
+/** Open the submenu and settle its rows. */
+async function openSubmenu(): Promise<void> {
+  await act(async () => {
+    submenuParent().click()
+    await Promise.resolve()
+  })
+}
+
+function submenuRows(): HTMLElement[] {
+  return [...document.querySelectorAll<HTMLElement>('[role="menu"] [role="menu"] [role="menuitem"]')]
+}
+
+function submenuLabels(): string[] {
+  return submenuRows().map(item => item.textContent?.trim() ?? '')
+}
+
 function clickMenuitem(label: string): void {
   const item = menuItems().find(el => el.textContent === label)
   if (item === undefined) throw new Error(`menuitem not found: ${label}`)
+  act(() => { item.click() })
+}
+
+function clickSubmenuRow(label: string): void {
+  const item = submenuRows().find(el => el.textContent?.trim() === label)
+  if (item === undefined) throw new Error(`submenu row not found: ${label}`)
   act(() => { item.click() })
 }
 
@@ -181,24 +215,51 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-describe('FileTree open-in-app menu', () => {
-  it('lists the default application, the registered apps and reveal for a file row', async () => {
+describe('FileTree open-in-app rows in the menu hierarchy', () => {
+  it('hoists the default application to level 1 and keeps every other app in the submenu', async () => {
     const handle = makeHandle()
     harness = await mountTree(handle)
     await openMenu(harness.container, 'a.ts')
     expect(handle.fileApps).toHaveBeenCalledWith('/tmp/a.ts')
-    // No heading row any more: the host group is read from the application
-    // names themselves (`openInApp` and `openWithMenu` are near-synonyms, so
-    // two labels in one menu read as a repeated item). A data label entry is
-    // a LEAF `role="presentation"` row inside the menu.
+    // Level 1: the default handler, the submenu and the host reveal.
+    const level1 = menuLabels()
+    expect(level1).toContain('Open with default app')
+    expect(level1).toContain('Open with')
+    expect(level1).toContain('Reveal in File Manager')
+    // No application NAME sits at level 1 any more.
+    expect(level1).not.toContain('TextEdit')
+    expect(level1).not.toContain('Preview')
+    // The submenu carries the remaining applications (and their icons).
+    await openSubmenu()
+    expect(submenuLabels()).toEqual(['Preview'])
+    expect(submenuRows()[0]!.querySelector('img[class*="explorerAppIcon"]')).not.toBeNull()
+    // No heading rows anywhere (the primitive's leaf label row is gone).
     const menu = document.querySelector('[role="menuitem"]')!.closest('[role="menu"]')
     expect([...(menu?.querySelectorAll('[role="presentation"]') ?? [])]
       .filter(row => row.children.length === 0)).toEqual([])
-    expect(menuLabels()).toContain('Open with default app')
-    expect(menuLabels()).toContain('VS Code')
-    expect(menuLabels()).toContain('Reveal in File Manager')
-    // The default row's glyph is the default app's own icon slot.
-    expect(menuItems().some(item => item.querySelector('img[class*="explorerAppIcon"]') !== null)).toBe(true)
+  })
+
+  it('keeps the frozen level-1 order: open-with group, open escapes, zip, copy, mutations', async () => {
+    const handle = makeHandle()
+    harness = await mountTree(handle)
+    await openMenu(harness.container, 'a.ts')
+    const labels = menuLabels()
+    const at = (label: string): number => {
+      const index = labels.indexOf(label)
+      expect(index, `missing menu row: ${label}`).toBeGreaterThanOrEqual(0)
+      return index
+    }
+    // 1-3: default handler → the one submenu → reveal.
+    expect(at('Open with default app')).toBeLessThan(at('Open with'))
+    expect(at('Open with')).toBeLessThan(at('Reveal in File Manager'))
+    // 4: the explicit open escapes.
+    expect(at('Reveal in File Manager')).toBeLessThan(at('Open in New Tab'))
+    expect(at('Open in New Tab')).toBeLessThan(at('Open to the Side'))
+    // 5: the downloads (the plain file download row + the archive row).
+    expect(at('Open to the Side')).toBeLessThan(at('Download'))
+    // 6: copy, then the mutations.
+    expect(at('Download')).toBeLessThan(at('Copy relative path'))
+    expect(at('Copy relative path')).toBeLessThan(at('Rename'))
   })
 
   it('hands the path (and the chosen application id) to the open handle', async () => {
@@ -210,8 +271,9 @@ describe('FileTree open-in-app menu', () => {
     // Selecting closes the menu entirely.
     expect(menuItems()).toHaveLength(0)
     await openMenu(harness.container, 'a.ts')
-    clickMenuitem('VS Code')
-    expect(handle.open).toHaveBeenCalledWith('/tmp/a.ts', 'vscode')
+    await openSubmenu()
+    clickSubmenuRow('Preview')
+    expect(handle.open).toHaveBeenCalledWith('/tmp/a.ts', 'preview')
     await openMenu(harness.container, 'a.ts')
     clickMenuitem('Reveal in File Manager')
     expect(handle.reveal).toHaveBeenCalledWith('/tmp/a.ts')
@@ -224,16 +286,21 @@ describe('FileTree open-in-app menu', () => {
     expect(handle.directoryApps).toHaveBeenCalled()
     expect(handle.fileApps).not.toHaveBeenCalled()
     expect(menuLabels()).not.toContain('Open with default app')
-    expect(menuLabels()).toEqual(expect.arrayContaining(['VS Code', 'Finder', 'Reveal in File Manager']))
-    clickMenuitem('Finder')
+    expect(menuLabels()).toContain('Reveal in File Manager')
+    await openSubmenu()
+    expect(submenuLabels()).toEqual(['VS Code', 'Finder'])
+    clickSubmenuRow('Finder')
     expect(handle.open).toHaveBeenCalledWith('/tmp/sub', 'finder')
   })
 
-  it('degrades to one DISABLED row when the host knows no application', async () => {
+  it('degrades to one DISABLED submenu row when the host knows no application', async () => {
     const handle = makeHandle({ fileApps: async () => [] })
     harness = await mountTree(handle)
     await openMenu(harness.container, 'a.ts')
-    const empty = menuItems().find(item => item.textContent === 'No application can open it')
+    // No default handler to hoist.
+    expect(menuLabels()).not.toContain('Open with default app')
+    await openSubmenu()
+    const empty = submenuRows().find(item => item.textContent === 'No application can open it')
     expect(empty).toBeDefined()
     expect((empty as HTMLButtonElement).disabled).toBe(true)
   })
@@ -250,7 +317,7 @@ describe('FileTree open-in-app menu', () => {
     handle.open.mockResolvedValue(false)
     harness = await mountTree(handle)
     await openMenu(harness.container, 'a.ts')
-    await act(async () => { clickMenuitem('VS Code'); await Promise.resolve(); await Promise.resolve() })
+    await act(async () => { clickMenuitem('Open with default app'); await Promise.resolve(); await Promise.resolve() })
     expect(harness.container.querySelector('[role="alert"]')?.textContent).toContain('Could not open: /tmp/a.ts')
   })
 
@@ -260,6 +327,7 @@ describe('FileTree open-in-app menu', () => {
     await openMenu(harness.container, 'a.ts')
     expect(handle.fileApps).not.toHaveBeenCalled()
     expect(menuLabels()).not.toContain('Reveal in File Manager')
+    expect(menuItems().some(item => item.getAttribute('aria-haspopup') === 'menu')).toBe(false)
     expect(document.body.textContent).not.toContain('Open with')
   })
 
@@ -282,11 +350,9 @@ describe('FileTree open-in-app menu', () => {
       probe: async () => { probed = true; probes += 1; return true },
     })
     harness = await mountTree(handle)
-    expect(handle.fileApps).not.toHaveBeenCalled()
     await openMenu(harness.container, 'a.ts')
     expect(handle.fileApps).toHaveBeenCalledWith('/tmp/a.ts')
     expect(menuLabels()).toContain('Open with default app')
-    expect(menuLabels()).toContain('VS Code')
     expect(probes).toBe(1)
   })
 
@@ -320,81 +386,77 @@ describe('FileTree open-in-app menu', () => {
   })
 })
 
-describe('FileTree open-in-app + plugin open-with coexistence', () => {
-  let harness: Harness
-  afterEach(() => {
-    harness.unmount()
-    document.body.innerHTML = ''
-  })
-
-  /** The label rows of the single open menu, in DOM order. */
-  function labelsOf(items: string[]): number[] {
-    const labels = menuLabels()
-    return items.map(item => labels.indexOf(item))
-  }
-
-  it('stacks the host rows above the plugin rows and ends with the host reveal', async () => {
+describe('FileTree host apps vs plugin open-with targets', () => {
+  it('hides the plugin targets while the host lists applications (the default)', async () => {
     const handle = makeHandle()
-    harness = await mountTree(handle, { targets: PLUGIN_TARGETS, pinned: ['custom:w'] })
+    harness = await mountTree(handle, { targets: PLUGIN_TARGETS })
     await openMenu(harness.container, 'a.ts')
-    const [hostDefault, hostApp, pinnedPlugin, submenu, reveal] = labelsOf([
-      'Open with default app', 'VS Code', 'Windsurf', 'Open with', 'Reveal in File Manager',
-    ])
-    // Every row exists, in the frozen order: host group → plugin group →
-    // reveal.
-    expect([hostDefault, hostApp, pinnedPlugin, submenu, reveal]).not.toContain(-1)
-    expect(hostDefault!).toBeLessThan(hostApp!)
-    expect(hostApp!).toBeLessThan(pinnedPlugin!)
-    expect(pinnedPlugin!).toBeLessThan(submenu!)
-    expect(submenu!).toBeLessThan(reveal!)
-    // The plugin's `explorer` target is replaced by the host reveal row.
-    expect(menuLabels()).not.toContain('File Manager')
-    // Separator rows between each group.
-    expect(document.querySelectorAll('[role="separator"]').length).toBeGreaterThanOrEqual(2)
+    await openSubmenu()
+    expect(submenuLabels()).toEqual(['Preview'])
+    expect(submenuLabels()).not.toContain('Windsurf')
+    expect(submenuLabels()).not.toContain('File Manager')
   })
 
-  it('keeps the plugin rows — explorer included — when the host cannot open desktop paths', async () => {
+  it('keeps both lists side by side when openWithShowPluginTargets is on', async () => {
+    const handle = makeHandle()
+    harness = await mountTree(handle, { targets: PLUGIN_TARGETS, showPluginTargets: true })
+    await openMenu(harness.container, 'a.ts')
+    await openSubmenu()
+    // Host applications first, then the plugin's own targets. The plugin's
+    // `explorer` target stays filtered (the host reveal row stands in for it).
+    expect(submenuLabels()).toEqual(['Preview', 'Windsurf'])
+  })
+
+  it('shows the plugin targets — explorer included — when the host cannot open desktop paths', async () => {
     const handle = makeHandle({ available: () => false })
-    harness = await mountTree(handle, { targets: PLUGIN_TARGETS, pinned: ['custom:w'] })
+    harness = await mountTree(handle, { targets: PLUGIN_TARGETS })
     await openMenu(harness.container, 'a.ts')
     // No host rows at all…
     expect(menuLabels()).not.toContain('Open with default app')
     expect(menuLabels()).not.toContain('Reveal in File Manager')
-    // …but the plugin's own reveal target survives, so reveal is never lost.
-    expect(menuLabels()).toContain('Windsurf')
-    const parent = menuItems().find(item => item.getAttribute('aria-haspopup') === 'menu')!
-    act(() => { parent.click() })
-    expect([...document.querySelectorAll<HTMLElement>('[role="menu"] [role="menu"] [role="menuitem"]')]
-      .map(item => item.textContent?.trim())).toEqual(['File Manager', 'Windsurf'])
+    // …but the plugin's own targets (and its reveal) survive.
+    await openSubmenu()
+    expect(submenuLabels()).toEqual(['File Manager', 'Windsurf'])
   })
 
-  it('keeps the plugin rows when no host handle was injected at all', async () => {
-    harness = await mountTree(undefined, { targets: PLUGIN_TARGETS, pinned: [] })
+  it('shows the plugin targets when the host listing is empty', async () => {
+    const handle = makeHandle({ fileApps: async () => [] })
+    harness = await mountTree(handle, { targets: PLUGIN_TARGETS })
+    await openMenu(harness.container, 'a.ts')
+    await openSubmenu()
+    // The disabled "no application" line plus the plugin's own targets. The
+    // plugin's `explorer` target stays filtered because the host IS available:
+    // level 1 still carries its reveal row, so nothing is lost.
+    expect(submenuLabels()).toEqual(['No application can open it', 'Windsurf'])
+    expect(menuLabels()).toContain('Reveal in File Manager')
+  })
+
+  it('shows the plugin targets when no host handle was injected at all', async () => {
+    harness = await mountTree(undefined, { targets: PLUGIN_TARGETS })
     await openMenu(harness.container, 'a.ts')
     expect(menuLabels()).not.toContain('Reveal in File Manager')
-    expect(menuLabels()).toContain('Open with')
+    await openSubmenu()
+    expect(submenuLabels()).toEqual(['File Manager', 'Windsurf'])
   })
 
-  it('hands the plugin target id and path to onOpenWith (SSH suffix intact)', async () => {
+  it('routes a plugin row click from inside the submenu', async () => {
     const handle = makeHandle({ available: () => false })
-    harness = await mountTree(handle, { targets: PLUGIN_TARGETS, pinned: [], ssh: true })
+    harness = await mountTree(handle, { targets: PLUGIN_TARGETS })
     await openMenu(harness.container, 'a.ts')
-    const parent = menuItems().find(item => item.getAttribute('aria-haspopup') === 'menu')!
-    act(() => { parent.click() })
-    const windsurf = [...document.querySelectorAll<HTMLElement>('[role="menu"] [role="menu"] [role="menuitem"]')]
-      .find(item => item.textContent?.trim() === 'Windsurf (SSH)')!
-    act(() => { windsurf.click() })
+    await openSubmenu()
+    expect(submenuRows().every(row => row.querySelector('[class*="openWithPin"]') !== null)).toBe(true)
+    clickSubmenuRow('Windsurf')
     expect(harness.onOpenWith).toHaveBeenCalledWith('custom:w', '/tmp/a.ts')
   })
 
-  it('routes a pin click to onToggleOpenWithPin without selecting a row', async () => {
+  it('toggles a plugin pin without selecting the row', async () => {
     const handle = makeHandle({ available: () => false })
-    harness = await mountTree(handle, { targets: PLUGIN_TARGETS, pinned: [] })
+    harness = await mountTree(handle, { targets: PLUGIN_TARGETS, pinned: ['custom:w'] })
     await openMenu(harness.container, 'a.ts')
-    act(() => { menuItems().find(item => item.getAttribute('aria-haspopup') === 'menu')!.click() })
-    const pin = [...document.querySelectorAll<HTMLElement>('[role="menu"] [role="menu"] [role="menuitem"]')]
-      .find(item => item.textContent?.trim() === 'Windsurf')!
+    await openSubmenu()
+    const pin = submenuRows().find(row => row.textContent?.trim() === 'Windsurf')!
       .querySelector<HTMLElement>('[class*="openWithPin"]')!
+    expect(pin.getAttribute('title')).toBe('Unpin')
     act(() => { pin.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })) })
     expect(harness.onToggleOpenWithPin).toHaveBeenCalledWith('custom:w')
     expect(harness.onOpenWith).not.toHaveBeenCalled()

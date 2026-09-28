@@ -73,6 +73,14 @@ export function builtinTabs(): readonly TabDescriptor[] {
           title: () => t('settingsFenceTitle'),
           desc: () => t('settingsFenceDesc'),
         }],
+        // Plugin-owned rows (values live in `pluginSettings['editor']`): the
+        // plugin's own open-with targets are shown only when the host reports
+        // no local application, unless the user asks for both side by side.
+        pluginToggles: [{
+          key: 'openWithPluginTargets',
+          title: () => t('settingsOpenWithPluginTitle'),
+          desc: () => t('settingsOpenWithPluginDesc'),
+        }],
         render: ({ pluginSettings, updatePluginSetting }) => (
           <OpenWithSettings pluginSettings={pluginSettings} updatePluginSetting={updatePluginSetting} />
         ),

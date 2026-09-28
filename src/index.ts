@@ -38,8 +38,8 @@ import { isTrustedApiRequest } from './trust-fence.ts'
 import { registerBundleRoute } from './bundle-route.ts'
 import { createDirectoryWatchers, type DirectoryWatchers } from './fs-watch.ts'
 import { launchExternal } from './open-external.ts'
-import { archiveNameOf, collectZipEntries, contentDispositionOf, disambiguateArchiveNames } from './archive-route.ts'
-import { buildZip, type ZipEntry } from './zip.ts'
+import { archiveNameOf, collectZipEntries, createArchiveTasks, disambiguateArchiveNames, respondArchiveDownload, type ArchiveTasks } from './archive-route.ts'
+import type { ZipEntry } from './zip.ts'
 import * as git from './git.ts'
 import { SettingsConflictError } from '@deepseek-ai/dsh-settings'
 import { AgentOpenRegistry, registerOpenTool, type AgentOpenRequest } from './agent-opens.ts'
@@ -72,7 +72,6 @@ export type {
 // their bounds live inside the collector, so the suite needs them observable
 // without creating 10 000 rows first.
 export { archiveNameOf, collectZipEntries, contentDispositionOf, disambiguateArchiveNames } from './archive-route.ts'
-
 /** Plugin identity for cordis.yml rows. */
 export const name = 'dsh-better-sidebar'
 
@@ -254,6 +253,7 @@ function buildApi(
   resolved: ResolvedSidebarConfig,
   getSettings: () => SidebarSettingsFace | undefined,
   assistantLive: AssistantLiveBuffer,
+  archiveTasks: ArchiveTasks,
 ): Record<string, ApiMethod> {
   const cwdOf = async (payload: unknown): Promise<{ sessionId: string; cwd: string }> => {
     const sessionId = requireString(payload, 'sessionId')
@@ -549,6 +549,32 @@ function buildApi(
       if (action === 'url') return launchExternal('url', requireString(payload, 'url'))
       throw new SidebarError('bad-request', 'action must be "reveal" or "url"')
     },
+    // Archive builds: collect the selection (fenced + disambiguated) and hand
+    // the zipping to the background task table, so the tree can show progress
+    // through `archive.status` and download the finished bytes from
+    // GET /sidebar/archive?id=.
+    'archive.build': async (payload) => {
+      const { sessionId, cwd } = await cwdOf(payload)
+      const record = payload as { paths?: unknown; name?: unknown } | null
+      const paths = Array.isArray(record?.paths)
+        ? record.paths.filter((value): value is string => typeof value === 'string' && value !== '')
+        : []
+      if (paths.length === 0) throw new SidebarError('bad-request', 'paths must be a non-empty array')
+      const name = archiveNameOf(typeof record?.name === 'string' ? record.name : null)
+      const fenceOn = fenceEnabledOf(getSettings)
+      const selected: string[] = []
+      for (const raw of paths) selected.push(await ensureWorkspacePath(cwd, raw, fenceOn))
+      // Same-basename selections (a/index.ts + b/index.ts) get parent segments
+      // prepended, so no two archive members collide.
+      const entries: ZipEntry[] = []
+      const names = disambiguateArchiveNames(selected)
+      for (const [index, absolute] of selected.entries()) {
+        await collectZipEntries(absolute, names[index]!, entries)
+      }
+      return archiveTasks.start({ sessionId, name, entries })
+    },
+    'archive.status': (payload) =>
+      archiveTasks.status(requireString(payload, 'id'), requireString(payload, 'sessionId')),
     // Side Chat: create a side-thread child seeded with the parent's full
     // log up to now, deliver follow-ups (cold-resuming when the thread's
     // agent is gone), abort a running thread, and release a thread's agent.
@@ -837,7 +863,10 @@ export function apply(ctx: Context, config?: SidebarConfig): void {
   // effect releases the listener on fiber disposal.
   const assistantLive = createAssistantLiveBuffer(ctx)
   ctx.effect(() => () => { assistantLive.dispose() }, 'dsh-better-sidebar: live assistant stream buffer')
-  const api = buildApi(ctx, resolved, () => settingsFace, assistantLive)
+  // One archive task table per mount: the `archive.build` / `archive.status`
+  // API methods write it, the GET /sidebar/archive route reads it.
+  const archiveTasks = createArchiveTasks()
+  const api = buildApi(ctx, resolved, () => settingsFace, assistantLive, archiveTasks)
   ctx.effect(() => ctx.webServer.register({
     kind: 'prefix',
     path: '/sidebar/api',
@@ -917,12 +946,14 @@ export function apply(ctx: Context, config?: SidebarConfig): void {
   // (see bundle-route.ts / src/client/chunk-loader.ts).
   ctx.effect(() => registerBundleRoute(ctx, fence), 'dsh-better-sidebar: /sidebar/bundle chunk route')
 
-  // ── Archive route (zip one selection and download it) ───────────────────
-  // The file tree's "zip and download" action: every `path` is resolved
-  // through the SAME workspace fence as fs.tree / /sidebar/file, directories
-  // are walked recursively (a symlink is recorded as a link, never followed —
-  // no escape and no cycle), and the whole archive is built in memory and
-  // answered in one response. The entry-count/byte bounds live in zip.ts.
+  // ── Archive routes (zip one selection, watch it build, download it) ─────
+  // The file tree's "zip and download" action is a three-step flow: POST
+  // `archive.build` fences every `path` through the SAME workspace fence as
+  // fs.tree / /sidebar/file, walks the directories (a symlink is skipped, never
+  // followed — no escape and no cycle) and returns an id IMMEDIATELY; the
+  // background build reports progress through `archive.status`; and
+  // GET /sidebar/archive serves the finished bytes once, with the RFC 5987
+  // disposition. `archiveTasks` owns the concurrency cap and the TTL.
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
     path: '/sidebar/archive',
@@ -937,34 +968,10 @@ export function apply(ctx: Context, config?: SidebarConfig): void {
       }
       try {
         const url = new URL(req.url ?? '/', 'http://dsh.internal')
-        const sessionId = url.searchParams.get('sessionId')
-        const paths = url.searchParams.getAll('path').filter(value => value !== '')
-        if (sessionId === null || paths.length === 0) {
-          throw new SidebarError('bad-request', 'sessionId and at least one path are required')
-        }
-        const name = archiveNameOf(url.searchParams.get('name'))
-        const cwd = await sessionCwdOf(ctx, sessionId, url.searchParams.get('cwd') ?? undefined)
-        const fenceOn = fenceEnabledOf(() => settingsFace)
-        const selected: string[] = []
-        for (const raw of paths) selected.push(await ensureWorkspacePath(cwd, raw, fenceOn))
-        // Same-basename selections (a/index.ts + b/index.ts) get parent
-        // segments prepended, so no two archive members collide and an
-        // extractor cannot overwrite one with the other.
-        const entries: ZipEntry[] = []
-        const names = disambiguateArchiveNames(selected)
-        for (const [index, absolute] of selected.entries()) {
-          await collectZipEntries(absolute, names[index]!, entries)
-        }
-        const body = await buildZip(entries)
-        res.writeHead(200, {
-          'content-type': 'application/zip',
-          // Never the raw name: a non-latin1 value (中文目录 → 报告.zip) makes
-          // Node's writeHead throw and turns the download into a 500.
-          'content-disposition': contentDispositionOf(name),
-          'content-length': String(body.byteLength),
-          'cache-control': 'no-cache',
-        })
-        res.end(body)
+        respondArchiveDownload(archiveTasks, {
+          sessionId: url.searchParams.get('sessionId'),
+          id: url.searchParams.get('id'),
+        }, res)
       } catch (error) {
         writeError(res, error)
       }

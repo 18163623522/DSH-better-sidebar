@@ -832,19 +832,46 @@ body[data-dsh-sidebar-dragging] .bottomPanel {
   color: var(--dsw-alias-state-error-primary);
 }
 
-/* The multi-selection bar: the kit's 28px section band, sat above the root
-   row (it never covers a row, so the tree stays fully aimable). Only the
-   fill/rhythm differ from the kit band — geometry stays the kit's. */
+/* The multi-selection bar: the LAST child of the tree's scroll container, so
+   it docks at the panel's bottom edge (sticky) and its appearance never
+   pushes the rows around the way a top bar did. Sticky (not absolute) keeps
+   it in flow: scrolled to the bottom it sits below the last row and covers
+   nothing, while mid-scroll it stays reachable. It WRAPS instead of
+   overflowing, so a narrow panel gets a second line of chips rather than a
+   clipped control or a horizontal scrollbar. 28px rhythm, token-only (§1). */
 .explorerSelectionBar {
-  margin-bottom: 4px;
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 28px;
+  margin-top: 4px;
+  padding: 2px 8px;
   border-radius: 4px;
   background: var(--dsw-alias-bg-layer-2);
 }
 
+.explorerSelectionText {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--dsw-font-xxs-strong-12);
+  color: var(--dsw-alias-label-secondary);
+}
+
 .explorerSelectionActions {
-  display: inline-flex;
-  align-items: center;
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 4px;
+  max-width: 72%;
 }
 
 /* The leading glyph of one "open in app" menu entry (the host's icon route

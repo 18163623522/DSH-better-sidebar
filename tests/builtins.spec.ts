@@ -157,6 +157,14 @@ describe('built-in tab registrations', () => {
     // The open-with configuration (SSH host + custom editors) is the custom
     // panel rendered below the declarative rows.
     expect(service.getTab('editor')?.settings?.render).toBeDefined()
+    // The plugin-owned row (its value lives in pluginSettings['editor'], which
+    // EditorHost reads as `openWithPluginTargets`): a plain switch, default
+    // off = the host-first behavior.
+    const pluginToggles = service.getTab('editor')?.settings?.pluginToggles ?? []
+    expect(pluginToggles.map(t => t.key)).toEqual(['openWithPluginTargets'])
+    expect(pluginToggles[0]?.title).toBeDefined()
+    expect(pluginToggles[0]?.desc).toBeDefined()
+    expect(pluginToggles[0]?.type).toBeUndefined()
   })
 
   it('every built-in tab carries the settings-surface icon', () => {

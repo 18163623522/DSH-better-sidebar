@@ -49,7 +49,10 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { SiCursor, SiZedindustries } from 'react-icons/si'
 import { VscFolderOpened, VscLinkExternal, VscPin, VscPinned } from 'react-icons/vsc'
-import { api, archiveUrl, downloadUrl, isOutsideWorkspaceMessage, type FsEntry } from './api.ts'
+import {
+  api, archiveBuild, archiveDownloadUrl, archiveStatus, downloadUrl, isOutsideWorkspaceMessage,
+  type FsEntry,
+} from './api.ts'
 import { FenceErrorNotice } from './FenceErrorNotice.tsx'
 import { builtinFileIcon, builtinFolderIcon } from './file-icons.tsx'
 import { IconUploadOutline16, IconVscode16 } from './icons.tsx'
@@ -62,11 +65,12 @@ import { t } from './locales.ts'
 import type { BetterSidebarService } from './service.ts'
 import type { SidebarStore } from './state.ts'
 import {
-  Chip, ConfirmDialog, IconButton, Notice, SectionHeader, StatusBadge, useGitStatus,
-  type GitFileStatus, type GitTone, type StatusTone,
+  Chip, ConfirmDialog, IconButton, Notice, StatusBadge, useGitStatus,
+  type GitTone, type StatusTone,
 } from './ui/index.ts'
 import { uploadItemsFromDrop, uploadItemsFromFiles, type UploadItem } from './upload.ts'
 import { useDirectoryWatch } from './use-dir-watch.ts'
+import { usePolling } from './use-polling.ts'
 import css from './sidebar.module.css'
 
 interface LevelData {
@@ -117,6 +121,12 @@ function gitToneLabel(tone: GitTone): string {
 /** The badge tone for one git tone (the kit has no separate 'copied' ink). */
 function badgeToneOf(tone: GitTone): StatusTone {
   return tone === 'copied' ? 'added' : tone
+}
+
+/** The archive progress line's percentage (`0/0` — an empty selection — is 0%). */
+function archivePercent(progress: { done: number; total: number }): number {
+  if (progress.total <= 0) return 0
+  return Math.min(100, Math.round((progress.done / progress.total) * 100))
 }
 
 /**
@@ -203,12 +213,20 @@ interface FileRowProps {
   /** A drag hovers this row's PARENT directory (upload target). */
   dropTarget: boolean
   copied: boolean
-  git: GitFileStatus | undefined
+  /**
+   * The row's git state as PRIMITIVES, never the store's status object: the
+   * shared store rebuilds its per-path objects on every poll, so passing the
+   * object would re-render every changed row every 2.5s (`React.memo` compares
+   * by reference) — exactly the "frequent refresh" the file list was reported
+   * for. Two strings make the poll invisible to the rows.
+   */
+  gitTone: GitTone | undefined
+  gitLetter: string | undefined
   actions: RowActions
 }
 
 const FileRow = memo(function FileRow(props: FileRowProps): ReactNode {
-  const { entry, depth, iconsVersion, service, selected, revealed, dropTarget, copied, git, actions } = props
+  const { entry, depth, iconsVersion, service, selected, revealed, dropTarget, copied, gitTone, gitLetter, actions } = props
   // Referenced so a registry change re-renders the row with its new icon.
   void iconsVersion
   const icon = service !== undefined ? service.fileIcon(entry.path, 14) : builtinFileIcon(entry.path, 14)
@@ -239,11 +257,13 @@ const FileRow = memo(function FileRow(props: FileRowProps): ReactNode {
       onContextMenu={(event) => { actions.contextMenu(event, entry.path, false) }}
     >
       {icon}
-      <span className={clsx(css.explorerName, git !== undefined && css.explorerGitName)} data-git-tone={git?.tone}>
+      <span className={clsx(css.explorerName, gitTone !== undefined && css.explorerGitName)} data-git-tone={gitTone}>
         {entry.name}
       </span>
       {entry.isSymlink && <IconLinkOutlineRegular size={12} className={css.explorerSymlink} />}
-      {git !== undefined && <StatusBadge tone={badgeToneOf(git.tone)} title={gitToneLabel(git.tone)}>{git.letter}</StatusBadge>}
+      {gitTone !== undefined && gitLetter !== undefined && (
+        <StatusBadge tone={badgeToneOf(gitTone)} title={gitToneLabel(gitTone)}>{gitLetter}</StatusBadge>
+      )}
       {copied
         ? <span className={css.explorerCopied}>{t('copied')}</span>
         : (
@@ -332,6 +352,57 @@ const DirRow = memo(function DirRow(props: DirRowProps): ReactNode {
   )
 })
 
+/**
+ * The workspace ROOT row (the session's own folder). Memoized like the other
+ * rows: it has no name/selection churn, so a parent re-render (menu state, copy
+ * flash, apps) must not re-resolve its glyph either.
+ */
+interface RootRowProps {
+  path: string
+  iconsVersion: number
+  service: BetterSidebarService | undefined
+  /** A drag hovers the workspace root (drop target). */
+  dropTarget: boolean
+  /** A change exists at or below the root (tinted). */
+  gitChanged: boolean
+  copied: boolean
+  actions: RowActions
+}
+
+const RootRow = memo(function RootRow(props: RootRowProps): ReactNode {
+  const { path, iconsVersion, service, dropTarget, gitChanged, copied, actions } = props
+  void iconsVersion
+  const icon = service !== undefined ? service.folderIcon(path, true, 14) : builtinFolderIcon(true, 14)
+  return (
+    <div
+      className={clsx(css.explorerRow, dropTarget && css.explorerRowDropTarget)}
+      style={{ paddingLeft: 6 }}
+      onDragOver={(event) => { actions.dragOver(event, path) }}
+      onDrop={(event) => { actions.drop(event, path, true) }}
+      onContextMenu={(event) => { actions.contextMenu(event, path, true) }}
+    >
+      {icon}
+      <span className={clsx(css.explorerName, gitChanged && css.explorerDirChanged)}>{baseName(path)}</span>
+      {copied
+        ? <span className={css.explorerCopied}>{t('copied')}</span>
+        : (
+          <button
+            type="button"
+            className={css.explorerRef}
+            aria-label={t('referenceFile')}
+            title={t('referenceFile')}
+            onClick={(event) => {
+              event.stopPropagation()
+              actions.reference(path, true)
+            }}
+          >
+            {t('referenceFile')}
+          </button>
+        )}
+    </div>
+  )
+})
+
 export function FileTree(props: {
   sessionId: string
   cwd: string | undefined
@@ -391,6 +462,15 @@ export function FileTree(props: {
    */
   visible?: boolean
   /**
+   * Keep the plugin's own open-with targets in the "打开方式" submenu even when
+   * the host reports local applications for the path. Default (false): the
+   * host's own list wins, and the plugin's fixed targets (file manager /
+   * VS Code / Cursor / Zed / custom editors) show only when the host cannot
+   * offer any — so the menu is not two near-identical lists. The caller reads
+   * the `openWithPluginTargets` plugin setting and passes it down.
+   */
+  openWithShowPluginTargets?: boolean
+  /**
    * The sidebar registry service: when present, externally registered file
    * icons (`registerFileIcon`) outrank the host's file-type artwork on file rows.
    * Absent → the built-ins alone (the host always passes it today).
@@ -399,10 +479,12 @@ export function FileTree(props: {
 }) {
   // `onToggle` / `onOpenFile` are read through `propsRef` (the stable row
   // callbacks must not change identity when the caller re-renders).
+  // `onReferenceFile` is read through `propsRef` like the other row callbacks.
   const {
     sessionId, cwd, store, expanded, revealed, onOpenFileNewTab, onOpenFileSide,
     openInApp, openWithTargets, openWithPinned, openWithSsh, onOpenWith, onToggleOpenWithPin,
-    onReferenceFile, onPathRenamed, onPathDeleted, refreshTick, onUploadRequest, busy, hidden, visible, service,
+    openWithShowPluginTargets,
+    onPathRenamed, onPathDeleted, refreshTick, onUploadRequest, busy, hidden, visible, service,
   } = props
   /** The live props for the stable callbacks below (identity churns per render). */
   const propsRef = useRef(props)
@@ -419,10 +501,8 @@ export function FileTree(props: {
     () => service?.subscribe(() => { setIconsVersion(version => version + 1) }),
     [service],
   )
-  /**
-   * One directory row's leading glyph (the root row and the new-folder
-   * editor use it directly; FileRow/DirRow resolve their own).
-   */
+  /** One directory's leading glyph for the surfaces WITHOUT a memoized row
+   *  (the inline rename and new-folder editors). */
   const dirRowIcon = (path: string, open: boolean): ReactNode =>
     service !== undefined ? service.folderIcon(path, open, 14) : builtinFolderIcon(open, 14)
   const dataRef = useRef(data)
@@ -812,7 +892,9 @@ export function FileTree(props: {
       kindRef.current.set(path, isDir)
       setSelection(new Set([path]))
     }
-    setApps(null)
+    // NOTE: the previous menu's app answer is deliberately KEPT — the render
+    // only trusts it for the matching path, and dropping it here would cost an
+    // extra render (and, on a reopen, a disabled "Loading…" frame).
     setRowMenu({ path, isDir, x: event.clientX, y: event.clientY })
   }, [setSelection])
 
@@ -946,22 +1028,30 @@ export function FileTree(props: {
   }, [openInApp])
 
   /**
-   * The open menu's app rows are fetched while the menu is open: the host
-   * resolves a file's registered applications (or a directory's application
-   * catalogue). A host that cannot hand paths to a desktop keeps `appReady`
-   * false, so no listing is attempted.
+   * The host's application list, CACHED per path (the successful answers only;
+   * a failed listing is retried on the next open). The list is a property of
+   * the machine + the path, so reopening the same row's menu is instant: no
+   * request, no disabled "Loading…" frame. A newly installed application shows
+   * up on the next tree mount — the alternative (re-probing per open) is the
+   * churn the menu was reported for.
    */
+  const appsCacheRef = useRef(new Map<string, readonly OpenInAppEntry[]>())
   useEffect(() => {
-    if (rowMenu === null || openInApp === undefined || !appReady) {
-      setApps(null)
+    if (rowMenu === null || openInApp === undefined || !appReady) return
+    const { path, isDir } = rowMenu
+    const key = `${isDir ? 'd' : 'f'}\u0000${path}`
+    const cached = appsCacheRef.current.get(key)
+    if (cached !== undefined) {
+      // Already answered for this path: publish it without a null frame (the
+      // submenu never flashes its disabled "Loading…" row on a reopen).
+      setApps({ path, entries: cached })
       return
     }
     let cancelled = false
-    const { path, isDir } = rowMenu
-    setApps(null)
     const listing = isDir ? openInApp.directoryApps() : openInApp.fileApps(path)
     void listing.then((entries) => {
       if (cancelled) return
+      if (entries !== null) appsCacheRef.current.set(key, entries)
       setApps({ path, entries })
       if (entries === null) reportOpenFailure(path)
     }).catch(() => {
@@ -993,20 +1083,23 @@ export function FileTree(props: {
   }
 
   /**
-   * The PLUGIN half of the "open with" section: the pinned targets as DIRECT
-   * rows, then the parent row with every target as a nested submenu (main's
-   * shape — pins, chevron, SSH suffixes). The section only renders when the
-   * caller wired the feature and at least one target is left.
+   * The plugin's own open-with targets as SUBMENU rows: one row per target with
+   * its brand mark, the SSH hint in remote mode, and the pin hot zone (main's
+   * interaction). The built-in `explorer` target is dropped while the host is
+   * ready — the host's own reveal row replaces it, and two identical "File
+   * Manager" rows would be noise; without the host the target stays, so reveal
+   * is never lost.
    *
-   * `hostReady` filters out the built-in `explorer` target: the host's own
-   * reveal row replaces it, and two identical "File Manager" rows would be
-   * noise. When the host is NOT ready the target stays, so reveal is never
-   * lost.
+   * Visibility (the user's "有本机检测到的关联应用时就不显示固定的 openwith
+   * 项目"): when the host reports applications for THIS path, the plugin rows
+   * only appear if the caller turned `openWithShowPluginTargets` on (the
+   * `openWithPluginTargets` setting). An unavailable host, or an empty/failed
+   * listing, keeps them — that is what makes a remote (SSH) session usable.
    */
-  const openWithEntries = (hostReady: boolean): MenuEntry[] => {
+  const pluginTargetRows = (hostHasApps: boolean): MenuItem[] => {
     if (openWithTargets === undefined || onOpenWith === undefined) return []
-    const targets = hostReady ? openWithTargets.filter(target => target.id !== 'explorer') : openWithTargets
-    if (targets.length === 0) return []
+    if (hostHasApps && openWithShowPluginTargets !== true) return []
+    const targets = appReady ? openWithTargets.filter(target => target.id !== 'explorer') : openWithTargets
     const pinnedIds = openWithPinned ?? []
     /** Brand marks for the built-ins (monochrome silhouettes, currentColor);
      *  reveal gets the folder glyph, custom editors a generic code mark.
@@ -1018,14 +1111,7 @@ export function FileTree(props: {
       if (target.id === 'zed') return <SiZedindustries size={14} />
       return <IconCodeOutlineRegular size={14} />
     }
-    const pinned = targets
-      .filter(target => pinnedIds.includes(target.id))
-      .map<MenuItem>(target => ({
-        id: `open-with:${target.id}`,
-        label: openWithLabelOf(target),
-        icon: itemIcon(target),
-      }))
-    const submenu = targets.map<MenuItem>(target => {
+    return targets.map<MenuItem>(target => {
       const pinnedNow = pinnedIds.includes(target.id)
       return {
         id: `open-with:${target.id}`,
@@ -1060,81 +1146,92 @@ export function FileTree(props: {
         icon: itemIcon(target),
       }
     })
-    return [
-      ...pinned,
-      ...(pinned.length > 0 ? [{ id: 'open-with-sep', type: 'separator' } as MenuEntry] : []),
-      {
-        id: 'open-with-menu',
-        // The primitives Menu renders no chevron for submenu parents — the
-        // trailing arrow is supplied inside the label (full-width flex row,
-        // right-aligned), matching how the submenu rows right-align the pin.
-        label: (
-          <span className={css.openWithLabel}>
-            <span className={css.openWithName}>{t('openWithMenu')}</span>
-            <IconChevronRightOutlineRegular size={14} className={css.openWithChevron} aria-hidden />
-          </span>
-        ),
-        icon: <VscLinkExternal size={14} />,
-        submenu,
-      },
-    ]
+  }
+
+  /** The host's application list for one path (undefined while it is unknown). */
+  const hostEntries = (target: { path: string; isDir: boolean }): readonly OpenInAppEntry[] | null | undefined =>
+    apps !== null && apps.path === target.path ? apps.entries : undefined
+
+  /**
+   * The submenu behind the "打开方式" row — this menu's ONE place for "open with
+   * something else": the host's detected applications (the default handler is
+   * hoisted to level 1 for files), then, per the visibility rule above, the
+   * plugin's own fixed targets. A pending listing shows one disabled line; an
+   * empty/failed listing the disabled `openInAppEmpty` line.
+   *
+   * Title: the frozen shape asked for a `t('openInApp')` label, but that key no
+   * longer exists in the dictionaries (it was removed together with the
+   * standalone section it used to head), and `openWithMenu` is the one
+   * available synonym ("在应用中打开" / "Open with") — of the two near-duplicate
+   * labels the task allowed keeping one, so this is it.
+   */
+  const openWithSubmenu = (target: { path: string; isDir: boolean }): MenuItem => {
+    const entries = hostEntries(target)
+    const hostHasApps = entries !== undefined && entries !== null && entries.length > 0
+    const rows: MenuItem[] = []
+    if (appReady) {
+      if (entries === undefined) rows.push({ id: 'open-in-app-loading', label: t('loading'), disabled: true })
+      else if (entries === null || entries.length === 0) {
+        rows.push({ id: 'open-in-app-empty', label: t('openInAppEmpty'), disabled: true })
+      } else {
+        for (const entry of entries) {
+          // The default handler is the level-1 row for files; directories have
+          // no default concept, so every catalogue app stays here.
+          if (!target.isDir && entry.isDefault) continue
+          rows.push({ id: `open-in-app:${entry.id}`, label: entry.name, icon: <AppGlyph entry={entry} /> })
+        }
+      }
+    }
+    // The primitive submenu takes MenuItem rows only (no separators), so the
+    // host and plugin groups are told apart by their icons.
+    rows.push(...pluginTargetRows(hostHasApps))
+    return {
+      id: 'open-with-menu',
+      // The primitives Menu renders no chevron for submenu parents — the
+      // trailing arrow is supplied inside the label (full-width flex row,
+      // right-aligned), matching how the submenu rows right-align the pin.
+      label: (
+        <span className={css.openWithLabel}>
+          <span className={css.openWithName}>{t('openWithMenu')}</span>
+          <IconChevronRightOutlineRegular size={14} className={css.openWithChevron} aria-hidden />
+        </span>
+      ),
+      icon: <VscLinkExternal size={14} />,
+      submenu: rows,
+    }
   }
 
   /**
-   * The HOST half of the section: the default-application row (files, when the
-   * OS reports one) followed by every registered handler. A pending listing
-   * shows one disabled line, an empty/failed listing the disabled
-   * `openInAppEmpty` line — the reveal row below still renders either way.
+   * The level-1 "default open" row for a file: the host's default handler, one
+   * click away without opening a submenu. Absent while the listing is unknown,
+   * when the host has no default, or for directories (no default concept).
    */
-  const hostAppEntries = (target: { path: string; isDir: boolean }): MenuEntry[] => {
-    const entries = apps !== null && apps.path === target.path ? apps.entries : undefined
-    if (entries === undefined) return [{ id: 'open-in-app-loading', label: t('loading'), disabled: true }]
-    if (entries === null || entries.length === 0) {
-      return [{ id: 'open-in-app-empty', label: t('openInAppEmpty'), disabled: true }]
-    }
+  const defaultAppRow = (target: { path: string; isDir: boolean }): MenuEntry | null => {
+    if (!appReady || target.isDir) return null
+    const entries = hostEntries(target)
+    const fallback = entries?.find(entry => entry.isDefault)
+    if (fallback === undefined) return null
+    return { id: 'open-in-app:default', label: t('openInAppDefault'), icon: <AppGlyph entry={fallback} /> }
+  }
+
+  /** The "打开方式" group of the ONE row menu: the host default, the submenu and
+   *  (host permitting) reveal. Empty when neither half can offer anything. */
+  const openWithSection = (target: { path: string; isDir: boolean }): MenuEntry[] => {
+    const fallback = defaultAppRow(target)
+    const entries = hostEntries(target)
+    const hostHasApps = entries !== undefined && entries !== null && entries.length > 0
+    const submenu = appReady || pluginTargetRows(hostHasApps).length > 0 ? openWithSubmenu(target) : null
+    if (fallback === null && submenu === null) return []
     const rows: MenuEntry[] = []
-    const fallback = entries.find(entry => entry.isDefault)
-    if (!target.isDir && fallback !== undefined) {
-      rows.push({ id: 'open-in-app:default', label: t('openInAppDefault'), icon: <AppGlyph entry={fallback} /> })
-    }
-    for (const entry of entries) {
-      if (!target.isDir && entry.isDefault) continue
-      rows.push({ id: `open-in-app:${entry.id}`, label: entry.name, icon: <AppGlyph entry={entry} /> })
+    if (fallback !== null) rows.push(fallback)
+    if (submenu !== null) rows.push(submenu)
+    if (appReady) {
+      rows.push(
+        { id: 'open-in-app-sep', type: 'separator' },
+        { id: 'reveal-in-file-manager', label: t('revealInFileManager'), icon: <IconFolderOpenRegular size={14} /> },
+      )
     }
     return rows
-  }
-
-  /**
-   * The menu's "打开方式" section, where the host's capability and the plugin's
-   * own targets COEXIST (the user asked for both). No heading row: the host
-   * group is self-describing (application names + "用默认应用打开"), and
-   * `openInApp` / `openWithMenu` read as near-duplicates in every dictionary —
-   * two synonyms stacked in one menu read as a repeated item. The frozen order:
-   *   host rows → separator → plugin rows (pinned direct + submenu) →
-   *   separator → host reveal.
-   * Separators only appear between two non-empty groups. The host rows (and
-   * reveal) vanish entirely when no handle was injected or the host cannot
-   * hand paths to a desktop; the plugin rows then stand alone, which is what
-   * keeps a remote/SSH session usable. The plugin's `explorer` target is
-   * dropped only while the host is ready (see {@link openWithEntries}).
-   */
-  const openWithSection = (target: { path: string; isDir: boolean }): MenuEntry[] => {
-    const plugin = openWithEntries(appReady)
-    if (!appReady && plugin.length === 0) return []
-    const entries: MenuEntry[] = []
-    const separate = (): void => {
-      if (entries.length > 0) entries.push({ id: `open-with-group-${entries.length}`, type: 'separator' })
-    }
-    if (appReady) entries.push(...hostAppEntries(target))
-    if (plugin.length > 0) {
-      separate()
-      entries.push(...plugin)
-    }
-    if (appReady) {
-      separate()
-      entries.push({ id: 'reveal-in-file-manager', label: t('revealInFileManager'), icon: <IconFolderOpenRegular size={14} /> })
-    }
-    return entries
   }
 
   /**
@@ -1169,36 +1266,44 @@ export function FileTree(props: {
   }
 
   /**
-   * Download one archive of `paths` through the host route. Unlike the
-   * single-file download — a bare anchor whose failures belong to the browser
-   * — the archive route answers the plugin's JSON error envelope for its caps
-   * and refusals, and an anchor would happily save that envelope as a broken
-   * `.zip`. So the bytes are fetched explicitly: a non-2xx answer is parsed for
-   * its `{error: {message}}` envelope (the shape `api.ts` reads) and reported
-   * through `zipFailed`; a 2xx body becomes an object URL handed to the same
-   * hidden-anchor mechanics.
+   * Zip the selection through the host's ASYNC archive route:
    *
-   * The host builds the archive in one pass, which can take a while for a big
-   * selection: `archiveBusy` drives the progress line under the error strip
-   * while the request is in flight, and `archiveBusyRef` keeps a repeated pick
-   * from packaging the same selection twice (the guard is silent by design —
-   * the line it is already showing IS the feedback).
+   *   archiveBuild(scope, paths, name) → { id, entries }
+   *   → poll archiveStatus(id) every 250ms (self-scheduling: one request in
+   *     flight) while the job builds, driving the `zipProgress` line
+   *   → state 'ready' → fetch(archiveDownloadUrl(scope, id)) → blob → hidden
+   *     `<a download>` (the bytes are fetched explicitly because a bare anchor
+   *     would save the route's JSON error envelope as a broken .zip)
+   *   → any failure (build / status / download) → `zipFailed` in the strip.
+   *
+   * `archiveBusyRef` keeps a repeated pick from starting a second job (the
+   * visible progress line is the feedback), and `archiveProgress` carries the
+   * live `done/total` for the line and its percentage.
    */
   const [archiveBusy, setArchiveBusy] = useState(false)
+  const [archiveProgress, setArchiveProgress] = useState<{ done: number; total: number } | null>(null)
   const archiveBusyRef = useRef(false)
-  const downloadArchive = (paths: readonly string[]): void => {
-    if (archiveBusyRef.current) return
-    const name = paths.length === 1 ? `${baseName(paths[0]!)}.zip` : 'archive.zip'
-    let url: string
-    try {
-      url = archiveUrl({ sessionId, cwd }, paths, name)
-    } catch (error: unknown) {
-      setActionError(t('zipFailed', { message: error instanceof Error ? error.message : String(error) }))
-      return
-    }
-    archiveBusyRef.current = true
-    setArchiveBusy(true)
-    void fetch(url)
+  /** The job being polled (state so the poller starts/stops with it). */
+  const [archiveJobId, setArchiveJobId] = useState<string | null>(null)
+  const archiveJobRef = useRef<{ id: string; name: string } | null>(null)
+
+  /** End the job: drop the progress line and release the guard. */
+  const settleArchive = useCallback((): void => {
+    archiveBusyRef.current = false
+    archiveJobRef.current = null
+    setArchiveJobId(null)
+    setArchiveBusy(false)
+    setArchiveProgress(null)
+  }, [])
+
+  const failArchive = useCallback((message: string): void => {
+    setActionError(t('zipFailed', { message }))
+    settleArchive()
+  }, [settleArchive])
+
+  /** Save the finished archive as `name` through a hidden anchor. */
+  const saveArchive = useCallback((id: string, name: string): void => {
+    void fetch(archiveDownloadUrl({ sessionId, cwd }, id))
       .then(async (response) => {
         if (!response.ok) {
           const envelope: { error?: { message?: string } } | null = await response.json().catch(() => null)
@@ -1221,13 +1326,54 @@ export function FileTree(props: {
         // under them loses the file. One tick is enough and keeps the blob
         // from outliving the download.
         window.setTimeout(() => { URL.revokeObjectURL(objectUrl) }, 0)
+        settleArchive()
       })
       .catch((error: unknown) => {
-        setActionError(t('zipFailed', { message: error instanceof Error ? error.message : String(error) }))
+        failArchive(error instanceof Error ? error.message : String(error))
       })
-      .finally(() => {
-        archiveBusyRef.current = false
-        setArchiveBusy(false)
+  }, [cwd, failArchive, sessionId, settleArchive])
+
+  /** The poller's callbacks, read through a ref so the polling TASK stays
+   *  identity-stable (a churned task restarts the loop every render). */
+  const archiveHandlersRef = useRef({ fail: failArchive, save: saveArchive })
+  archiveHandlersRef.current = { fail: failArchive, save: saveArchive }
+
+  usePolling(archiveJobId !== null, useCallback(async (signal: AbortSignal): Promise<void> => {
+    const job = archiveJobRef.current
+    if (job === null) return
+    // The poller swallows a rejected task (it must keep the loop alive), so
+    // every failure is caught HERE and turned into the strip's `zipFailed`.
+    try {
+      const status = await archiveStatus(job.id)
+      // The transport may deliver a response after teardown; the signal is the
+      // only reliable staleness guard (the route call takes no signal).
+      if (signal.aborted) return
+      setArchiveProgress({ done: status.done, total: status.total })
+      if (status.state === 'error') {
+        archiveHandlersRef.current.fail(status.error ?? `HTTP ${status.state}`)
+        return
+      }
+      if (status.state === 'ready') archiveHandlersRef.current.save(job.id, job.name)
+    } catch (error: unknown) {
+      if (signal.aborted) return
+      archiveHandlersRef.current.fail(error instanceof Error ? error.message : String(error))
+    }
+  }, []), { intervalMs: 250, mode: 'self-scheduling', immediate: true })
+
+  const downloadArchive = (paths: readonly string[]): void => {
+    if (archiveBusyRef.current) return
+    const name = paths.length === 1 ? `${baseName(paths[0]!)}.zip` : 'archive.zip'
+    archiveBusyRef.current = true
+    setArchiveBusy(true)
+    setArchiveProgress(null)
+    void archiveBuild({ sessionId, cwd }, paths, name)
+      .then(({ id, entries }) => {
+        archiveJobRef.current = { id, name }
+        setArchiveProgress({ done: 0, total: entries })
+        setArchiveJobId(id)
+      })
+      .catch((error: unknown) => {
+        failArchive(error instanceof Error ? error.message : String(error))
       })
   }
 
@@ -1406,6 +1552,7 @@ export function FileTree(props: {
               </div>
             )
           }
+          const git = gitStatus.statusOf(entry.path)
           return (
             <FileRow
               key={entry.path}
@@ -1416,7 +1563,8 @@ export function FileTree(props: {
               selected={selected.has(entry.path)}
               revealed={revealedSet.has(entry.path)}
               dropTarget={dropTarget === parentOf(entry.path)}
-              git={gitStatus.statusOf(entry.path)}
+              gitTone={git?.tone}
+              gitLetter={git?.letter}
               copied={copiedPath === entry.path}
               actions={actions}
             />
@@ -1464,58 +1612,41 @@ export function FileTree(props: {
               />
             </div>
           )}
-          {/* The archive is built host-side in one pass: while it runs, the
-              row sits right under the error strip (the two CAN coexist — a
-              stale error stays readable while a new attempt is in flight).
-              `role="status"` makes it a polite live region, so the busy state
-              is announced without stealing focus. */}
+          {/* The archive is built host-side, in one pass, while the STATUS
+              poll drives `done/total`: the line sits right under the error
+              strip (the two CAN coexist — a stale error stays readable while a
+              new attempt is in flight). `role="status"` makes it a polite live
+              region, so progress is announced without stealing focus. */}
           {archiveBusy && (
             <Notice kind="loading" tone="inline" role="status">
-              {t('loading')}
+              {archiveProgress === null
+                ? t('loading')
+                : `${t('zipProgress', { done: archiveProgress.done, total: archiveProgress.total })} · ${archivePercent(archiveProgress)}%`}
             </Notice>
           )}
-          {selected.size > 0 && (
-            <SectionHeader
-              className={css.explorerSelectionBar}
-              label={t('filesSelected', { count: selected.size })}
-              action={(
-                <span className={css.explorerSelectionActions}>
-                  <Chip onClick={copySelectedPaths}>{t('copyPaths')}</Chip>
-                  <Chip onClick={() => { setConfirmDeleteSelected(true) }}>{t('deleteSelected')}</Chip>
-                  <Chip onClick={clearSelection}>{t('clearSelection')}</Chip>
-                </span>
-              )}
-            />
-          )}
-          <div
-            className={clsx(css.explorerRow, dropTarget === root && css.explorerRowDropTarget)}
-            style={{ paddingLeft: 6 }}
-            onDragOver={(event) => { handleRowDragOver(event, root) }}
-            onDrop={(event) => { handleDirDrop(event, root) }}
-            onContextMenu={(event) => { handleContextMenu(event, root, true) }}
-          >
-            {dirRowIcon(root, true)}
-            <span className={clsx(css.explorerName, gitStatus.dirHasChanges(root) && css.explorerDirChanged)}>
-              {baseName(root)}
-            </span>
-            {copiedPath === root
-              ? <span className={css.explorerCopied}>{t('copied')}</span>
-              : (
-                <button
-                  type="button"
-                  className={css.explorerRef}
-                  aria-label={t('referenceFile')}
-                  title={t('referenceFile')}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    onReferenceFile(root, true)
-                  }}
-                >
-                  {t('referenceFile')}
-                </button>
-              )}
-          </div>
+          <RootRow
+            path={root}
+            iconsVersion={iconsVersion}
+            service={service}
+            dropTarget={dropTarget === root}
+            gitChanged={gitStatus.dirHasChanges(root)}
+            copied={copiedPath === root}
+            actions={actions}
+          />
           {renderLevel(root, 1)}
+          {/* The selection bar closes the scroll container (sticky bottom): it
+              sits BELOW every row, never over them, and its appearance never
+              shifts the tree the way a top bar did. */}
+          {selected.size > 0 && (
+            <div className={css.explorerSelectionBar} role="toolbar" aria-label={t('filesSelected', { count: selected.size })}>
+              <span className={css.explorerSelectionText}>{t('filesSelected', { count: selected.size })}</span>
+              <span className={css.explorerSelectionActions}>
+                <Chip onClick={copySelectedPaths}>{t('copyPaths')}</Chip>
+                <Chip onClick={() => { setConfirmDeleteSelected(true) }}>{t('deleteSelected')}</Chip>
+                <Chip onClick={clearSelection}>{t('clearSelection')}</Chip>
+              </span>
+            </div>
+          )}
         </>
       )}
       {dropOver && dropRect !== null && createPortal(
@@ -1586,32 +1717,34 @@ export function FileTree(props: {
         open={rowMenu !== null}
         onClose={() => { setRowMenu(null) }}
         items={[
-          // The open escapes head the FILE menu (dirs only get copy).
+          // 1-3: the "打开方式" group heads the menu — the host's default
+          // handler, the one submenu holding every application (host + the
+          // plugin's own, per the visibility rule) and the host's reveal.
+          ...(rowMenu === null ? [] : openWithSection(rowMenu)),
+          // 4: the explicit open escapes (files only).
           ...(rowMenu?.isDir === false && onOpenFileNewTab !== undefined
             ? [{ id: 'open-new-tab', label: t('openFileNewTab'), icon: <IconCodeOutlineRegular size={14} /> }]
             : []),
           ...(rowMenu?.isDir === false && onOpenFileSide !== undefined
             ? [{ id: 'open-side', label: t('openFileSide'), icon: <IconFolderOpenRegular size={14} /> }]
             : []),
-          ...(rowMenu === null ? [] : openWithSection(rowMenu)),
           // Download applies to files only (the host route refuses directories).
           ...(rowMenu?.isDir === false
             ? [{ id: 'download', label: t('download'), icon: <IconDownloadOutlineRegular size={14} /> }]
             : []),
-          // Upload into a directory (incl. the workspace root row).
+          // Directory actions: upload into, and create inside (the workspace
+          // root row included).
           ...(rowMenu?.isDir === true
             ? [{ id: 'upload-here', label: t('uploadHere'), icon: <IconUploadOutline16 size={14} /> }]
             : []),
-          // New folder into a directory (incl. the workspace root row).
           ...(rowMenu?.isDir === true
             ? [{ id: 'new-folder', label: t('newFolder'), icon: <IconPlusOutlineRegular size={14} /> }]
             : []),
-          // ZIP of the current selection (≥2 rows, or one lone directory).
+          // 5: ZIP of the current selection (≥2 rows, or one lone directory).
           ...(rowMenu === null ? [] : zipEntries(rowMenu)),
+          // 6: copy, then the mutations (never on the workspace root row).
           { id: 'relative', label: t('copyRelative'), icon: <IconCopyOutlineRegular size={14} /> },
           { id: 'absolute', label: t('copyAbsolute'), icon: <IconCopyOutlineRegular size={14} /> },
-          // Explorer mutations close the menu; the workspace ROOT row is the
-          // session itself — never renamable or deletable (server double-guards).
           ...(rowMenu !== null && rowMenu.path !== cwd
             ? [
                 { id: 'mutate-sep', type: 'separator' } as MenuEntry,

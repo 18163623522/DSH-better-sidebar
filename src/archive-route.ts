@@ -10,10 +10,11 @@
  * `ensureWorkspacePath` first), and a symlink is skipped rather than followed,
  * so it can neither escape the workspace nor cycle.
  */
+import { randomUUID } from 'node:crypto'
 import { lstat, readdir } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { SidebarError } from './wire.ts'
-import { ZIP_MAX_ENTRIES, type ZipEntry } from './zip.ts'
+import { buildZip, ZIP_MAX_ENTRIES, type ZipEntry } from './zip.ts'
 
 /** Maximum archive-name length (keeps the Content-Disposition header sane). */
 export const ARCHIVE_NAME_MAX = 120
@@ -181,5 +182,204 @@ export async function collectZipEntries(
       const child = level[index]!
       stack.push({ path: join(item.path, child.name), name: `${item.name}/${child.name}` })
     }
+  }
+}
+
+/** How many archives one host may build at the same time. */
+export const ARCHIVE_MAX_BUILDING = 4
+/** How long a finished (or failed) archive stays downloadable. */
+export const ARCHIVE_TTL_MS = 5 * 60 * 1000
+
+/** One archive build: the state the client polls, plus the finished bytes. */
+interface ArchiveTask {
+  id: string
+  sessionId: string
+  name: string
+  state: 'building' | 'ready' | 'error'
+  done: number
+  total: number
+  bytes: number
+  error?: string
+  zip?: Buffer
+  /** When the task stops being downloadable (set when it settles). */
+  expiresAt: number
+}
+
+/** The status shape the client reads (never carries the bytes). */
+export interface ArchiveStatus {
+  state: 'building' | 'ready' | 'error'
+  done: number
+  total: number
+  bytes: number
+  error?: string
+}
+
+/** Why a download/status read could not be served. */
+export type ArchiveLookup =
+  | { ok: true; task: ArchiveTask }
+  | { ok: false; reason: 'missing' | 'forbidden' | 'building' | 'expired' | 'error'; message: string }
+
+/** A resolved download: the bytes plus the sanitized name they were built for. */
+export interface ArchiveDownload {
+  name: string
+  zip: Buffer
+}
+
+/** The response face {@link respondArchiveDownload} writes through. */
+export interface ArchiveDownloadResponse {
+  writeHead(status: number, headers?: Record<string, string>): void
+  end(chunk?: Buffer | string): void
+}
+
+/**
+ * Answer one `GET /sidebar/archive?id=&sessionId=` from the task table.
+ *
+ * Split out of index.ts because this mapping IS the contract: 400 without
+ * both parameters, 403 for another session's task, 409 while it builds, 410
+ * for a failed build, 404 for unknown/expired/already-downloaded, 200 with the
+ * RFC 5987 disposition otherwise. Kept here so all six branches are testable
+ * without a live cordis mount.
+ * @param tasks - the plugin's task table.
+ * @param query - the request's `sessionId` / `id` values (null = absent).
+ * @param res - a minimal response face.
+ * @throws {SidebarError} for every non-200 branch (callers turn it into the
+ *  JSON error envelope they already use).
+ */
+export function respondArchiveDownload(
+  tasks: ArchiveTasks,
+  query: { sessionId: string | null; id: string | null },
+  res: ArchiveDownloadResponse,
+): void {
+  if (query.sessionId === null || query.id === null || query.id === '') {
+    throw new SidebarError('bad-request', 'sessionId and id are required')
+  }
+  const found = tasks.lookup(query.id, query.sessionId)
+  if (!found.ok || found.task.state !== 'ready' || found.task.zip === undefined) {
+    if (found.ok) throw new SidebarError('not-found', 'archive is gone', 404)
+    if (found.reason === 'building') throw new SidebarError('bad-request', found.message, 409)
+    if (found.reason === 'forbidden') throw new SidebarError('forbidden', found.message, 403)
+    if (found.reason === 'error') throw new SidebarError('fs-error', found.message, 410)
+    throw new SidebarError('not-found', found.message, 404)
+  }
+  const { name, zip } = found.task
+  // A download consumes the task: the bytes are not kept for a second fetch
+  // (the task table is a queue, not a store).
+  tasks.release(found.task.id)
+  res.writeHead(200, {
+    'content-type': 'application/zip',
+    // Never the raw name: a non-latin1 value (中文目录 → 报告.zip) makes Node's
+    // writeHead throw and turns the download into a 500.
+    'content-disposition': contentDispositionOf(name),
+    'content-length': String(zip.byteLength),
+    'cache-control': 'no-cache',
+  })
+  res.end(zip)
+}
+
+/**
+ * The host-side archive task table.
+ *
+ * A selection is collected up front (cheap: names + sizes) and then zipped in
+ * the BACKGROUND, so the client can show progress instead of staring at a
+ * spinner: `start` returns an id immediately, `status` reports
+ * `building → ready | error`, and `download` hands over the bytes exactly once.
+ * The table is bounded twice — {@link ARCHIVE_MAX_BUILDING} concurrent builds
+ * and {@link ARCHIVE_TTL_MS} since a finished one — and every read is
+ * session-scoped, so one session can never fetch another's archive.
+ */
+export interface ArchiveTasks {
+  /** Start a build; rejects with bad-request when the concurrency cap is hit. */
+  start(input: { sessionId: string; name: string; entries: readonly ZipEntry[] }): { id: string; entries: number }
+  /** Poll one task (a settled task past its TTL reads as missing). */
+  status(id: string, sessionId: string): ArchiveStatus
+  /** Look one task up for a download; `sessionId` must match the builder's. */
+  lookup(id: string, sessionId: string): ArchiveLookup
+  /** Release a task (called after its bytes were served). */
+  release(id: string): void
+  /** Number of live tasks (tests / diagnostics). */
+  size(): number
+}
+
+/** Create one archive task table (one per plugin mount). */
+export function createArchiveTasks(): ArchiveTasks {
+  const tasks = new Map<string, ArchiveTask>()
+
+  /** Drop settled tasks past their TTL (called on every access). */
+  const sweep = (now: number): void => {
+    for (const [id, task] of tasks) {
+      if (task.state !== 'building' && task.expiresAt <= now) tasks.delete(id)
+    }
+  }
+
+  /** The task one (id, sessionId) pair names, or why it cannot be read. */
+  const lookup = (id: string, sessionId: string): ArchiveLookup => {
+    sweep(Date.now())
+    const task = tasks.get(id)
+    if (task === undefined) return { ok: false, reason: 'missing', message: 'unknown or expired archive' }
+    if (task.sessionId !== sessionId) return { ok: false, reason: 'forbidden', message: 'archive belongs to another session' }
+    if (task.state === 'building') return { ok: false, reason: 'building', message: 'archive is still being built' }
+    if (task.state === 'error') return { ok: false, reason: 'error', message: task.error ?? 'archive failed' }
+    return { ok: true, task }
+  }
+
+  return {
+    start({ sessionId, name, entries }) {
+      sweep(Date.now())
+      let building = 0
+      for (const task of tasks.values()) if (task.state === 'building') building += 1
+      if (building >= ARCHIVE_MAX_BUILDING) {
+        throw new SidebarError('bad-request', `too many archives are being built (max ${ARCHIVE_MAX_BUILDING})`, 409)
+      }
+      const task: ArchiveTask = {
+        id: `ar-${randomUUID()}`,
+        sessionId,
+        name,
+        state: 'building',
+        done: 0,
+        total: entries.length,
+        bytes: 0,
+        expiresAt: Number.POSITIVE_INFINITY,
+      }
+      tasks.set(task.id, task)
+      // Detached on purpose: the POST answers as soon as the id exists, and the
+      // task table (not the request) owns the error from here on.
+      void buildZip([...entries], {
+        onProgress: (progress) => {
+          task.done = progress.done
+          task.bytes = progress.bytes
+        },
+      }).then((zip) => {
+        task.zip = zip
+        task.state = 'ready'
+        task.done = task.total
+        task.expiresAt = Date.now() + ARCHIVE_TTL_MS
+      }, (error: unknown) => {
+        task.state = 'error'
+        task.error = error instanceof Error ? error.message : String(error)
+        task.expiresAt = Date.now() + ARCHIVE_TTL_MS
+      })
+      return { id: task.id, entries: entries.length }
+    },
+    status(id, sessionId) {
+      sweep(Date.now())
+      const task = tasks.get(id)
+      if (task === undefined) throw new SidebarError('not-found', 'unknown or expired archive', 404)
+      if (task.sessionId !== sessionId) throw new SidebarError('forbidden', 'archive belongs to another session', 403)
+      return {
+        state: task.state,
+        done: task.done,
+        total: task.total,
+        bytes: task.bytes,
+        ...(task.error === undefined ? {} : { error: task.error }),
+      }
+    },
+    lookup,
+    release(id) {
+      tasks.delete(id)
+    },
+    size() {
+      sweep(Date.now())
+      return tasks.size
+    },
   }
 }
