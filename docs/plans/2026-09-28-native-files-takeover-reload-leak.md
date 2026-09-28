@@ -41,8 +41,8 @@ PR #777（贡献者 @yanzhaohui1999）落地上面两条：`sync()` 的清理循
 
 ## 验证
 
-- **单测红→绿（实测）**：`tests/native-registration.spec.ts` 在 v0.22.0 源码上 4/4 红，在修复分支上 4/4 绿；`pnpm typecheck` / `pnpm lint` / `pnpm test` 全绿（修复分支的 base 早于 #781，故为 114 files / 1136 passed；合入 main 后为 122 files / 1292 passed / 9 skipped）。
-- **部署级红→绿（实测）**：`tests/e2e/native-reload.e2e.ts` 在 scratch profile 里对 npm 上的 `dsh-better-sidebar@0.22.0` 触发页面内条目替换（`utimesSync` 已安装的 `lib/client.js`），**3/3 红**且每次都是本文那两条栈；换成本地打包的修复版 **3/3 绿**。该用例已随本 PR 进入挂载 lane（CI `plugin-mount` 绿），触发方式依赖钉住的宿主 0.1.7-rc.1 的 rev 规则（`mtime/ctime/size` 的 sha1）——pin 上调时需同步复核。
+- **单测红→绿（实测）**：`tests/native-registration.spec.ts` 在 v0.22.0 源码上 4/4 红，在修复分支上 4/4 绿；`pnpm typecheck` / `pnpm lint` / `pnpm test` 全绿（修复分支的 base 早于 #781，故为 114 files / 1136 passed；合入 main 后为 122 files / 1293 passed / 9 skipped）。
+- **部署级红→绿（实测）**：`tests/e2e/native-reload.e2e.ts` 在 scratch profile 里对 npm 上的 `dsh-better-sidebar@0.22.0` 触发页面内条目替换（`utimesSync` 已安装的 `lib/client.js`），连续 3 次运行**全红**且每次都是本文那两条栈；换成本地打包的修复版连续 3 次**全绿**（该用例只有 1 个 test，重复跑三次）。该用例已随本 PR 进入挂载 lane（CI `plugin-mount` 绿），触发方式依赖钉住的宿主 0.1.7-rc.1 的 rev 规则（`mtime/ctime/size` 的 sha1）——pin 上调时需同步复核。
 - 首版用例的两处断言（「失败后还能重新注册」）写在**活着的 id 集合**上，在未修复代码上会**同样通过**（泄漏的 id 恰好构成同一个集合）。跟进 PR 把它们改写到注册表的**事件日志**上，并把槽位失败判据从 `key` 改成 `name::key` —— 两个槽位共用一个 `key`，按 `key` 失败时**第一个**槽就抛，回收循环虽然进了、但手里的 disposer 列表永远是空的（即 `registerSlots` 的部分回滚**释放动作**从未被执行）；改后可以让某个描述符的**第二个**槽失败，回收列表非空、释放路径真正被覆盖，且 4 例在 v0.22.0 上仍全部红。
 
 ## 已知限制 / 未做

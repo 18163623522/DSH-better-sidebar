@@ -2,6 +2,16 @@
 
 > 本文档收录 dsh-better-sidebar 的完整发布历史（最新版摘要见 [README](README.md)；同步发布于 [GitHub Releases](https://github.com/omdsh-dev/DSH-better-sidebar/releases)）。
 
+### v0.22.1
+
+> 📦 **正式版**（npm `latest`）：仅支持 **DSH 0.1.7-rc.1+**（peer 下限 `^0.1.7-rc.1`，CI 钉 `@deepseek-ai/dsh@0.1.7-rc.1`）——**支持线不变**，0.21.1 / 0.22.0 的用户直接升级即可；**DSH 0.1.6-alpha.2 及更早请继续固定 v0.19.1**。这是一次补丁版：两个缺陷在真机上可稳定复现，而当时的单元测试**全绿**。
+
+- 🐛 **`files` 接管 id 被孤儿化 → `native register files error: … already registered` 刷屏 + 文件树落到宿主空态（需刷新页面才恢复）**（社区 issue #770 / #771 / #766）。根因链由官方桌面壳日志逐字确认（`desktop.frontdesk.log` 2026-09-27 15:51:39.338）：客户端条目替换（插件市场更新 / Plugins 页禁用→启用 / HMR 重打）期间，插件 teardown 逐个注销内置描述符 → `service.notify()`（同步内联）驱动 `sync()` 在**已经 inactive** 的插件上下文上运行；清理循环把**不是描述符**的 `files` 接管释放后又**在同一轮里重建**它——`tabs.register` 建在**宿主**上下文上（宿主上下文仍活着）因此照样取走 id，紧随的 `ctx.slots.inject` 建在插件上下文上抛 `cannot create effect on inactive context`，`live.set(FILES_KIND, …)` 永不执行，disposer 丢失 → 该 id 在**整个页面生命周期内不可再注册**。修复（社区 PR #777，@yanzhaohui1999）：① 清理循环**跳过 `FILES_KIND`**——接管的寿命只由编辑器类型的 `wantsFiles/hasFiles` 开关与 seat disposer 决定；② **任何在宿主取走 id 之后失败的注册都回滚释放**该 type 与已建好的槽位，失败只留一个「下次通知可重试」的状态，绝不留下无处释放的 id；③ teardown / 清理循环逐个安全释放（一个释放抛错不再中断其余）。
+- 🐛 **macOS 桌面版窗口拖拽「拖一次就失效」并且双击标题栏缩放也失效**（issue #772）。插件宿主是直挂 `body` 的子元素，宿主的 `html[data-platform=darwin] body > :not(#root) { -webkit-app-region: no-drag }`（选择器含 id，只有 `!important` 能压过）命中它，而 app-region **无视 `pointer-events`**——铺满视口的面板层把下面每条 `[data-window-drag]` 拖拽带一起抵消。修复（社区 PR #773 合并；随后 #786 补齐）：`[data-dsh-better-sidebar]`、`[data-dsh-panel-host]`（`> *` 保持 `no-drag`）与放大视图 `.mermaidModal` 用**中性值** `-webkit-app-region: initial !important` 退出计算——`initial` 的计算值 `none` **不**扣减拖拽区，而字面量 `none` 不是中性值（它计算成 `no-drag`）；交互弹层（`.selectionPopup`、`FloatingWindow`、`AnchoredPopover`）**不**加 `initial`，否则按下会变成拖窗（重演 #103/#111）。
+- ✅ **守护**：`tests/native-registration.spec.ts` 把两条不变量钉在注册表的**事件日志**上（在未修复代码上 4/4 红，且「失败后仍能重新注册」不再是非判别断言）；槽位失败判据改为 `name::key`，让 `registerSlots` 的**部分回滚**释放路径真正被执行；新增**部署级回归门** `tests/e2e/native-reload.e2e.ts`（`utimesSync` 已安装的 `lib/client.js` → 页面内条目替换 → 断言无 `native register … error`、无诊断条、`files` 接管重新可用；npm 0.22.0 上连续 3 次运行全红、修复版连续 3 次全绿（该用例只有 1 个 test，重复跑三次））。拖拽契约由 `tests/panel-host-css.spec.ts` 在 Linux 的 `pnpm test` 里钉形状（无 macOS runner），并由挂载 lane 的**真实级联探针**按宿主规则读计算值（面板宿主/放大视图在未修复产物上都判红）。
+- 📐 **基线不变**：`@deepseek-ai/dsh-*` 仍钉 `0.1.7-rc.1`，peer 下限 `^0.1.7-rc.1`；无公共 API / 契约 / 词典 / chunk 改动。事故记录与「为什么否决 #766 的吸收方案」见 [docs/plans/2026-09-28-native-files-takeover-reload-leak.md](./docs/plans/2026-09-28-native-files-takeover-reload-leak.md)。
+- 🧪 **验证**：`pnpm test` 122 files / 1293 passed / 9 skipped；`pnpm test:mount` 与 `DSH_CMD=… pnpm test:mount:aggregate` 绿；打包产物里 `app-region:initial!important` ×2、`no-drag` ×2。
+
 ### v0.22.0
 
 > 📦 **正式版**（npm `latest`）：仅支持 **DSH 0.1.7-rc.1+**（peer 下限 `^0.1.7-rc.1`，CI 钉 `@deepseek-ai/dsh@0.1.7-rc.1`）——本版没有动支持线，0.21.1 的用户直接升级即可。**DSH 0.1.6-alpha.2 及更早仍请固定 v0.19.1**。主内容是把任务管理页从「子代理拓扑」重做成**工作流图**，并在随后几轮里按真机反馈打磨；期间 DSH 0.1.7 删掉了 Agent Teams 的 Remote 方法，团队与后台任务两个数据面随之改写。

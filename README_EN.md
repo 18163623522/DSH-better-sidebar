@@ -3,7 +3,7 @@
 > [!IMPORTANT]
 > **Built on DSH's native sidebar API** (since v0.19.0): the right column *is* DSH's own sidebar — the plugin registers every tab type as a native tab (no right panel of its own anymore) and keeps only its self-drawn bottom workbench and the `ctx.betterSidebar` service open to every plugin.
 >
-> **Since v0.21.1 the host support floor is DSH `0.1.7-rc.1+`** (peer floor `^0.1.7-rc.1`; v0.22.0 *is* npm's `latest`). DSH 0.1.7 ships a complete document preview of its own, so the plugin hands every read-only preview (spreadsheets / PDF / images / Office) back to the built-in and keeps only Markdown / HTML and the editable code editor. **Hosts on 0.1.6-alpha.2 or earlier should pin `dsh-better-sidebar@0.19.1`** — the DSH-to-plugin version table is in [Installation](#-installation).
+> **Since v0.21.1 the host support floor is DSH `0.1.7-rc.1+`** (peer floor `^0.1.7-rc.1`; v0.22.1 *is* npm's `latest`). DSH 0.1.7 ships a complete document preview of its own, so the plugin hands every read-only preview (spreadsheets / PDF / images / Office) back to the built-in and keeps only Markdown / HTML and the editable code editor. **Hosts on 0.1.6-alpha.2 or earlier should pin `dsh-better-sidebar@0.19.1`** — the DSH-to-plugin version table is in [Installation](#-installation).
 
 <!-- Hero -->
 <div align="center">
@@ -14,7 +14,7 @@
   <a href="https://github.com/omdsh-dev/DSH-better-sidebar/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/omdsh-dev/DSH-better-sidebar" /></a>
   <a href="https://opensource.org/licenses/MIT"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" /></a>
   <a href="https://dshfind.com/en/plugins/omdsh-dev/DSH-better-sidebar?ref=badge"><img alt="dshfind" src="https://dshfind.com/api/badge/omdsh-dev/DSH-better-sidebar?lang=en" /></a><br /><br />
-  <a href="https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions"><img alt="Supported DSH versions (v0.22.0): 0.1.7-rc.1+" src="https://img.shields.io/badge/DSH-0.1.7--rc.1%2B-4d6bfe" /></a>
+  <a href="https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions"><img alt="Supported DSH versions (v0.22.1): 0.1.7-rc.1+" src="https://img.shields.io/badge/DSH-0.1.7--rc.1%2B-4d6bfe" /></a>
   <a href="https://github.com/topics/dsh-better-sidebar"><img alt="Plugin ecosystem: GitHub topic dsh-better-sidebar" src="https://img.shields.io/badge/plugin%20ecosystem-topic%20dsh--better--sidebar-4d6bfe" /></a><br /><br />
   <img alt="File management" src="https://img.shields.io/badge/-File%20management-4d6bfe" /> <img alt="Edit &amp; preview" src="https://img.shields.io/badge/-Edit%20%26%20preview-4d6bfe" /> <img alt="Bottom workbench" src="https://img.shields.io/badge/-Bottom%20workbench-4d6bfe" /> <img alt="Changes" src="https://img.shields.io/badge/-Changes-4d6bfe" /> <img alt="Background tasks" src="https://img.shields.io/badge/-Background%20tasks-4d6bfe" /> <img alt="Side Chat" src="https://img.shields.io/badge/-Side%20Chat-4d6bfe" /> <img alt="Plugin integration" src="https://img.shields.io/badge/-Plugin%20integration-4d6bfe" /><br /><br />
   <b>A dual workbench (right sidebar + bottom panel)</b> that opens its <code>ctx.betterSidebar</code> service to every plugin —<br />
@@ -62,15 +62,15 @@ What this plugin adds on top of DSH's stock sidebar:
 **Prerequisites**: DSH installed (`dsh web` boots), Node.js ≥ 20, pnpm ≥ 10.
 
 **Supported DSH versions**:
-<a href="https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions"><img alt="Supported DSH versions (v0.22.0): 0.1.7-rc.1+" src="https://img.shields.io/badge/DSH-0.1.7--rc.1%2B-4d6bfe" /></a>
+<a href="https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions"><img alt="Supported DSH versions (v0.22.1): 0.1.7-rc.1+" src="https://img.shields.io/badge/DSH-0.1.7--rc.1%2B-4d6bfe" /></a>
 
-> 📌 **Channel and support line**: `v0.22.0` is the **stable release** (npm `latest`) and targets DSH **0.1.7-rc.1+** only. **Pin the DSH version exactly**: `npm i -g @deepseek-ai/dsh@0.1.7-rc.1` (rc.1 rides npm's `next` dist-tag). **Hosts on DSH 0.1.6-alpha.2 or earlier should pin `dsh-better-sidebar@0.19.1`** — 0.1.7's breakage (the settings-service rewrite, the icon-export renames, session format v3→v4) is large enough that this version ships no compatibility layer.
+> 📌 **Channel and support line**: `v0.22.1` is the **stable release** (npm `latest`) and targets DSH **0.1.7-rc.1+** only. **Pin the DSH version exactly**: `npm i -g @deepseek-ai/dsh@0.1.7-rc.1` (rc.1 rides npm's `next` dist-tag). **Hosts on DSH 0.1.6-alpha.2 or earlier should pin `dsh-better-sidebar@0.19.1`** — 0.1.7's breakage (the settings-service rewrite, the icon-export renames, session format v3→v4) is large enough that this version ships no compatibility layer.
 
 > 🧭 **Pick the plugin version that matches your DSH**:
 >
 > | Your DSH | Install command | Version / peer declared |
 > | --- | --- | --- |
-> | **0.1.7-rc.1+** (including a later 0.1.7 stable) | `dsh plugin --profile web add dsh-better-sidebar@latest` | **0.22.0**, `^0.1.7-rc.1` |
+> | **0.1.7-rc.1+** (including a later 0.1.7 stable) | `dsh plugin --profile web add dsh-better-sidebar@latest` | **0.22.1**, `^0.1.7-rc.1` |
 > | 0.1.7-alpha.1 / 0.1.7-alpha.2 | **nothing to install** — move DSH to rc.1 first, then run the row above:<br>`npm i -g @deepseek-ai/dsh@0.1.7-rc.1` | — |
 > | 0.1.6-alpha.2 and earlier, `0.1.5-rc.*` (including the 0.1.5-rc.3 that is npm's `latest`) | `dsh plugin --profile web add dsh-better-sidebar@0.19.1` | **0.19.1**, `^0.1.5-rc.1` |
 > | `0.1.5-alpha.2` | `dsh plugin --profile web add dsh-better-sidebar@0.19.0-alpha.1` | `^0.1.5-alpha.2` |
@@ -106,7 +106,7 @@ If anything fails, check the troubleshooting table in the README at https://gith
 dsh plugin --profile web add dsh-better-sidebar@latest
 ```
 
-or bump the version in `~/.dsh/profiles/web/package.json` to the matching npm version (`"^0.22.0"`) and run `pnpm install`. Then hard-refresh the browser (Cmd/Ctrl+Shift+R) — client changes do not need a DSH restart.
+or bump the version in `~/.dsh/profiles/web/package.json` to the matching npm version (`"^0.22.1"`) and run `pnpm install`. Then hard-refresh the browser (Cmd/Ctrl+Shift+R) — client changes do not need a DSH restart.
 
 </details>
 
@@ -144,7 +144,7 @@ To debug local changes or track the dev branch, point the dependency at a local 
 5. Restart DSH and hard-refresh
 ```
 
-Update: `git pull && pnpm install && pnpm build` → just hard-refresh the browser (client changes hot-reload; only host-half changes need a DSH restart). To switch back to the npm channel, restore the matching npm version (`"^0.22.0"`) and re-run `pnpm install`.
+Update: `git pull && pnpm install && pnpm build` → just hard-refresh the browser (client changes hot-reload; only host-half changes need a DSH restart). To switch back to the npm channel, restore the matching npm version (`"^0.22.1"`) and re-run `pnpm install`.
 
 </details>
 
@@ -199,7 +199,15 @@ WeChat / QQ group QR codes will live here. After uploading the QR images (drag t
   <a href="https://github.com/user-attachments/assets/946f7028-4967-461e-a750-d1b5056b62d0"><img width="33%" alt="Service API base screenshot" src="https://github.com/user-attachments/assets/946f7028-4967-461e-a750-d1b5056b62d0" /></a>
 </div>
 
-**Supported DSH versions**: <a href="https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions"><img alt="Supported DSH versions (v0.22.0): 0.1.7-rc.1+" src="https://img.shields.io/badge/DSH-0.1.7--rc.1%2B-4d6bfe" /></a> · full release history on the [Releases](https://github.com/omdsh-dev/DSH-better-sidebar/releases) page
+**Supported DSH versions**: <a href="https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions"><img alt="Supported DSH versions (v0.22.1): 0.1.7-rc.1+" src="https://img.shields.io/badge/DSH-0.1.7--rc.1%2B-4d6bfe" /></a> · full release history on the [Releases](https://github.com/omdsh-dev/DSH-better-sidebar/releases) page
+
+### v0.22.1
+
+> 📦 **Stable release** (npm `latest`): the support line is **unchanged** — DSH **0.1.7-rc.1+** only (peer floor `^0.1.7-rc.1`, CI pins `@deepseek-ai/dsh@0.1.7-rc.1`), so 0.21.1 / 0.22.0 users can upgrade straight away. Two defects that were **reproducible on a real host while every unit test stayed green** are fixed; **hosts on DSH 0.1.6-alpha.2 or earlier still pin v0.19.1**.
+
+- 🐛 **The `files` takeover could be orphaned → error spam + an empty tree** (community issues #770 / #771, proven from the desktop shell's own log): during an in-page client entry replacement (plugin-market update, Plugins page disable→enable, HMR rebundle), `sync()`'s drop loop released the `files` takeover — which is **not a descriptor** — and re-created it in the same pass. That re-creation ran on an **already inactive** plugin context: `tabs.register` lives on the HOST context and took the id anyway, while the `ctx.slots.inject` right after it threw `cannot create effect on inactive context`, so the disposer was lost and the id became **unregistrable for the rest of the page's life** (`native register files error: … already registered` spam plus the Files window falling back to the host's empty state until a page refresh). The drop loop now **skips `FILES_KIND`** (the takeover lives and dies by the editor-type switch and the seat disposer only), and **any registration that fails after the host took the id is rolled back** (including slots already installed), leaving only a failure the next notification can retry. Taken from community PR #777 (@yanzhaohui1999).
+- 🖥️ **macOS desktop: window drag / double-click-title zoom stopped working** (#772): the plugin host is a direct `body` child, so the shell's `html[data-platform=darwin] body > :not(#root) { -webkit-app-region: no-drag }` applied to it — and app-region **ignores `pointer-events`** — leaving the viewport-sized panel layer cancelling every drag strip beneath it (the first drag worked, later ones did not). `[data-dsh-better-sidebar]`, `[data-dsh-panel-host]` and the zoom modal `.mermaidModal` now opt out with the neutral `initial !important`, while panels and their controls stay `no-drag` so clicks are never swallowed. Merges community PR #773 and finishes the job for the zoom modal, the last viewport-sized body child.
+- ✅ **They stay fixed**: new unit cases pin "a notification must not tear the takeover down" and "a failed registration must release the type and the slots it installed" to the registry's **event log** (4/4 red on the unfixed code), plus a **deployment-level regression gate** `tests/e2e/native-reload.e2e.ts` (red on 3 consecutive runs against npm 0.22.0, green on 3 consecutive runs of the fixed build (one case, run repeatedly)). The drag contract is guarded by unit cases and by a real cascade probe in the mount lane that reads computed values against the shell's own rules. Verification: `pnpm test` 122 files / 1293 passed / 9 skipped, `pnpm test:mount` and `test:mount:aggregate` green. Incident write-up: [docs/plans/2026-09-28-native-files-takeover-reload-leak.md](./docs/plans/2026-09-28-native-files-takeover-reload-leak.md).
 
 ### v0.22.0
 
@@ -216,19 +224,7 @@ WeChat / QQ group QR codes will live here. After uploading the QR images (drag t
 - 🐛 **Four defects caught on a real host, all green in unit tests**: the per-node fold button did nothing (blocked by the automatic rule's guards); an idle card never drew a fold button; claiming a task mislabelled it "blocked"; and "complete" on a queued task always failed (a claim comes first).
 - 🎨 **Narrow panes and mobile settings**: card and row metrics re-tuned for the native right sidebar's narrow width; the settings page gained a **Mobile** group — on a narrow viewport (≤768px) the Tasks page no longer auto-opens and defaults to the tree view.
 
-### v0.21.1
-
-> 📦 **Stable release** (npm `latest`): supports **DSH 0.1.7-rc.1+** only (peer floor `^0.1.7-rc.1`, CI pins `@deepseek-ai/dsh@0.1.7-rc.1`). **Hosts on DSH 0.1.6-alpha.2 or earlier should stay on v0.19.1** — 0.1.7 moves three hard contracts (the settings service, the icon named exports and the session format) and this version writes no runtime compatibility layer. ⚠️ **The previous v0.20.0 was never published to npm**: its terminal / browser handover ships here too, so npm goes straight from 0.19.1 to this version.
-
-- 🗂️ **Read-only file previews handed to DSH's document preview**: DSH 0.1.7's `ui-sidebar-documentpreview` ships its own spreadsheet / PDF / image / Office rendering (host-side Office→PDF conversion, worker-backed spreadsheet tables, image / PDF zoom, per-directory auto-refresh), so the plugin deleted its `image` / `pdf` / `binary-download` viewers and **refuses** those extensions in `editor.canOpen` — `xlsx xls csv tsv fods pdf png jpg jpeg gif webp svg bmp ico doc docx ppt pptx` — handing the address back to the host. **rc.1 takes nine of them back**: `xlsb` / `xlt` / `xltx` / `xltm` / `ots` / `dot` / `dotx` / `avif` / `ods` have **no host renderer at all** (opening one only said "preview is not available"), yet before the handover they reached the plugin's download pane — a regression we introduced ourselves in the previous version. The plugin's `code` catch-all claims them again. `fods` stays handed over (the host shows that flat XML as plain text, which beats a download pane). — handing the file address back to the host. **Three things the host does not have stay in the plugin**: Markdown (its own renderer), HTML (its own sandboxed preview plus the `htmlViewerNoSandbox` / `htmlViewerDefaultUnsafe` safety switches), and the **editable** text / code editor (the built-in ones are read-only previews); unknown binaries (`.zip` / `.wasm`) still land on the code editor's download pane after the binary check, so nothing regresses.
-- 🔗 **External-link takeover narrowed**: the three protocol-routing external-link settings are gone (with their keys in all 20 locale dictionaries). The plugin now takes over **only links a tab type explicitly claims through `urlTarget`** and lets everything else through for the host to route (DSH 0.1.7 adds the user setting `linkOpening`, deciding whether prose links open in the sidebar or a new tab); **when nothing claims a link it does not preventDefault**; a successful claim whose target type is unavailable at open time falls back to `window.open(url, '_blank', 'noopener,noreferrer')` — which also fixes a real regression from the previous version: http links inside plugin-drawn markdown (Side Chat transcripts / editor previews / diff panes) did nothing when clicked. Separately, the host's `browser` kind is **no longer mounted in the Web profile** (0.1.7 mounts it in the desktop profile only).
-- ⚙️ **Settings surface rewritten + preferences imported automatically**: DSH 0.1.7 removed the registrable settings namespace in favour of **looking a form up by the plugin Loader row's entry id** (`SettingsForms`: only `describe` / `update` / `replace` / `mutate` / `configure` remain). Plugin preferences therefore live in the **profile's cordis patch document** (i.e. this plugin's mount row), not in `~/.dsh/settings.yaml`; the schema comes from the plugin module's exported `Config` (this version merges the user preferences into `Config` and marks every preference field `meta.volatile = true` — **that single flag is the entire "settings apply live, without remounting the plugin" mechanism**). **Your settings are not lost**: on first boot the plugin imports the `dsh-better-sidebar` section of the old `settings.yaml` / `settings.yaml.imported` once (only while that row still has no user values, and only fields the current schema still declares). The entry id is **discovered at runtime** (this bundle defaults to `better-sidebar`; an aggregate bundle mounts it under a different id) and never hardcoded.
-- 🔄 **Live-refreshing file tree**: the plugin takes over the built-in Files page, so the host's own per-directory watch cannot cover that tree — this version adds `/sidebar/ws/fs-watch`: the client reports the directories it has **expanded**, the host watches exactly those with `fs.watch` (150ms debounce, a 64-handle cap per connection, paths going through the same workspace fence as `fs.tree`), and a change re-lists just that level; collapsing unsubscribes. Before this, the tree stayed stale until a manual refresh.
-- 🐛 **Session following fixed**: the plugin used to read a **non-existent `SessionListState.current` field** (its own type mirror invented it, so the compiler never complained), which meant per-session persistence was never actually bound and the narrow-viewport park gate was always false. It now uses DSH 0.1.7's `ctx.sidebarRight.mounted` (set only when the column really switches to another session).
-- 🖥️ **The model-side cost is unchanged**: the plugin's own 8 `terminal_*` tools (off by default) were already removed in the previous version, and the upstream equivalent `@deepseek-ai/dsh-tool-terminal` is **still not mounted by any shipped bundle** — add a `tool-terminal` row to your profile's `cordis.patch.yml` when you need a persistent terminal (otherwise the model only has one-shot `bash` / `pwsh`).
-- 📐 **Baseline**: every `@deepseek-ai/dsh-*` pins `0.1.7-rc.1`, with the `@deepseek-ai/cordis` peer floor at `^4.0.3`; `ui-primitives` renamed its whole family of named icon exports (`Icon<Name><14|16>` → `Icon<Name>Regular` / `Medium`, 26 named imports adapted); session format v3→v4 (the Side Chat boundary injection now uses `plugin:dsh-better-sidebar`, and tool-result messages use the top-level `role: 'tool'` shape, with parsers accepting both old and new shapes for historical logs).
-
-> 📜 **Earlier versions**: full release history in [CHANGELOG_EN.md](./CHANGELOG_EN.md) (v0.20.0 → v0.12.3) and on [GitHub Releases](https://github.com/omdsh-dev/DSH-better-sidebar/releases).
+> 📜 **Earlier versions**: full release history in [CHANGELOG_EN.md](./CHANGELOG_EN.md) (v0.21.1 → v0.12.3) and on [GitHub Releases](https://github.com/omdsh-dev/DSH-better-sidebar/releases).
 
 ## ⌨️ Keyboard Shortcuts
 
