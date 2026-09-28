@@ -692,12 +692,20 @@ export function FileTree(props: {
     })
   }, [sessionId, cwd, storeLevel])
 
-  /** Drop one level from the cache and reload it (a watch notice, or the
-   *  parent of a landed mutation). */
+  /**
+   * Re-list one directory in place (a watch notice, or the parent of a landed
+   * mutation).
+   *
+   * The re-list is FORCED but not preceded by dropping the level: a watch
+   * notice usually lands while the directory is on screen with its rows, and
+   * deleting the cached level first replaced every row with a "Loading…"
+   * placeholder — the whole folder blinked and rebuilt on each disk change
+   * (a build, a formatter, the model's own `bash`). The fresh listing simply
+   * overwrites the old one when it arrives; a failed re-list keeps the rows it
+   * has and adds the hint line.
+   */
   const retryDir = useCallback((dir: string) => {
-    delete dataRef.current[dir]
-    setData({ ...dataRef.current })
-    loadLevels([dir])
+    loadLevels([dir], { force: true })
   }, [loadLevels])
 
   /**

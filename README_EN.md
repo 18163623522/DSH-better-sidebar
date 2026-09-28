@@ -3,7 +3,7 @@
 > [!IMPORTANT]
 > **Built on DSH's native sidebar API** (since v0.19.0): the right column *is* DSH's own sidebar — the plugin registers every tab type as a native tab (no right panel of its own anymore) and keeps only its self-drawn bottom workbench and the `ctx.betterSidebar` service open to every plugin.
 >
-> **Since v0.24.0 the host support floor is DSH `0.2.0-rc.1+`** (peer floor `^0.2.0-rc.1`). Everything this plugin consumes from 0.2.0 is **purely additive** (zero removed exports, session format still v4, CLI and client runtime byte-identical), so this version carries no runtime compatibility branch — it only moves the support line. **Hosts on the 0.1.7 line should pin `dsh-better-sidebar@0.23.0` — a caret never spans a minor bump, and `^0.1.7-rc.1` is silently disabled by the 0.2.0 startup preflight**; the DSH-to-plugin version table is in [Installation](#-installation).
+> **Since v0.24.1 the host support floor is DSH `0.2.0-rc.1+`** (peer floor `^0.2.0-rc.1`). Everything this plugin consumes from 0.2.0 is **purely additive** (zero removed exports, session format still v4, CLI and client runtime byte-identical), so this version carries no runtime compatibility branch — it only moves the support line. **Hosts on the 0.1.7 line should pin `dsh-better-sidebar@0.23.0` — a caret never spans a minor bump, and `^0.1.7-rc.1` is silently disabled by the 0.2.0 startup preflight**; the DSH-to-plugin version table is in [Installation](#-installation).
 
 <!-- Hero -->
 <div align="center">
@@ -14,7 +14,7 @@
   <a href="https://github.com/omdsh-dev/DSH-better-sidebar/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/omdsh-dev/DSH-better-sidebar" /></a>
   <a href="https://opensource.org/licenses/MIT"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" /></a>
   <a href="https://dshfind.com/en/plugins/omdsh-dev/DSH-better-sidebar?ref=badge"><img alt="dshfind" src="https://dshfind.com/api/badge/omdsh-dev/DSH-better-sidebar?lang=en" /></a><br /><br />
-  <a href="https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions"><img alt="Supported DSH versions (v0.24.0): 0.2.0-rc.1+" src="https://img.shields.io/badge/DSH-0.2.0--rc.1%2B-4d6bfe" /></a>
+  <a href="https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions"><img alt="Supported DSH versions (v0.24.1): 0.2.0-rc.1+" src="https://img.shields.io/badge/DSH-0.2.0--rc.1%2B-4d6bfe" /></a>
   <a href="https://github.com/topics/dsh-better-sidebar"><img alt="Plugin ecosystem: GitHub topic dsh-better-sidebar" src="https://img.shields.io/badge/plugin%20ecosystem-topic%20dsh--better--sidebar-4d6bfe" /></a><br /><br />
   <img alt="File management" src="https://img.shields.io/badge/-File%20management-4d6bfe" /> <img alt="Edit &amp; preview" src="https://img.shields.io/badge/-Edit%20%26%20preview-4d6bfe" /> <img alt="Bottom workbench" src="https://img.shields.io/badge/-Bottom%20workbench-4d6bfe" /> <img alt="Changes" src="https://img.shields.io/badge/-Changes-4d6bfe" /> <img alt="Background tasks" src="https://img.shields.io/badge/-Background%20tasks-4d6bfe" /> <img alt="Side Chat" src="https://img.shields.io/badge/-Side%20Chat-4d6bfe" /> <img alt="Plugin integration" src="https://img.shields.io/badge/-Plugin%20integration-4d6bfe" /><br /><br />
   <b>A dual workbench (right sidebar + bottom panel)</b> that opens its <code>ctx.betterSidebar</code> service to every plugin —<br />
@@ -64,13 +64,13 @@ What this plugin adds on top of DSH's stock sidebar:
 **Supported DSH versions**:
 <a href="https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions"><img alt="Supported DSH versions (v0.24.0): 0.2.0-rc.1+" src="https://img.shields.io/badge/DSH-0.2.0--rc.1%2B-4d6bfe" /></a>
 
-> 📌 **Channel and support line**: `v0.24.0` targets DSH **0.2.0-rc.1+** (0.2.0's first candidate rides npm's `next` dist-tag; `latest` is still 0.1.7-rc.2). **Pin the DSH version exactly**: `npm i -g @deepseek-ai/dsh@0.2.0-rc.1`. **Hosts on the 0.1.7 line should pin `dsh-better-sidebar@0.23.0`**: 0.2.0 is a host minor bump, and caret ranges such as `^0.1.7-rc.1` fail the host's startup compatibility preflight on 0.2.0, which disables the whole profile row silently.
+> 📌 **Channel and support line**: `v0.24.1` targets DSH **0.2.0-rc.1+** (0.2.0's first candidate rides npm's `next` dist-tag; `latest` is still 0.1.7-rc.2). **Pin the DSH version exactly**: `npm i -g @deepseek-ai/dsh@0.2.0-rc.1`. **Hosts on the 0.1.7 line should pin `dsh-better-sidebar@0.23.0`**: 0.2.0 is a host minor bump, and caret ranges such as `^0.1.7-rc.1` fail the host's startup compatibility preflight on 0.2.0, which disables the whole profile row silently.
 
 > 🧭 **Pick the plugin version that matches your DSH**:
 >
 > | Your DSH | Install command | Version / peer declared |
 > | --- | --- | --- |
-> | **0.2.0-rc.1+** (including a later 0.2.0 stable) | `dsh plugin --profile web add dsh-better-sidebar@latest` | **0.24.0**, `^0.2.0-rc.1` |
+> | **0.2.0-rc.1+** (including a later 0.2.0 stable) | `dsh plugin --profile web add dsh-better-sidebar@latest` | **0.24.1**, `^0.2.0-rc.1` |
 > | **0.1.7-rc.1 – 0.1.7-rc.2** (and a later 0.1.7 stable; npm `latest` is still 0.1.7-rc.2) | `dsh plugin --profile web add dsh-better-sidebar@0.23.0` | **0.23.0**, `^0.1.7-rc.1` |
 > | 0.1.7-alpha.1 / 0.1.7-alpha.2 | **nothing to install** — move DSH to rc.1 first, then run the row above:<br>`npm i -g @deepseek-ai/dsh@0.1.7-rc.1` | — |
 > | 0.1.6-alpha.2 and earlier, `0.1.5-rc.*` (including the 0.1.5-rc.3 that is npm's `latest`) | `dsh plugin --profile web add dsh-better-sidebar@0.19.1` | **0.19.1**, `^0.1.5-rc.1` |
@@ -201,6 +201,10 @@ WeChat / QQ group QR codes will live here. After uploading the QR images (drag t
 </div>
 
 **Supported DSH versions**: <a href="https://www.npmjs.com/package/@deepseek-ai/dsh?activeTab=versions"><img alt="Supported DSH versions (v0.24.0): 0.2.0-rc.1+" src="https://img.shields.io/badge/DSH-0.2.0--rc.1%2B-4d6bfe" /></a> · full release history on the [Releases](https://github.com/omdsh-dev/DSH-better-sidebar/releases) page
+
+### v0.24.1
+
+> 🐞 **Fix release**: two defects made the file tree rebuild itself on every interaction — (1) the native surface re-created the `files` takeover’s slot registration on EVERY session-state write (folder toggles, tab switches, bottom-workbench drags), so the host swapped the slot entry and unmounted/remounted the whole tab body: the explorer lost its level cache, scroll position and directory watcher and re-listed the entire visible tree; (2) the live-refresh re-list deleted a level from the cache before refetching, replacing its rows with a loading placeholder (a build, a formatter or the model’s own bash made whole folders blink). Now a toggle asks only for the toggled level, the tab body survives, and disk changes update rows in place.
 
 ### v0.24.0
 

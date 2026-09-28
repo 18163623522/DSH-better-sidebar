@@ -322,8 +322,21 @@ export function registerNativeSurface(deps: NativeSurfaceDeps): () => void {
         if (!service.isTabEnabled(descriptor.id)) continue
         wanted.set(descriptor.id, () => registerDescriptor(descriptor))
       }
+      // The built-in files kind follows the editor type's switch: with the
+      // editor disabled the plugin has no explorer to put there.
+      const wantsFiles = service.isTabEnabled(EDITOR_KIND)
       for (const [descriptorId, registration] of live) {
         if (wanted.has(descriptorId)) continue
+        // The `files` takeover is keyed by its KIND, not by a descriptor id, so
+        // it is never in `wanted` — and dropping it here would dispose it on
+        // EVERY sync. Replacing a slot registration replaces the host's slot
+        // entry, which unmounts the tab body it draws: the store notifies on
+        // each expand/collapse (and on every other state write), so the
+        // explorer was torn down and rebuilt — losing its level cache, its
+        // scroll position and its directory watcher, then re-listing the whole
+        // visible tree — every time a folder was toggled. Keep it while the
+        // editor type is on; the tail of this function owns its lifecycle.
+        if (descriptorId === FILES_KIND && wantsFiles) continue
         registration.dispose()
         live.delete(descriptorId)
       }
@@ -337,9 +350,8 @@ export function registerNativeSurface(deps: NativeSurfaceDeps): () => void {
           reportFailure?.(`register ${descriptorId}`, error)
         }
       }
-      // The built-in files kind follows the editor type's switch: with the
-      // editor disabled the plugin has no explorer to put there.
-      const wantsFiles = service.isTabEnabled(EDITOR_KIND)
+      // The `files` takeover is a second registration of its own kind, so it
+      // is created and dropped here rather than by the loops above.
       const hasFiles = live.has(FILES_KIND)
       if (wantsFiles && !hasFiles) {
         try {

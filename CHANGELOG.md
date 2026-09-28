@@ -2,6 +2,14 @@
 
 > 本文档收录 dsh-better-sidebar 的完整发布历史（最新版摘要见 [README](README.md)；同步发布于 [GitHub Releases](https://github.com/omdsh-dev/DSH-better-sidebar/releases)）。
 
+### v0.24.1
+
+> 🐞 **修复版**：文件树「一操作就整体刷新」的两处根因。① 原生承载面（`src/client/native/index.ts` 的 `sync()`）把 `files` 接管项当成多余注册——它按 KIND 记账、永远不在 `wanted` 里，于是**每次会话状态写入**都被 dispose + 重建；替换 slot 注册等于替换宿主的 slot entry，**整个插件 tab body 被卸载重挂**（展开/收起、切 tab、拖底部工作台都会触发）→ 文件树丢失层缓存、滚动位置与目录 watcher，并重新 `fs.trees([root, ...expanded])` 重列整棵可见树。② 目录实时刷新（`FileTree.tsx` 的 `retryDir`）**先把该层缓存删掉**再请求，行被占位替换后重建（构建 / 格式化 / 模型跑 bash 时整层闪空）。
+
+- 🧪 判别性证据：真实挂载 lane 新增 `tests/e2e/zz-expand-refresh.e2e.ts`（展开只请求该层、tab body 存活、行数不归零；回退任一修复即红），配套两个 jsdom 单测（回退后 `registered` 6 → 12、`disposed` 全是 `dsh-better-sidebar:files`；另一条断言重列期间旧行仍在屏）
+- 📉 修复后实测（40 子项目录）：展开 `fs.trees` payload 由 `[root, big]`（空缓存特征）变为 **`[big]`**，新开 WebSocket 1 → **0**，被删行 45 → **0**，外部写入由「删 40 建 40」变为 **只增 1 行**
+- 🔧 `src/fs-watch.ts` / `use-dir-watch.ts` / `TreePanel.tsx` / `tab-adapter.tsx` 零改动（`fs.watch` 新建自身不投递事件，已实测证伪）
+
 ### v0.24.0
 
 > 📦 **支持线前移**：仅适配 DSH **0.2.0-rc.1+**（peer 下限 `^0.2.0-rc.1`，CI 钉 `@deepseek-ai/dsh@0.2.0-rc.1`）。**0.1.7 线（含 npm `latest` 的 0.1.7-rc.2）请固定 v0.23.0**——宿主 0.2.0 的启动兼容性预检按 `semver.satisfies(宿主版本, peer范围, {includePrerelease:true})` 判定，caret 范围跨 minor 不成立（实测 `^0.1.7-rc.1` 对 `0.2.0-rc.1` 为 **false**，整行会被静默禁用），因此本版不保留任何 0.1.7 兼容分支。

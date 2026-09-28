@@ -202,6 +202,37 @@ describe('FileTree level loading is batched', () => {
     expect(batchPaths(0)).toEqual(['/tmp/d3'])
   })
 
+  it('keeps the stale level on screen until the fresh listing lands (no blank frame)', async () => {
+    harness = mountTree(DIRS)
+    await flush()
+    const socket = FakeSocket.instances[0]
+    if (socket === undefined) throw new Error('no watch socket opened')
+    act(() => { socket.open() })
+    // Hold the re-list open and answer with DIFFERENT content, so the swap is
+    // observable in both directions.
+    let release: (() => void) | undefined
+    fsTrees.mockImplementation(async (_scope: unknown, paths: readonly string[]) => {
+      await new Promise<void>((resolve) => { release = resolve })
+      return {
+        levels: paths.map(path => path === '/tmp/d3'
+          ? { path, entries: [{ name: 'd3-fresh.ts', path: `${path}/d3-fresh.ts`, isDir: false }], truncated: false }
+          : levelOf(path)),
+      }
+    })
+    act(() => { socket.frame({ dir: '/tmp/d3' }) })
+    await flush()
+    // While the answer is in flight the level keeps the rows it had: dropping
+    // the cached level first replaced the whole folder with a loading row and
+    // rebuilt it — the "the tree blinks on every disk change" report.
+    expect(harness.container.textContent, 'the stale rows stay up during the re-list').toContain('d3-file.ts')
+    expect(harness.container.textContent, 'no placeholder replaces the level').not.toContain('Loading…')
+    release?.()
+    await flush()
+    // …and the fresh listing still lands.
+    expect(harness.container.textContent).toContain('d3-fresh.ts')
+    expect(harness.container.textContent).not.toContain('d3-file.ts')
+  })
+
   it('keeps one level error on that level only', async () => {
     fsTrees.mockImplementation(async (_scope: unknown, paths: readonly string[]) => ({
       levels: paths.map(path => path === '/tmp/d3'

@@ -2,6 +2,14 @@
 
 > Full release history of dsh-better-sidebar (see the [README](README_EN.md) for the latest release; also mirrored on [GitHub Releases](https://github.com/omdsh-dev/DSH-better-sidebar/releases)).
 
+### v0.24.1
+
+> 🐞 **Fix release** for the file tree rebuilding itself on every interaction. (1) The native surface (`sync()` in `src/client/native/index.ts`) treated the `files` takeover as a surplus registration — it is keyed by KIND and never appears in `wanted`, so **every session-state write** disposed and re-created it. Replacing a slot registration replaces the host's slot entry, which **unmounts and remounts the whole plugin tab body** (folder toggles, tab switches, bottom-workbench drags all trigger it): the explorer lost its level cache, scroll position and directory watcher, then re-listed the entire visible tree via `fs.trees([root, ...expanded])`. (2) The live-refresh path (`retryDir` in `FileTree.tsx`) **deleted a level from the cache** before refetching, so its rows were replaced by a placeholder and rebuilt (a build, a formatter or the model's own bash made entire folders blink).
+
+- 🧪 Discriminating evidence: a new real-host lane `tests/e2e/zz-expand-refresh.e2e.ts` (a toggle asks only for the toggled level, the tab body survives, rows never drop to zero; reverting either fix turns it red) plus two jsdom guards (reverting the surface fix: `registered` 6 → 12 with every `disposed` entry being `dsh-better-sidebar:files`; the other asserts stale rows stay on screen during a re-list)
+- 📉 Measured after the fix (40-child directory): the toggle's `fs.trees` payload goes from `[root, big]` (the empty-cache signature) to **`[big]`**, new WebSockets 1 → **0**, removed rows 45 → **0**, and an external write goes from "remove 40, add 40" to **one added row**
+- 🔧 `src/fs-watch.ts` / `use-dir-watch.ts` / `TreePanel.tsx` / `tab-adapter.tsx` untouched (`fs.watch` does not emit on creation — measured and ruled out)
+
 ### v0.24.0
 
 > 📦 **Support line moved**: DSH **0.2.0-rc.1+** only (peer floor `^0.2.0-rc.1`, CI pins `@deepseek-ai/dsh@0.2.0-rc.1`). **The 0.1.7 line (including npm `latest` = 0.1.7-rc.2) should pin v0.23.0** — the 0.2.0 host's startup compatibility preflight evaluates `semver.satisfies(hostVersion, peerRange, {includePrerelease:true})`, and a caret never spans a minor bump (measured: `^0.1.7-rc.1` vs `0.2.0-rc.1` is **false**, so the whole row is disabled silently). This version therefore keeps no 0.1.7 compatibility branch.

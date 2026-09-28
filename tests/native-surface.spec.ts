@@ -399,6 +399,73 @@ describe('registerNativeSurface lifecycle (service-driven registration)', () => 
     dispose()
   })
 
+  it('re-registers NOTHING on a store change (a folder toggle must not replace the explorer body)', () => {
+    // Regression (reported as "expanding a folder makes the whole tree
+    // refresh"): the surface kept its registrations in step by diffing them on
+    // every service AND store notification, and the built-in `files` takeover
+    // is keyed by its KIND — never by a descriptor id — so the "drop what is
+    // no longer wanted" loop read it as a stray registration and disposed it on
+    // EVERY state write. Disposing and re-creating a slot registration replaces
+    // the host's slot entry, which unmounts the tab body it draws: toggling a
+    // folder tore down the explorer (level cache, scroll position and the
+    // directory watcher all live in that component) and remounted it, so the
+    // tree blanked, re-requested [root, ...expanded] and rebuilt every row.
+    // The store notifies on each toggle, so this churned on every click.
+    const store = createSidebarStore()
+    store.setSession('s1')
+    const service = createBetterSidebarService(store)
+    service.registerTab({ id: 'editor', title: () => 'Files', component: () => null })
+    service.registerTab({ id: 'git', title: () => 'Changes', component: () => null })
+    const records = createNativeTabRecords()
+
+    /** Every slot registration, in order (the unregister keys land in `disposed`). */
+    const registered: string[] = []
+    const disposed: string[] = []
+    const registry = {
+      register: (definition: { id: string; kind: string; title: (address: string) => string }) =>
+        () => { disposed.push(definition.id) },
+    }
+    const ctx = {
+      inject: (_deps: readonly string[], callback: (injected: { get: (name: string) => unknown }) => void) => {
+        callback({ get: () => registry })
+        return { dispose: () => { /* the surface owns the rest */ } }
+      },
+      get: () => registry,
+      slots: {
+        inject: (_key: string, callback: () => () => void) => callback(),
+        register: (options: { name: string; key?: string }) => {
+          const key = options.key ?? options.name
+          registered.push(key)
+          return () => { disposed.push(key) }
+        },
+      },
+    }
+    const dispose = registerNativeSurface({ ctx: ctx as never, store, service, records })
+    const mounted = [...registered]
+    /** The takeover's slot registrations: its body + its chip title, one pair. */
+    const filesSlots = (): number => registered.filter(key => key === 'dsh-better-sidebar:files').length
+    expect(filesSlots(), 'the takeover registers its body + chip slots').toBe(2)
+    expect(disposed).toEqual([])
+
+    // A folder toggle: only state, no registry and no settings change. The
+    // native surface must not touch a single registration.
+    store.reduce(state => toggleExpanded(state, '/work/big'))
+    store.reduce(state => toggleExpanded(state, '/work/big/child'))
+    // Any other state write behaves the same (the workbench height, a tab
+    // switch, the selection — all of them notify the same subscribers).
+    store.update(state => { state.bottomOpen = !state.bottomOpen })
+    expect({ registered, disposed }).toEqual({ registered: mounted, disposed: [] })
+
+    // The takeover still follows the editor type's own switch: disabling the
+    // editor releases it, re-enabling brings it back exactly once.
+    store.setPrefs({ ...store.getPrefs(), tabsEnabled: { editor: false } })
+    expect(disposed).toContain('dsh-better-sidebar:files')
+    expect(registered).toEqual(mounted)
+    store.setPrefs({ ...store.getPrefs(), tabsEnabled: { editor: true } })
+    expect(filesSlots(), 'the re-enabled takeover registers again — exactly one pair').toBe(4)
+    dispose()
+  })
+
   it('claims exactly the extensions DSH has no preview for (the nine restored formats included)', () => {
     // DSH 0.1.7 handed every read-only preview to `ui-sidebar-documentpreview`,
     // and `canOpen` returning false is what gives the address away. The host's
