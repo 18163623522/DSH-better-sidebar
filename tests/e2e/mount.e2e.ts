@@ -615,6 +615,16 @@ test('conservative auto: URL stamps alone never modify the layout; plugin chrome
     return false
   })
   expect(hasNoDragRule, 'the bundle must ship the drag-region opt-out rule').toBe(true)
+  // The viewport-sized panel host must NOT inherit the shell's blanket
+  // `body > :not(#root) { no-drag }` — it would cancel every window-drag
+  // strip beneath it on macOS (issue #772).
+  const hasHostReset = await page.evaluate(() => {
+    for (const tag of document.querySelectorAll('style')) {
+      if (tag.textContent !== null && /\[data-dsh-panel-host\]\{-webkit-app-region:\s*initial\s*!important/.test(tag.textContent)) return true
+    }
+    return false
+  })
+  expect(hasHostReset, 'the panel host must opt out of app-region computation').toBe(true)
 })
 
 test('standard WCO geometry drives the strip reactively (issue #257)', async ({ page }) => {

@@ -63,6 +63,22 @@
   overflow: clip;
 }
 
+/* Desktop drag regions ignore pointer-events: the shell's base stylesheet
+   makes every direct body child `no-drag`, and this viewport-sized layer
+   inherited it, cancelling every window-drag strip beneath it once the
+   shell recomputed regions (window drags worked once, then stopped).
+   Take the host and layer out of the app-region computation; `!important`
+   because the shell's `body > :not(#root)` selector outranks ours. The
+   panels themselves stay no-drag so their controls keep receiving clicks. */
+:global(html[data-platform] body > [data-dsh-better-sidebar]),
+:global([data-dsh-panel-host]) {
+  -webkit-app-region: initial !important;
+}
+
+:global([data-dsh-panel-host]) > * {
+  -webkit-app-region: no-drag;
+}
+
 :global([data-dsh-panel-host][data-dsh-panel-host-degraded]) {
   position: absolute;
   top: 0;
