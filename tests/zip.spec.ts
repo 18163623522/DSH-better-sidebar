@@ -18,6 +18,9 @@ import { validateHeaderValue } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
+
+/** Windows has no POSIX file names and no POSIX mode bits (see the two guards below). */
+const isWin32 = process.platform === 'win32'
 import { apply } from '../src/index.ts'
 import { archiveDownloadUrl } from '../src/client/api.ts'
 import {
@@ -388,7 +391,10 @@ describe('buildZip', () => {
       .rejects.toMatchObject({ code: 'bad-request' })
   })
 
-  it('keeps a backslash as part of the file name (POSIX names are literal)', async () => {
+  // POSIX-only: on Windows a backslash IS the separator, so `a\b.txt` can only
+  // ever mean the file `b.txt` inside the directory `a` (the write below fails
+  // with ENOENT). The literal-name semantics under test do not exist there.
+  it.skipIf(isWin32)('keeps a backslash as part of the file name (POSIX names are literal)', async () => {
     const root = tempRoot()
     // `a\b.txt` is ONE legal POSIX file name; splitting it into a directory
     // would silently rename the member (F8).
@@ -427,9 +433,13 @@ describe('buildZip', () => {
     const extracted = join(root, 'out')
     const unpack = spawnSync('unzip', ['-o', file, '-d', extracted], { encoding: 'utf8' })
     expect(unpack.status, unpack.stderr).toBe(0)
-    const inMode = statSync(join(root, 'a.txt')).mode & 0o777
-    const outMode = statSync(join(extracted, 'a.txt')).mode & 0o777
-    expect(outMode).toBe(inMode & 0o644)
+    if (!isWin32) {
+      // POSIX-only: Windows maps every file to 0o666 on both sides, so the
+      // exact-mode parity below can only be asserted where mode bits exist.
+      const inMode = statSync(join(root, 'a.txt')).mode & 0o777
+      const outMode = statSync(join(extracted, 'a.txt')).mode & 0o777
+      expect(outMode).toBe(inMode & 0o644)
+    }
     expect(readFileSync(join(extracted, 'a.txt'), 'utf8')).toBe(content)
     expect(readFileSync(join(extracted, 'dir', 'b.txt'), 'utf8')).toBe(content)
   })
