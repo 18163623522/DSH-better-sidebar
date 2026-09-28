@@ -63,11 +63,11 @@ export const builtinTabPlugins: readonly PluginEntry[] = [
   {
     id: 'dsh-git-forge',
     name: () => t('pluginGitForgeName'),
-    url: 'https://github.com/thirsty5034/dsh-git-forge',
+    url: 'https://github.com/OMSociety/dsh-git-forge',
     description: () => t('pluginGitForgeDesc'),
     // Peer-depends on dsh-better-sidebar (Git Forge tab). Install the
-    // prerequisite first; package is GitHub-sourced until npm publish.
-    install: 'cd ~/.dsh && dsh plugin --profile web add dsh-better-sidebar && dsh plugin --profile web add "dsh-git-forge@github:thirsty5034/dsh-git-forge"',
+    // prerequisite first; the package is published on npm as dsh-git-forge.
+    install: 'cd ~/.dsh && dsh plugin --profile web add dsh-better-sidebar && dsh plugin --profile web add dsh-git-forge@1.0.0',
   },
   {
     id: 'dsh-git-remotes',
@@ -126,11 +126,11 @@ export const builtinTabPlugins: readonly PluginEntry[] = [
   {
     id: 'dsh-ssh-tunnel',
     name: () => t('pluginSshTunnelName'),
-    url: 'https://github.com/thirsty5034/dsh-ssh-tunnel',
+    url: 'https://github.com/OMSociety/dsh-ssh-tunnel',
     description: () => t('pluginSshTunnelDesc'),
     // Peer-depends on dsh-better-sidebar (SSH Tunnel tab + center terminal/SFTP).
-    // Install the prerequisite first; package is GitHub-sourced until npm publish.
-    install: 'cd ~/.dsh && dsh plugin --profile web add dsh-better-sidebar && dsh plugin --profile web add "dsh-ssh-tunnel@github:thirsty5034/dsh-ssh-tunnel"',
+    // Install the prerequisite first; the package is published on npm as dsh-ssh-tunnel.
+    install: 'cd ~/.dsh && dsh plugin --profile web add dsh-better-sidebar && dsh plugin --profile web add dsh-ssh-tunnel@1.0.0',
   },
   {
     id: 'dsh-turn-review',
