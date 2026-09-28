@@ -64,12 +64,28 @@
 }
 
 /* Desktop drag regions ignore pointer-events: the shell's base stylesheet
-   makes every direct body child `no-drag`, and this viewport-sized layer
-   inherited it, cancelling every window-drag strip beneath it once the
-   shell recomputed regions (window drags worked once, then stopped).
-   Take the host and layer out of the app-region computation; `!important`
-   because the shell's `body > :not(#root)` selector outranks ours. The
-   panels themselves stay no-drag so their controls keep receiving clicks. */
+   makes every direct body child `no-drag`, and the plugin HOST is one — in
+   Electron that value also reaches the viewport-sized panel layer inside it
+   (#772's CDP reading; the browser engine used by the mount lane does not
+   propagate it, so the layer's own rule below is belt-and-braces), which is
+   what cancelled every window-drag strip beneath it once the shell
+   recomputed regions (window drags worked once, then stopped). Take the host
+   and layer out of the app-region computation; `!important` because the
+   shell's `body > :not(#root)` selector outranks ours. The panels themselves
+   stay no-drag so their controls keep receiving clicks.
+   The plugin's OTHER persistent viewport-sized body child — the mermaid zoom
+   modal — carries the same reset on its own rule further down, or opening a
+   diagram would blank window drag (and the macOS double-click-title zoom)
+   while it is up. It is a modal SCRIM, so it does get the reset even though
+   it is interactive: only its widgets (`<button>` …) need to stay no-drag,
+   and the residual is that its backdrop inside the shell's top drag band
+   starts a window drag instead of closing the modal — the deliberate trade
+   for keeping the window draggable while a diagram is enlarged.
+   Deliberately NOT applied to the other interactive popups (`.selectionPopup`
+   is a `<button>`; FloatingWindow / AnchoredPopover own pointer drags and are
+   not scrims): the shell's `:is(button, a, input, …)` rule already keeps those
+   no-drag, and `initial !important` would outrank it and start a window drag on
+   press instead — the click-swallow regression of issues #103/#111. */
 :global(html[data-platform] body > [data-dsh-better-sidebar]),
 :global([data-dsh-panel-host]) {
   -webkit-app-region: initial !important;
@@ -1714,6 +1730,15 @@ body[data-dsh-sidebar-dragging] .bottomPanel {
 .mermaidModal {
   position: fixed;
   inset: 0;
+  /* Viewport-sized body child: the shell makes every direct body child
+     `no-drag` (`html[data-platform=darwin] body > :not(#root)`, an
+     id-bearing selector, hence `!important`), and app-region ignores
+     pointer-events — without this reset the open modal cancels every
+     window-drag strip under it plus the macOS double-click-title zoom.
+     Same contract as the panel host rule above; `initial` computes to the
+     neutral `none`, and the toolbar's buttons keep their own no-drag from
+     the shell's `:is(button, …)` rule. */
+  -webkit-app-region: initial !important;
   z-index: 1000;
   display: flex;
   flex-direction: column;
