@@ -49,11 +49,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { SiCursor, SiZedindustries } from 'react-icons/si'
 import { VscFolderOpened, VscLinkExternal, VscPin, VscPinned } from 'react-icons/vsc'
-import {
-  api, archiveBuild, archiveDownloadUrl, archiveStatus, downloadUrl, isOutsideWorkspaceMessage,
-  type FsEntry,
-} from './api.ts'
-import { FenceErrorNotice } from './FenceErrorNotice.tsx'
+import { api, archiveBuild, archiveDownloadUrl, archiveStatus, downloadUrl, type FsEntry } from './api.ts'
 import { builtinFileIcon, builtinFolderIcon } from './file-icons.tsx'
 import { IconUploadOutline16, IconVscode16 } from './icons.tsx'
 import { isImeComposition } from './ime-guard.ts'
@@ -63,7 +59,6 @@ import type { OpenWithTarget } from './open-with.ts'
 import { relativeTo } from './paths.ts'
 import { t } from './locales.ts'
 import type { BetterSidebarService } from './service.ts'
-import type { SidebarStore } from './state.ts'
 import {
   Chip, ConfirmDialog, IconButton, Notice, StatusBadge, useGitStatus,
   type GitTone, type StatusTone,
@@ -406,8 +401,6 @@ const RootRow = memo(function RootRow(props: RootRowProps): ReactNode {
 export function FileTree(props: {
   sessionId: string
   cwd: string | undefined
-  /** The sidebar store: the fence-refusal notice writes the `workspaceFence` pref through it. */
-  store: SidebarStore
   expanded: string[]
   /** Files highlighted by a "Show in folder" reveal (absolute paths). */
   revealed: string[]
@@ -481,7 +474,7 @@ export function FileTree(props: {
   // callbacks must not change identity when the caller re-renders).
   // `onReferenceFile` is read through `propsRef` like the other row callbacks.
   const {
-    sessionId, cwd, store, expanded, revealed, onOpenFileNewTab, onOpenFileSide,
+    sessionId, cwd, expanded, revealed, onOpenFileNewTab, onOpenFileSide,
     openInApp, openWithTargets, openWithPinned, openWithSsh, onOpenWith, onToggleOpenWithPin,
     openWithShowPluginTargets,
     onPathRenamed, onPathDeleted, refreshTick, onUploadRequest, busy, hidden, visible, service,
@@ -506,8 +499,6 @@ export function FileTree(props: {
   const dirRowIcon = (path: string, open: boolean): ReactNode =>
     service !== undefined ? service.folderIcon(path, open, 14) : builtinFolderIcon(open, 14)
   const dataRef = useRef(data)
-  /** Every in-flight level fetch, keyed by directory (aborted on refresh/unmount). */
-  const controllersRef = useRef(new Map<string, AbortController>())
   /** Bumped whenever the cache is wiped: a response from an older generation is dropped. */
   const generationRef = useRef(0)
   /** The row whose path was just copied ("copied" label replaces its button). */
@@ -531,6 +522,8 @@ export function FileTree(props: {
   const [deletingSelected, setDeletingSelected] = useState(false)
   /** The last mutation failure (dismissable strip above the tree). */
   const [actionError, setActionError] = useState<string | null>(null)
+  /** A failed re-list that kept the previous rows on screen (hint line). */
+  const [loadError, setLoadError] = useState<string | null>(null)
   /** The multi-selection (absolute paths) and its Shift anchor. */
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const anchorRef = useRef<string | null>(null)
@@ -640,34 +633,72 @@ export function FileTree(props: {
   }, [])
 
   /**
-   * List one directory into the cache. Levels already loaded (including the
-   * empty placeholder of an in-flight fetch) are left alone; a stale response
-   * — the cache was wiped by a refresh tick, or a newer fetch for the same
-   * directory started — is dropped instead of overwriting fresher data.
+   * List a SET of directories into the cache with ONE `fs.trees` request.
+   *
+   * The visible set (the workspace root plus every expanded directory) is
+   * always loaded this way, so mounting the tree, a refresh tick and expanding
+   * a directory each cost exactly one POST — not one per level (the N+1 the
+   * file list was reported for). Levels already loaded (including the empty
+   * placeholder of an in-flight fetch) are left alone, so an expand only asks
+   * for what is genuinely missing; a stale response — the cache was wiped by a
+   * refresh tick — is dropped instead of overwriting fresher data.
+   *
+   * A level the host failed to read comes back with its own `error` and is
+   * stored on that level alone (the other levels render normally). When the
+   * WHOLE request fails, the levels that already had a listing keep it (plus a
+   * hint) and only the levels with nothing to show carry the message.
+   *
+   * `force` re-lists levels even when they are cached — the refresh tick's
+   * path — while leaving their current rows untouched until the answer lands.
    */
-  const loadDir = useCallback((dir: string) => {
-    if (dataRef.current[dir] !== undefined) return
+  const loadLevels = useCallback((paths: readonly string[], options?: { force?: boolean }) => {
+    const force = options?.force === true
+    const wanted = force
+      ? [...new Set(paths)]
+      : paths.filter(path => dataRef.current[path] === undefined)
+    if (wanted.length === 0) return
     const generation = generationRef.current
-    controllersRef.current.get(dir)?.abort()
-    const controller = new AbortController()
-    controllersRef.current.set(dir, controller)
-    storeLevel(dir, {})
-    api.fsTree({ sessionId, cwd }, dir, controller.signal).then((listing) => {
-      if (controller.signal.aborted || generation !== generationRef.current) return
-      storeLevel(dir, { entries: listing.entries, truncated: listing.truncated })
+    // A FORCED re-list (a refresh tick) keeps the listing on screen until the
+    // fresh one arrives: no blank frame, and a failed refresh degrades to the
+    // previous listing plus a hint instead of an empty tree.
+    if (!force) for (const path of wanted) storeLevel(path, {})
+    // The route takes no signal: the GENERATION counter is the staleness guard
+    // (a refresh tick or an unmount bumps it, so a late answer is dropped).
+    api.fsTrees({ sessionId, cwd }, wanted).then((result) => {
+      if (generation !== generationRef.current) return
+      setLoadError(null)
+      for (const level of result.levels) {
+        storeLevel(level.path, {
+          entries: level.entries,
+          truncated: level.truncated,
+          ...(level.error !== undefined ? { error: level.error } : {}),
+        })
+      }
     }).catch((error: unknown) => {
-      if (controller.signal.aborted || generation !== generationRef.current) return
-      storeLevel(dir, { error: error instanceof Error ? error.message : String(error) })
+      if (generation !== generationRef.current) return
+      const message = error instanceof Error ? error.message : String(error)
+      let keptListing = false
+      for (const path of wanted) {
+        const level = dataRef.current[path]
+        if (level?.entries !== undefined) {
+          keptListing = true
+          continue
+        }
+        storeLevel(path, { error: message })
+      }
+      // Levels that had a listing keep it; the hint explains why they are not
+      // fresher. With nothing to keep, the per-level rows already say it.
+      setLoadError(keptListing ? message : null)
     })
   }, [sessionId, cwd, storeLevel])
 
-  /** Drop one level from the cache and reload it (the fence notice's retry,
-   *  a watch notice, or a landed mutation). */
+  /** Drop one level from the cache and reload it (a watch notice, or the
+   *  parent of a landed mutation). */
   const retryDir = useCallback((dir: string) => {
     delete dataRef.current[dir]
     setData({ ...dataRef.current })
-    loadDir(dir)
-  }, [loadDir])
+    loadLevels([dir])
+  }, [loadLevels])
 
   /**
    * Settle the tree after one rename/delete landed at `prefix`: drop every
@@ -712,38 +743,34 @@ export function FileTree(props: {
       })
   }
 
-  // The caller's refresh tick wipes the cache (declared BEFORE the load
-  // effect so the reload below sees the empty cache) and invalidates every
-  // in-flight response, so a slow answer for the old generation can never
-  // land on top of the fresh listing.
+  // The caller's refresh tick invalidates every in-flight response (a slow
+  // answer for the old generation can never land on top of the fresh listing)
+  // and flags the next load as FORCED: the visible levels are re-listed in one
+  // batch, but their current rows stay on screen until the answer arrives.
+  // Declared BEFORE the load effect so that effect sees the flag.
   const lastTick = useRef(refreshTick)
+  const forceNextLoad = useRef(false)
   useEffect(() => {
     if (lastTick.current === refreshTick) return
     lastTick.current = refreshTick
     generationRef.current += 1
-    for (const controller of controllersRef.current.values()) controller.abort()
-    controllersRef.current.clear()
-    dataRef.current = {}
-    setData({})
+    forceNextLoad.current = true
   }, [refreshTick])
 
   useEffect(() => {
-    // Load the visible set; already-loaded levels (kept in the cache) are
-    // not refetched. Only the refresh tick wipes the cache. Every level
-    // starts its own fetch, so a tick reloads them all concurrently.
+    // Load the visible set in ONE batch request; already-loaded levels (kept
+    // in the cache) are not refetched, so this asks only for what is new — a
+    // refresh tick re-lists root + every expanded directory in one POST.
     const root = cwd
     if (root === undefined) return
-    loadDir(root)
-    for (const dir of expanded) loadDir(dir)
-  }, [cwd, expanded, refreshTick, loadDir])
+    const force = forceNextLoad.current
+    forceNextLoad.current = false
+    loadLevels([root, ...expanded], { force })
+  }, [cwd, expanded, refreshTick, loadLevels])
 
-  // A torn-down tree must not leave requests running against an unmounted
-  // component (their stores would be dropped anyway — this is lifecycle, not
-  // correctness, but it keeps the network honest).
-  useEffect(() => () => {
-    for (const controller of controllersRef.current.values()) controller.abort()
-    controllersRef.current.clear()
-  }, [])
+  // A torn-down tree must not write the answer of an in-flight batch into a
+  // dead component: bumping the generation makes every late response stale.
+  useEffect(() => () => { generationRef.current += 1 }, [])
 
   // Live refresh: the host watches the folders this tree has expanded and
   // names the one that changed, so exactly that level is dropped and
@@ -1502,23 +1529,14 @@ export function FileTree(props: {
       )
     }
     if (level.error !== undefined) {
-      // The fence refusal becomes the friendly notice (reason + one-click
-      // global off + immediate retry of this directory), never the raw
-      // `path "..." is outside workspace` wire text.
+      // A level the host could not read: the raw message on the level that
+      // failed, never on its siblings (the batch reports errors per level).
       return (
         <>
           {head}
-          {isOutsideWorkspaceMessage(level.error)
-            ? (
-              <div style={{ paddingLeft: depth * 22 + 6 }}>
-                <FenceErrorNotice store={store} onDisabled={() => { retryDir(dir) }} />
-              </div>
-            )
-            : (
-              <div className={clsx(css.explorerRow, css.explorerError)} style={{ paddingLeft: depth * 22 + 6 }}>
-                {level.error}
-              </div>
-            )}
+          <div className={clsx(css.explorerRow, css.explorerError)} style={{ paddingLeft: depth * 22 + 6 }}>
+            {level.error}
+          </div>
         </>
       )
     }
@@ -1617,6 +1635,11 @@ export function FileTree(props: {
               strip (the two CAN coexist — a stale error stays readable while a
               new attempt is in flight). `role="status"` makes it a polite live
               region, so progress is announced without stealing focus. */}
+          {/* A refresh whose batch request failed: the rows above are the
+              PREVIOUS listing, so the hint explains why nothing changed. */}
+          {loadError !== null && (
+            <Notice kind="warn" tone="inline">{loadError}</Notice>
+          )}
           {archiveBusy && (
             <Notice kind="loading" tone="inline" role="status">
               {archiveProgress === null

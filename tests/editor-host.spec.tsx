@@ -22,13 +22,16 @@ import { allLeaves, createSidebarStore, type SidebarTab } from '../src/client/st
 // answer without a host (the sibling FileTree specs mock it the same way).
 vi.mock('../src/client/api.ts', () => ({
   api: {
-    fsTree: async () => ({
-      path: '/tmp',
-      entries: [
-        { name: 'sub', path: '/tmp/sub', isDir: true },
-        { name: 'a.ts', path: '/tmp/a.ts', isDir: false },
-      ],
-      truncated: false,
+    // The tree lists its visible set in ONE batched call.
+    fsTrees: async (_scope: unknown, paths: readonly string[]) => ({
+      levels: paths.map(path => ({
+        path,
+        entries: [
+          { name: 'sub', path: '/tmp/sub', isDir: true },
+          { name: 'a.ts', path: '/tmp/a.ts', isDir: false },
+        ],
+        truncated: false,
+      })),
     }),
     // The shared git-status store polls this; a non-repo answer keeps rows plain.
     gitStatus: async () => ({ isRepo: false, entries: [] }),

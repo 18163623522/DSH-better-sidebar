@@ -1,21 +1,22 @@
 /**
  * The host's "new folder" mutation (`fs.mkdir` route → mkdirWorkspaceEntry):
- * shape rules, existence refusal, containment under the fence, the root row
- * as a legal PARENT, and the happy path against a real temporary filesystem.
+ * shape rules, existence refusal, the root row as a legal PARENT, and the
+ * happy path against a real temporary filesystem.
+ *
+ * The workspace fence is GONE: these cases assert the LEXICAL path is returned
+ * as composed (no realpath) and that a parent outside the session workspace is
+ * accepted like any other directory the host user can write.
  */
-import { mkdtemp, mkdir, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdirWorkspaceEntry } from '../src/fs-operations.ts'
 
 let root: string
-/** The workspace root as the host will report it (macOS /tmp is a symlink). */
-let realRoot: string
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'dsh-mkdir-'))
-  realRoot = await realpath(root)
 })
 
 afterEach(async () => {
@@ -36,13 +37,15 @@ describe('mkdirWorkspaceEntry', () => {
   it('creates one directory inside the named row and returns its absolute path', async () => {
     await mkdir(join(root, 'sub'))
     const result = await mkdirWorkspaceEntry({ cwd: root, path: join(root, 'sub'), name: 'fresh' })
-    expect(result.path).toBe(join(realRoot, 'sub', 'fresh'))
+    // Lexical: the path comes back exactly as composed (no realpath — on macOS
+    // /var would otherwise be reported as /private/var).
+    expect(result.path).toBe(join(root, 'sub', 'fresh'))
     expect(await readdir(join(root, 'sub'))).toEqual(['fresh'])
   })
 
   it('accepts the workspace root itself as the parent', async () => {
     const result = await mkdirWorkspaceEntry({ cwd: root, path: root, name: 'top' })
-    expect(result.path).toBe(join(realRoot, 'top'))
+    expect(result.path).toBe(join(root, 'top'))
     expect(await readdir(root)).toEqual(['top'])
   })
 
@@ -57,24 +60,27 @@ describe('mkdirWorkspaceEntry', () => {
     expect(await codeOf(() => mkdirWorkspaceEntry({ cwd: root, path: root, name: 'taken' }))).toBe('fs-error')
   })
 
-  it('refuses a parent outside the workspace while the fence is armed, and allows it when disarmed', async () => {
+  it('creates a directory under a parent outside the workspace (fence removed)', async () => {
     const outside = await mkdtemp(join(tmpdir(), 'dsh-outside-'))
     try {
       await writeFile(join(outside, 'marker.txt'), 'x')
-      expect(await codeOf(() => mkdirWorkspaceEntry({ cwd: root, path: outside, name: 'nope' }))).toBe('forbidden')
-      // The fence is the guard, not the path shape: disarmed, the same call lands.
-      const result = await mkdirWorkspaceEntry({ cwd: root, path: outside, name: 'allowed', fence: false })
-      expect(result.path).toBe(join(await realpath(outside), 'allowed'))
+      // ⚠️ PERMISSION CHANGE: no containment → any writable parent is legal.
+      const result = await mkdirWorkspaceEntry({ cwd: root, path: outside, name: 'allowed' })
+      expect(result.path).toBe(join(outside, 'allowed'))
+      expect(await readdir(outside)).toEqual(['allowed', 'marker.txt'])
     } finally {
       await rm(outside, { recursive: true, force: true })
     }
   })
 
-  it('refuses to create INSIDE a symlink that escapes the workspace', async () => {
+  it('creates INSIDE a symlink that points outside the workspace', async () => {
     const outside = await mkdtemp(join(tmpdir(), 'dsh-link-'))
     try {
       await symlink(outside, join(root, 'escape'))
-      expect(await codeOf(() => mkdirWorkspaceEntry({ cwd: root, path: join(root, 'escape'), name: 'nope' }))).toBe('forbidden')
+      // The link is followed like any directory (no realpath guard).
+      const result = await mkdirWorkspaceEntry({ cwd: root, path: join(root, 'escape'), name: 'inside-link' })
+      expect(result.path).toBe(join(root, 'escape', 'inside-link'))
+      expect(await readdir(outside)).toEqual(['inside-link'])
     } finally {
       await rm(outside, { recursive: true, force: true })
     }

@@ -13,7 +13,7 @@
  * session's authoritative cwd comes from the session store.
  */
 import { mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { basename, dirname, extname, isAbsolute, join } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path'
 import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { WebSocket, WebSocketServer } from 'ws'
@@ -28,7 +28,7 @@ import {
   type SidebarConfig,
   type SidebarPrefs,
 } from './config.ts'
-import { parentOf, requireAbsolute, listDirectory, rootLabel } from './fs-tree.ts'
+import { invalidateDirectoryCache, listDirectory, messageOf, parentOf, requireAbsolute, rootLabel, type SidebarFsEntry } from './fs-tree.ts'
 import { resolveSessionPath } from './session-path.ts'
 import { mkdirWorkspaceEntry, renameWorkspaceEntry, removeWorkspaceEntry, writeWorkspaceUpload } from './fs-operations.ts'
 import { ensureWorkspacePath, ensureWorkspaceWritePath } from './path-security.ts'
@@ -74,6 +74,18 @@ export type {
 export { archiveNameOf, collectZipEntries, contentDispositionOf, disambiguateArchiveNames } from './archive-route.ts'
 /** Plugin identity for cordis.yml rows. */
 export const name = 'dsh-better-sidebar'
+
+/** Row bound of one `fs.trees` batch request (a mount/refresh sends what it shows). */
+export const FS_TREES_MAX_PATHS = 64
+
+/** One level of an `fs.trees` batch: either a listing or that level's failure. */
+export interface SidebarFsLevel {
+  path: string
+  entries: SidebarFsEntry[]
+  truncated: boolean
+  /** Present only when THIS level failed (the batch itself still succeeded). */
+  error?: string
+}
 
 /** Services required before mounting: the webserver routes, the session store, the web runtime's trusted hosts, and the tool registry. */
 export const inject = ['webServer', 'sessions', 'webRuntime', 'tools']
@@ -235,19 +247,6 @@ export interface SidebarSettingsFace {
   update(patch: Record<string, unknown>, expectedRevision?: number): Promise<{ value?: unknown; revision?: number }>
 }
 
-/**
- * Whether the workspace fence is armed for the sidebar's filesystem routes
- * (the settings-page `workspaceFence` switch under the files card's gear).
- * An absent settings service or a missing field keeps the fence ON — the
- * containment default never depends on the settings surface being reachable.
- */
-function fenceEnabledOf(getSettings: () => SidebarSettingsFace | undefined): boolean {
-  const settings = getSettings()
-  const value = settings?.get().value
-  if (value === null || typeof value !== 'object') return true
-  return (value as Record<string, unknown>).workspaceFence !== false
-}
-
 function buildApi(
   ctx: Context,
   resolved: ResolvedSidebarConfig,
@@ -292,8 +291,37 @@ function buildApi(
     'fs.tree': async (payload) => {
       const { cwd } = await cwdOf(payload)
       const record = payload as { path?: unknown }
-      const target = record.path === undefined ? cwd : await ensureWorkspacePath(cwd, requireString(payload, 'path'), fenceEnabledOf(getSettings))
+      const target = record.path === undefined ? cwd : await ensureWorkspacePath(cwd, requireString(payload, 'path'))
       return listDirectory(target, resolved.listLimit)
+    },
+    // Batch listing: one request for every level the tree has expanded, so a
+    // mount/refresh costs one round trip instead of N. Each path rides the
+    // SAME resolution + cache as `fs.tree` (so a level listed here is warm for
+    // the single-path route and vice versa), and one failing level is reported
+    // in place — the other levels still render.
+    'fs.trees': async (payload) => {
+      const { cwd } = await cwdOf(payload)
+      const record = payload as { paths?: unknown } | null
+      const paths = Array.isArray(record?.paths)
+        ? record.paths.filter((value): value is string => typeof value === 'string' && value !== '')
+        : []
+      if (paths.length === 0) throw new SidebarError('bad-request', 'paths must be a non-empty array')
+      if (paths.length > FS_TREES_MAX_PATHS) {
+        throw new SidebarError('bad-request', `too many paths (max ${FS_TREES_MAX_PATHS})`)
+      }
+      const levels = await Promise.all(paths.map(async (raw): Promise<SidebarFsLevel> => {
+        // A session-relative path is accepted here (the tree already carries
+        // cwd-relative paths); `fs.tree` itself keeps requiring absolute input.
+        const requested = isAbsolute(raw) ? raw : `${cwd}${sep}${raw}`
+        try {
+          return await listDirectory(await ensureWorkspacePath(cwd, requested), resolved.listLimit)
+        } catch (error) {
+          // Per-level failure: the batch itself stays a success (one unreadable
+          // directory must not blank the whole tree).
+          return { path: requested, entries: [], truncated: false, error: messageOf(error) }
+        }
+      }))
+      return { levels }
     },
     'fs.search': async (payload) => {
       // The editor side panel's global name search: rooted at the session
@@ -310,14 +338,14 @@ function buildApi(
       // child-repo path is relative to the selected repoRoot, not the session
       // cwd; thread it so the path resolves inside the authorized workspace.
       const selected = selectedRepoOf(payload)
-      const path = await ensureWorkspacePath(cwd, await resolveGitPath(cwd, requireString(payload, 'path'), selected), fenceEnabledOf(getSettings))
+      const path = await ensureWorkspacePath(cwd, await resolveGitPath(cwd, requireString(payload, 'path'), selected))
       const { content, truncated, binary, size, head } = await readText(path, resolved.readLimit)
       if (binary) return { kind: 'binary', size, truncated, head }
       return { kind: 'text', content, truncated }
     },
     'fs.write': async (payload) => {
       const { cwd } = await cwdOf(payload)
-      const path = await ensureWorkspaceWritePath(cwd, requireString(payload, 'path'), fenceEnabledOf(getSettings))
+      const path = await ensureWorkspaceWritePath(cwd, requireString(payload, 'path'))
       const content = requireString(payload, 'content')
       const tmp = `${path}.dsh-sidebar-tmp-${process.pid}`
       try {
@@ -328,6 +356,7 @@ function buildApi(
         await rm(tmp, { force: true }).catch(() => {})
         throw new SidebarError('fs-error', `cannot write "${path}": ${error instanceof Error ? error.message : String(error)}`, 400)
       }
+      invalidateDirectoryCache(dirname(path))
       return { ok: true }
     },
     // The tree row's rename: single-segment name, destination-existence and
@@ -339,18 +368,16 @@ function buildApi(
         cwd,
         path: requireString(payload, 'path'),
         name: requireString(payload, 'name'),
-        fence: fenceEnabledOf(getSettings),
       })
     },
     // The tree's "new folder": one directory inside an existing row, with
-    // the same single-segment/existence/containment rules as rename.
+    // the same single-segment/existence rules as rename.
     'fs.mkdir': async (payload) => {
       const { cwd } = await cwdOf(payload)
       return mkdirWorkspaceEntry({
         cwd,
         path: requireString(payload, 'path'),
         name: requireString(payload, 'name'),
-        fence: fenceEnabledOf(getSettings),
       })
     },
     // The tree row's delete (permanent — the host has no trash): recursive
@@ -360,7 +387,6 @@ function buildApi(
       return removeWorkspaceEntry({
         cwd,
         path: requireString(payload, 'path'),
-        fence: fenceEnabledOf(getSettings),
       })
     },
     'git.worktrees': async (payload) => {
@@ -561,9 +587,8 @@ function buildApi(
         : []
       if (paths.length === 0) throw new SidebarError('bad-request', 'paths must be a non-empty array')
       const name = archiveNameOf(typeof record?.name === 'string' ? record.name : null)
-      const fenceOn = fenceEnabledOf(getSettings)
       const selected: string[] = []
-      for (const raw of paths) selected.push(await ensureWorkspacePath(cwd, raw, fenceOn))
+      for (const raw of paths) selected.push(await ensureWorkspacePath(cwd, raw))
       // Same-basename selections (a/index.ts + b/index.ts) get parent segments
       // prepended, so no two archive members collide.
       const entries: ZipEntry[] = []
@@ -931,7 +956,6 @@ export function apply(ctx: Context, config?: SidebarConfig): void {
           relativePath,
           chunks: req,
           limit: resolved.uploadLimit,
-          fence: fenceEnabledOf(() => settingsFace),
         })
         writeOk(res, { path, size })
       } catch (error) {
@@ -999,7 +1023,7 @@ export function apply(ctx: Context, config?: SidebarConfig): void {
         const raw = url.searchParams.get('path')
         if (sessionId === null || raw === null) throw new SidebarError('bad-request', 'sessionId and path are required')
         const cwd = await sessionCwdOf(ctx, sessionId, url.searchParams.get('cwd') ?? undefined)
-        const path = await ensureWorkspacePath(cwd, raw, fenceEnabledOf(() => settingsFace))
+        const path = await ensureWorkspacePath(cwd, raw)
         const info = await stat(path)
         if (!info.isFile() || info.size > resolved.mediaLimit) {
           throw new SidebarError('fs-error', 'not a file or too large', 400)
@@ -1059,7 +1083,7 @@ export function apply(ctx: Context, config?: SidebarConfig): void {
         // real-path guard, with the same semantics as the media route's
         // fallback.
         const cwd = await sessionCwdOf(ctx, sessionId)
-        const absolute = await ensureWorkspacePath(cwd, path, fenceEnabledOf(() => settingsFace))
+        const absolute = await ensureWorkspacePath(cwd, path)
         const info = await stat(absolute)
         if (!info.isFile() || info.size > resolved.mediaLimit) {
           throw new SidebarError('fs-error', 'not a file or too large', 400)
@@ -1108,8 +1132,8 @@ export function apply(ctx: Context, config?: SidebarConfig): void {
   // stale for the rest of the session. One socket per session carries the
   // reader's expanded-folder set; the host watches exactly those directories
   // and pushes a debounced notice per change, so the tree re-lists in place.
-  // Paths are resolved through the same workspace fence as `fs.tree`, so a
-  // watch can never observe a directory the tree itself could not list.
+  // Paths are resolved exactly like `fs.tree`'s (same resolution, same
+  // lexical rules), so the watch observes what the tree can list.
   const fsWatchWss = new WebSocketServer({ noServer: true })
   ctx.effect(() => ctx.webServer.registerUpgrade({
     path: '/sidebar/ws/fs-watch',
@@ -1119,7 +1143,7 @@ export function apply(ctx: Context, config?: SidebarConfig): void {
         return
       }
       fsWatchWss.handleUpgrade(req as unknown as IncomingMessage, socket as unknown as Duplex, head as Buffer, (ws) => {
-        void attachFsWatch(ctx, ws, req, () => fenceEnabledOf(() => settingsFace))
+        void attachFsWatch(ctx, ws, req)
       })
     },
   }), 'dsh-better-sidebar: file-tree watch WebSocket')
@@ -1145,16 +1169,14 @@ interface FsWatchFrame {
  * the session's workspace exactly like `fs.tree`'s. A path that fails
  * resolution, or a rejection past the watcher cap, is answered with
  * `{ dir, ok: false }` so the client can stop asking rather than retry.
- * @param ctx - host plugin context (session cwd, workspace fence).
+ * @param ctx - host plugin context (session cwd).
  * @param ws - the accepted socket.
  * @param req - the upgrade request carrying `?sessionId=`.
- * @param fenceEnabled - whether the workspace containment fence is on.
  */
 async function attachFsWatch(
   ctx: Context,
   ws: WebSocket,
   req: SidebarHttpRequest,
-  fenceEnabled: () => boolean,
 ): Promise<void> {
   try {
     const url = new URL(req.url ?? '/', 'http://dsh.internal')
@@ -1176,7 +1198,7 @@ async function attachFsWatch(
     ws.on('close', () => { watchers.close() })
     ws.on('error', () => { watchers.close() })
     ws.on('message', (data) => {
-      void handleFsWatchFrame(ctx, ws, watchers, sessionId, data, fenceEnabled)
+      void handleFsWatchFrame(ctx, ws, watchers, sessionId, data)
     })
   } catch (error) {
     ws.close(1011, error instanceof Error ? error.message : String(error))
@@ -1190,7 +1212,6 @@ async function attachFsWatch(
  * @param watchers - the socket's watcher set.
  * @param sessionId - the session the socket was opened for.
  * @param data - the raw frame text.
- * @param fenceEnabled - whether the workspace containment fence is on.
  */
 async function handleFsWatchFrame(
   ctx: Context,
@@ -1198,7 +1219,6 @@ async function handleFsWatchFrame(
   watchers: DirectoryWatchers,
   sessionId: string,
   data: unknown,
-  fenceEnabled: () => boolean,
 ): Promise<void> {
   let frame: FsWatchFrame
   try {
@@ -1210,7 +1230,7 @@ async function handleFsWatchFrame(
   if (path === undefined || path === '') return
   try {
     const cwd = await sessionCwdOf(ctx, sessionId)
-    const dir = await ensureWorkspacePath(cwd, path, fenceEnabled())
+    const dir = await ensureWorkspacePath(cwd, path)
     if (frame.op === 'unwatch') {
       watchers.remove(dir)
       return

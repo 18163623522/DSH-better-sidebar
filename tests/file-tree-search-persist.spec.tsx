@@ -15,7 +15,6 @@ import { beforeAll, afterEach, describe, expect, it, vi } from 'vitest'
 import { createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
-import { createSidebarStore } from '../src/client/state.ts'
 import { TreePanel } from '../src/client/TreePanel.tsx'
 
 import { setupReactAct } from './test-utils.ts'
@@ -37,14 +36,14 @@ function defaultListing(path: string): Listing {
   return { path, entries: [{ name: 'a.ts', path: '/tmp/a.ts', isDir: false }], truncated: false }
 }
 
-const { fsTree, fsSearch } = vi.hoisted(() => ({
-  fsTree: vi.fn(async (_scope: unknown, path: string) => defaultListing(path)),
+const { fsTrees, fsSearch } = vi.hoisted(() => ({
+  fsTrees: vi.fn(async (_scope: unknown, paths: readonly string[]) => ({ levels: paths.map(path => defaultListing(path)) })),
   fsSearch: vi.fn(async () => ({ matches: ['a.ts'], truncated: false })),
 }))
 
 vi.mock('../src/client/api.ts', () => ({
   api: {
-    fsTree,
+    fsTrees,
     fsSearch,
     // The tree reads the shared git-status store; a non-repo answer keeps
     // every row plain.
@@ -67,7 +66,6 @@ function mountPanel(): Harness {
     root.render(createElement(TreePanel, {
       sessionId: 's1',
       cwd: '/tmp',
-      store: createSidebarStore(),
       expanded: [],
       revealed: [],
       onToggle: () => {},
@@ -116,8 +114,8 @@ let harness: Harness
 afterEach(() => {
   harness.unmount()
   document.body.innerHTML = ''
-  fsTree.mockReset()
-  fsTree.mockImplementation(async (_scope: unknown, path: string) => defaultListing(path))
+  fsTrees.mockReset()
+  fsTrees.mockImplementation(async (_scope: unknown, paths: readonly string[]) => ({ levels: paths.map(path => defaultListing(path)) }))
   fsSearch.mockClear()
 })
 
@@ -125,7 +123,7 @@ describe('TreePanel search keeps the tree mounted', () => {
   it('parks the tree instead of unmounting it, so clearing the query keeps the level cache', async () => {
     harness = mountPanel()
     await act(async () => {})
-    expect(fsTree).toHaveBeenCalledTimes(1)
+    expect(fsTrees).toHaveBeenCalledTimes(1)
     expect(treeBody(harness.container).hasAttribute('hidden')).toBe(false)
     expect(harness.container.textContent).toContain('a.ts')
 
@@ -140,7 +138,7 @@ describe('TreePanel search keeps the tree mounted', () => {
     expect(treeBody(harness.container).hasAttribute('hidden')).toBe(false)
     expect(resultsBody(harness.container).hasAttribute('hidden')).toBe(true)
     // No second listing: the cache (and the expansion state) survived.
-    expect(fsTree).toHaveBeenCalledTimes(1)
+    expect(fsTrees).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -148,8 +146,8 @@ describe('TreePanel refresh and truncated levels', () => {
   it('drops a level response that lands after the cache was wiped', async () => {
     // The FIRST listing never settles until the test resolves it; the refresh
     // click starts the second one, which answers immediately.
-    let resolveStale: (listing: Listing) => void = () => {}
-    fsTree.mockImplementationOnce(async () => await new Promise<Listing>(resolve => { resolveStale = resolve }))
+    let resolveStale: (result: { levels: Listing[] }) => void = () => {}
+    fsTrees.mockImplementationOnce(async () => await new Promise<{ levels: Listing[] }>(resolve => { resolveStale = resolve }))
     harness = mountPanel()
     await act(async () => {})
     // The pending level shows nothing yet (its rows are not known).
@@ -162,12 +160,12 @@ describe('TreePanel refresh and truncated levels', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
-    expect(fsTree).toHaveBeenCalledTimes(2)
+    expect(fsTrees).toHaveBeenCalledTimes(2)
     expect(harness.container.textContent).toContain('a.ts')
 
     // The stale first answer arrives LAST and must be discarded.
     await act(async () => {
-      resolveStale({ path: '/tmp', entries: [{ name: 'stale.ts', path: '/tmp/stale.ts', isDir: false }], truncated: false })
+      resolveStale({ levels: [{ path: '/tmp', entries: [{ name: 'stale.ts', path: '/tmp/stale.ts', isDir: false }], truncated: false }] })
       await Promise.resolve()
       await Promise.resolve()
     })
@@ -176,10 +174,8 @@ describe('TreePanel refresh and truncated levels', () => {
   })
 
   it('surfaces a truncated level instead of hiding it', async () => {
-    fsTree.mockImplementation(async (_scope: unknown, path: string) => ({
-      path,
-      entries: [{ name: 'a.ts', path: '/tmp/a.ts', isDir: false }],
-      truncated: true,
+    fsTrees.mockImplementation(async (_scope: unknown, paths: readonly string[]) => ({
+      levels: paths.map(path => ({ path, entries: [{ name: 'a.ts', path: '/tmp/a.ts', isDir: false }], truncated: true })),
     }))
     harness = mountPanel()
     await act(async () => {})

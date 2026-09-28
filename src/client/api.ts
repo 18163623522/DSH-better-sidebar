@@ -27,22 +27,6 @@ export class SidebarApiError extends Error {
   }
 }
 
-/**
- * Whether a wire failure is the workspace fence refusing a path outside the
- * session workspace (the host message reads `path "..." is outside
- * workspace`). The request-trust fence answers code `forbidden` with the
- * bare message 'forbidden', so the message fragment — not the code alone —
- * identifies this case.
- */
-export function isOutsideWorkspaceError(error: unknown): boolean {
-  return error instanceof SidebarApiError && isOutsideWorkspaceMessage(error.message)
-}
-
-/** Message-level variant for surfaces that stored the raw text (file-tree level errors). */
-export function isOutsideWorkspaceMessage(message: string): boolean {
-  return message.includes('outside workspace')
-}
-
 /** Explorer row (host fs-tree shape). */
 export interface FsEntry {
   name: string
@@ -53,6 +37,15 @@ export interface FsEntry {
   isSymlink: boolean
   /** For symlinks: the target is missing or unreadable (stat failed). */
   broken: boolean
+}
+
+/** One level of a `fs.trees` batch: a listing, or that level's failure. */
+export interface FsLevel {
+  path: string
+  entries: FsEntry[]
+  truncated: boolean
+  /** Present only when THIS level failed (the batch itself succeeded). */
+  error?: string
 }
 
 /** Git status entry (host git shape). */
@@ -290,6 +283,13 @@ export const api = {
     call<{ sessionId: string; cwd: string; root: string; parent: string | null }>('session.cwd', scopePayload(scope, {}), signal),
   fsTree: (scope: SessionScope, path: string, signal?: AbortSignal) =>
     call<{ path: string; entries: FsEntry[]; truncated: boolean }>('fs.tree', scopePayload(scope, { path }), signal),
+  /**
+   * Batch listing: every requested level in ONE request (the tree's mount and
+   * refresh send the expanded set instead of N `fsTree` calls). A level that
+   * failed carries `error` in place — the batch itself still succeeds.
+   */
+  fsTrees: (scope: SessionScope, paths: readonly string[], signal?: AbortSignal) =>
+    call<{ levels: FsLevel[] }>('fs.trees', scopePayload(scope, { paths: [...paths] }), signal),
   /** Global recursive file-name search rooted at the session cwd (the editor
    *  side panel's search box); matches are cwd-relative '/'-separated paths. */
   fsSearch: (scope: SessionScope, query: string, signal?: AbortSignal) =>

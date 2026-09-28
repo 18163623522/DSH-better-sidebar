@@ -826,7 +826,27 @@ describe('archive task flow (build → status → download)', () => {
     expect(byName.get('b/index.ts')!.data.toString('utf8')).toBe('from b\n')
   })
 
-  it('never follows a symlink out of the workspace', async () => {
+  it('zips a path outside the session workspace (fence removed)', async () => {
+    const root = tempRoot()
+    const workspace = join(root, 'workspace')
+    const outside = join(root, 'outside')
+    mkdirSync(workspace)
+    mkdirSync(outside)
+    writeFileSync(join(outside, 'secret.txt'), 'secret')
+    const { download } = await archiveFlow({
+      sessionId: 's-zip',
+      cwd: workspace,
+      paths: [join(outside, 'secret.txt')],
+    })
+    // ⚠️ PERMISSION CHANGE: an absolute path outside the workspace is now a
+    // normal selection (no 403 branch exists any more).
+    expect(download.status).toBe(200)
+    const entries = readZip(download.body)
+    expect(entries.map(entry => entry.name)).toEqual(['secret.txt'])
+    expect(entries[0]!.data.toString('utf8')).toBe('secret')
+  })
+
+  it('skips a symlink row while walking a directory (no escape by following)', async () => {
     const root = tempRoot()
     const workspace = join(root, 'workspace')
     const outside = join(root, 'outside')
@@ -835,44 +855,18 @@ describe('archive task flow (build → status → download)', () => {
     writeFileSync(join(outside, 'secret.txt'), 'secret')
     try {
       symlinkSync(outside, join(workspace, 'link'))
-      // A file INSIDE the workspace, so the archive itself is readable.
       writeFileSync(join(workspace, 'keep.txt'), 'keep')
     } catch {
       return // symlink creation needs privileges on Windows
     }
-    const { api, download } = mountHost()
-    // Selecting the escaping link refuses at the workspace fence (the build
-    // canonicalizes before walking), so its target is never read…
-    const linked = await post(api, 'archive.build', { sessionId: 's-zip', cwd: workspace, paths: [join(workspace, 'link')] })
-    expect(linked.ok).toBe(false)
-    expect(linked.status).toBe(403)
-    // …and walking the containing directory reports the link as an entry-less
-    // row instead of descending into it.
-    const build = await post(api, 'archive.build', { sessionId: 's-zip', cwd: workspace, paths: [workspace] })
-    const id = (build.value as { id: string }).id
-    await waitForReady(api, id, 's-zip')
-    const walked = await get(download, `/sidebar/archive?sessionId=s-zip&id=${encodeURIComponent(id)}`)
-    expect(walked.status).toBe(200)
-    const entries = readZip(walked.body)
+    // A DIRECTORY walk still never descends through a link (that rule is about
+    // cycles, not containment): the link row is reported as an entry-less row,
+    // so the archive holds no bytes from its target.
+    const { download } = await archiveFlow({ sessionId: 's-zip', cwd: workspace, paths: [workspace] })
+    expect(download.status).toBe(200)
+    const entries = readZip(download.body)
     expect(entries.map(entry => entry.name)).toEqual(['workspace/', 'workspace/keep.txt'])
     expect(entries.some(entry => entry.data.toString('utf8').includes('secret'))).toBe(false)
-  })
-
-  it('refuses a path outside the workspace with 403', async () => {
-    const root = tempRoot()
-    const workspace = join(root, 'workspace')
-    const outside = join(root, 'outside')
-    mkdirSync(workspace)
-    mkdirSync(outside)
-    writeFileSync(join(outside, 'secret.txt'), 'secret')
-    const { api } = mountHost()
-    const response = await post(api, 'archive.build', {
-      sessionId: 's-zip',
-      cwd: workspace,
-      paths: [join(outside, 'secret.txt')],
-    })
-    expect(response.status).toBe(403)
-    expect(response.error?.code).toBe('forbidden')
   })
 
   it('rejects an empty path list and a download without sessionId/id (400)', async () => {

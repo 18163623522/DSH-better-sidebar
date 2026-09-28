@@ -11,7 +11,7 @@ import { act } from 'react-dom/test-utils'
 import { createNativeTabRecords, NativeTabBody, NativeTabTitle } from '../src/client/native/tab-adapter.tsx'
 import { registerNativeSurface } from '../src/client/native/index.ts'
 import { createBetterSidebarService, type SidebarSurface } from '../src/client/service.ts'
-import { createSidebarStore, type SidebarTab } from '../src/client/state.ts'
+import { createSidebarStore, toggleExpanded, type SidebarTab } from '../src/client/state.ts'
 
 const scope = { sessionId: 's1', cwd: '/work' }
 
@@ -45,15 +45,87 @@ describe('createNativeTabRecords', () => {
     expect(view.tab).toMatchObject({ id: 'tab-3', path: '/work/b.ts', title: 'renamed.ts' })
   })
 
-  it('tracks expansion per record and bumps its version', () => {
+  it('tracks expansion in the SESSION state and bumps the record version', () => {
+    const store = createSidebarStore()
+    store.setSession('s1')
     const records = createNativeTabRecords()
+    records.attachStore(store)
     records.ensure({ id: 'tab-4', kind: 'editor', title: 'Files', params: undefined, scope })
     const before = records.versionOf('tab-4')
     records.toggleExpanded('tab-4', '/work/src')
     expect(records.get('tab-4')?.expanded).toEqual(['/work/src'])
+    expect(store.getSessionStates().get('s1')?.expanded).toEqual(['/work/src'])
     expect(records.versionOf('tab-4')).toBeGreaterThan(before)
     records.toggleExpanded('tab-4', '/work/src')
     expect(records.get('tab-4')?.expanded).toEqual([])
+  })
+
+  it('keeps the expansion after a tab record is DROPPED and rebuilt (the reported bug)', () => {
+    // The user's flow: open a file preview (the files tab unmounts and its
+    // native record is dropped), close it, return to the files page — a NEW
+    // record for the SAME session must show the set the user had.
+    const store = createSidebarStore()
+    store.setSession('s1')
+    const records = createNativeTabRecords()
+    records.attachStore(store)
+    records.ensure({ id: 'files-1', kind: 'files', title: 'Files', params: undefined, scope })
+    records.toggleExpanded('files-1', '/work/src')
+    records.toggleExpanded('files-1', '/work/src/components')
+    expect(records.get('files-1')?.expanded).toEqual(['/work/src', '/work/src/components'])
+
+    records.drop('files-1')
+    const rebuilt = records.ensure({ id: 'files-2', kind: 'files', title: 'Files', params: undefined, scope })
+    expect(rebuilt.expanded).toEqual(['/work/src', '/work/src/components'])
+  })
+
+  it('shares one expansion set between two native tabs of the same session', () => {
+    const store = createSidebarStore()
+    store.setSession('s1')
+    const records = createNativeTabRecords()
+    records.attachStore(store)
+    records.ensure({ id: 'files-a', kind: 'files', title: 'Files', params: undefined, scope })
+    records.ensure({ id: 'files-b', kind: 'files', title: 'Files', params: undefined, scope })
+
+    records.toggleExpanded('files-a', '/work/src')
+    expect(records.get('files-b')?.expanded).toEqual(['/work/src'])
+
+    // The WORKBENCH's own toggle (the per-session reducer) is the same state.
+    store.reduce(state => toggleExpanded(state, '/work/lib'))
+    expect(records.get('files-a')?.expanded).toEqual(['/work/src', '/work/lib'])
+    expect(records.get('files-b')?.expanded).toEqual(['/work/src', '/work/lib'])
+
+    // …and a toggle from the native side is visible to the workbench reducer's
+    // state (one authority, two surfaces).
+    records.toggleExpanded('files-b', '/work/src')
+    expect(store.getSessionStates().get('s1')?.expanded).toEqual(['/work/lib'])
+  })
+
+  it('keeps two sessions apart (a native tab in each)', () => {
+    const store = createSidebarStore()
+    store.setSession('s1')
+    const records = createNativeTabRecords()
+    records.attachStore(store)
+    records.ensure({ id: 's1-files', kind: 'files', title: 'Files', params: undefined, scope })
+    records.ensure({ id: 's2-files', kind: 'files', title: 'Files', params: undefined, scope: { sessionId: 's2', cwd: '/other' } })
+
+    // The ACTIVE session goes through `reduce`; the background one through
+    // `reduceFor` — both must land in their own session only.
+    records.toggleExpanded('s1-files', '/work/src')
+    records.toggleExpanded('s2-files', '/other/lib')
+    expect(records.get('s1-files')?.expanded).toEqual(['/work/src'])
+    expect(records.get('s2-files')?.expanded).toEqual(['/other/lib'])
+    expect(store.getSessionStates().get('s1')?.expanded).toEqual(['/work/src'])
+    expect(store.getSessionStates().get('s2')?.expanded).toEqual(['/other/lib'])
+  })
+
+  it('reflects a store change made while no view is subscribed yet', () => {
+    const store = createSidebarStore()
+    store.setSession('s1')
+    store.reduce(state => toggleExpanded(state, '/work/src'))
+    const records = createNativeTabRecords()
+    records.attachStore(store)
+    const view = records.ensure({ id: 'late', kind: 'files', title: 'Files', params: undefined, scope })
+    expect(view.expanded).toEqual(['/work/src'])
   })
 
   it('notifies subscribers and forgets a dropped record', () => {

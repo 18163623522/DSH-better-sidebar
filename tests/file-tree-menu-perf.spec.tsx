@@ -22,7 +22,6 @@ import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 import { FileTree } from '../src/client/FileTree.tsx'
 import type { BetterSidebarService } from '../src/client/service.ts'
-import { createSidebarStore } from '../src/client/state.ts'
 
 import { setupReactAct } from './test-utils.ts'
 setupReactAct()
@@ -32,8 +31,9 @@ beforeAll(() => {
   Object.defineProperty(window.navigator, 'language', { value: 'en-US', configurable: true })
 })
 
-const { fsTree, gitStatus, fileApps, directoryApps, archiveBuild, archiveStatus } = vi.hoisted(() => ({
+const { fsTree, fsTrees, gitStatus, fileApps, directoryApps, archiveBuild, archiveStatus } = vi.hoisted(() => ({
   fsTree: vi.fn(),
+  fsTrees: vi.fn(),
   gitStatus: vi.fn(),
   fileApps: vi.fn(),
   directoryApps: vi.fn(),
@@ -42,7 +42,7 @@ const { fsTree, gitStatus, fileApps, directoryApps, archiveBuild, archiveStatus 
 }))
 
 vi.mock('../src/client/api.ts', () => ({
-  api: { fsTree, gitStatus, fileApps, directoryApps, archiveBuild, archiveStatus },
+  api: { fsTree, fsTrees, gitStatus, fileApps, directoryApps, archiveBuild, archiveStatus },
   downloadUrl: () => '/sidebar/file',
   archiveDownloadUrl: (id: string) => `/sidebar/archive/${id}`,
   isOutsideWorkspaceMessage: () => false,
@@ -75,7 +75,6 @@ async function mountTree(): Promise<Harness> {
     root.render(createElement(FileTree, {
       sessionId: 'menu-perf',
       cwd: '/tmp',
-      store: createSidebarStore(),
       expanded: [],
       revealed: [],
       onToggle: () => {},
@@ -167,16 +166,21 @@ function mark(): void {
 
 beforeEach(() => {
   vi.useFakeTimers()
+  // The single-level route must never be used again (the batch one replaced
+  // it); it stays mocked so the probe can assert the count is 0.
   fsTree.mockReset()
-  fsTree.mockImplementation(async (_scope: unknown, path: string) => ({
-    path,
-    entries: [
-      { name: 'sub', path: '/tmp/sub', isDir: true },
-      { name: 'a.ts', path: '/tmp/a.ts', isDir: false },
-      { name: 'b.ts', path: '/tmp/b.ts', isDir: false },
-      { name: 'c.ts', path: '/tmp/c.ts', isDir: false },
-    ],
-    truncated: false,
+  fsTrees.mockReset()
+  fsTrees.mockImplementation(async (_scope: unknown, paths: readonly string[]) => ({
+    levels: paths.map(path => ({
+      path,
+      entries: [
+        { name: 'sub', path: '/tmp/sub', isDir: true },
+        { name: 'a.ts', path: '/tmp/a.ts', isDir: false },
+        { name: 'b.ts', path: '/tmp/b.ts', isDir: false },
+        { name: 'c.ts', path: '/tmp/c.ts', isDir: false },
+      ],
+      truncated: false,
+    })),
   }))
   gitStatus.mockReset()
   gitStatus.mockResolvedValue({ isRepo: false, entries: [] })

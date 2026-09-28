@@ -185,6 +185,10 @@ export interface NativeSurfaceDeps {
  */
 export function registerNativeSurface(deps: NativeSurfaceDeps): () => void {
   const { ctx, store, service, records, reportFailure } = deps
+  // Bind the store BEFORE any body can render: the per-session state is the
+  // authority for the explorer's expansion set, so the native surface and the
+  // workbench share one set per session and a closed tab cannot drop it.
+  records.attachStore(store)
   // Wait for the tab-type REGISTRY (a service), not for the slot declaration:
   // the native seat declares `sidebar.right.pane.tab` BEFORE it provides
   // `sidebarRightTabs`, so a declaration-triggered registration reads the

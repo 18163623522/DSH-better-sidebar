@@ -23,7 +23,6 @@ import clsx from 'clsx'
 import { IconFolderOpenRegular, IconRefreshOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { api } from './api.ts'
 import type { BetterSidebarService } from './service.ts'
-import type { SidebarStore } from './state.ts'
 import { FileTree } from './FileTree.tsx'
 import { IconUploadOutline16 } from './icons.tsx'
 import type { OpenInApp } from './open-in-app.ts'
@@ -51,8 +50,6 @@ interface UploadSession {
 export function TreePanel(props: {
   sessionId: string
   cwd: string | undefined
-  /** The sidebar store (passed through to the tree's fence-refusal notice). */
-  store: SidebarStore
   expanded: string[]
   revealed: string[]
   onToggle: (path: string) => void
@@ -90,7 +87,7 @@ export function TreePanel(props: {
   service?: BetterSidebarService
 }) {
   const {
-    sessionId, cwd, store, expanded, revealed, onToggle, onOpenFile, onOpenFileNewTab, onOpenFileSide,
+    sessionId, cwd, expanded, revealed, onToggle, onOpenFile, onOpenFileNewTab, onOpenFileSide,
     openInApp, openWithTargets, openWithPinned, openWithSsh, onOpenWith, onToggleOpenWithPin,
     openWithShowPluginTargets,
     onReferenceFile, onPathRenamed, onPathDeleted, visible, full, service,
@@ -287,7 +284,6 @@ export function TreePanel(props: {
       <FileTree
         sessionId={sessionId}
         cwd={cwd}
-        store={store}
         expanded={expanded}
         revealed={revealed}
         onToggle={onToggle}

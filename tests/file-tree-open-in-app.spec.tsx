@@ -21,7 +21,6 @@ import { act } from 'react-dom/test-utils'
 import { FileTree } from '../src/client/FileTree.tsx'
 import { createOpenInApp, type OpenInApp, type OpenInAppEntry } from '../src/client/open-in-app.ts'
 import type { OpenWithTarget } from '../src/client/open-with.ts'
-import { createSidebarStore } from '../src/client/state.ts'
 
 import { setupReactAct } from './test-utils.ts'
 setupReactAct()
@@ -33,13 +32,11 @@ beforeAll(() => {
 
 vi.mock('../src/client/api.ts', () => ({
   api: {
-    fsTree: async () => ({
-      path: '/tmp',
-      entries: [
+    fsTrees: async (_scope: unknown, paths: readonly string[]) => ({
+      levels: paths.map(path => ({ path, entries: [
         { name: 'sub', path: '/tmp/sub', isDir: true },
         { name: 'a.ts', path: '/tmp/a.ts', isDir: false },
-      ],
-      truncated: false,
+      ], truncated: false })),
     }),
     // The tree reads the shared git-status store; a non-repo answer keeps
     // every row plain (this spec is about the open-in-app rows).
@@ -114,7 +111,6 @@ async function mountTree(handle?: Handle, plugin: {
     root.render(createElement(FileTree, {
       sessionId: 's1',
       cwd: '/tmp',
-      store: createSidebarStore(),
       expanded: [],
       revealed: [],
       onToggle: () => {},

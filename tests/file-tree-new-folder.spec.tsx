@@ -13,7 +13,6 @@ import { createElement, useState, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 import { FileTree } from '../src/client/FileTree.tsx'
-import { createSidebarStore } from '../src/client/state.ts'
 
 import { setupReactAct } from './test-utils.ts'
 setupReactAct()
@@ -23,16 +22,16 @@ beforeAll(() => {
   Object.defineProperty(window.navigator, 'language', { value: 'en-US', configurable: true })
 })
 
-const { fsMkdir, fsTree } = vi.hoisted(() => ({
+const { fsMkdir, fsTrees } = vi.hoisted(() => ({
   fsMkdir: vi.fn(async (_scope: unknown, _path: string, name: string) => ({ path: `/tmp/${name}` })),
   // `listingFor` is a hoisted function declaration, so the factory may
   // reference it; it only runs when the mock is called (after module init).
-  fsTree: vi.fn(async (_scope: unknown, path: string) => listingFor(path)),
+  fsTrees: vi.fn(async (_scope: unknown, paths: readonly string[]) => ({ levels: paths.map(path => listingFor(path)) })),
 }))
 
 vi.mock('../src/client/api.ts', () => ({
   api: {
-    fsTree,
+    fsTrees,
     fsMkdir,
     // The tree reads the shared git-status store; a non-repo answer keeps
     // every row plain (this spec is about folder creation).
@@ -79,7 +78,6 @@ function mountTree(initialExpanded: string[] = []): Harness {
     return createElement(FileTree, {
       sessionId: 's1',
       cwd: '/tmp',
-      store: createSidebarStore(),
       expanded,
       revealed: [],
       onToggle: (path: string) => {
@@ -154,8 +152,8 @@ afterEach(() => {
   document.body.innerHTML = ''
   fsMkdir.mockReset()
   fsMkdir.mockImplementation(async (_scope: unknown, _path: string, name: string) => ({ path: `/tmp/${name}` }))
-  fsTree.mockReset()
-  fsTree.mockImplementation(async (_scope: unknown, path: string) => listingFor(path))
+  fsTrees.mockReset()
+  fsTrees.mockImplementation(async (_scope: unknown, paths: readonly string[]) => ({ levels: paths.map(path => listingFor(path)) }))
 })
 
 describe('FileTree new folder', () => {
@@ -181,12 +179,12 @@ describe('FileTree new folder', () => {
     // level's first row.
     expect(editorIndent(harness.container)).toBe('28px')
     setNativeValue(input, 'newdir')
-    const listings = fsTree.mock.calls.length
+    const listings = fsTrees.mock.calls.length
     await act(async () => { pressKey(input, 'Enter') })
     expect(fsMkdir).toHaveBeenCalledWith({ sessionId: 's1', cwd: '/tmp' }, '/tmp', 'newdir')
     expect(harness.container.querySelector('input[class*="explorerRenameInput"]')).toBeNull()
     // The level was dropped and re-listed, so the new folder shows up.
-    expect(fsTree.mock.calls.length).toBeGreaterThan(listings)
+    expect(fsTrees.mock.calls.length).toBeGreaterThan(listings)
   })
 
   it('expands a collapsed directory, edits at ITS level, and creates there', async () => {

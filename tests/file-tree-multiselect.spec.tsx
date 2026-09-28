@@ -17,7 +17,6 @@ import { createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 import { FileTree } from '../src/client/FileTree.tsx'
-import { createSidebarStore } from '../src/client/state.ts'
 
 import { setupReactAct } from './test-utils.ts'
 setupReactAct()
@@ -27,22 +26,25 @@ beforeAll(() => {
   Object.defineProperty(window.navigator, 'language', { value: 'en-US', configurable: true })
 })
 
-const { fsRemove, fsTree } = vi.hoisted(() => ({
+const { fsRemove, fsTrees } = vi.hoisted(() => ({
   fsRemove: vi.fn(async (_scope: unknown, path: string) => ({ path })),
-  fsTree: vi.fn(async () => ({
-    path: '/tmp',
-    entries: [
-      { name: 'sub', path: '/tmp/sub', isDir: true },
-      { name: 'a.ts', path: '/tmp/a.ts', isDir: false },
-      { name: 'b.ts', path: '/tmp/b.ts', isDir: false },
-    ],
-    truncated: false,
+  // One BATCHED list call answers every requested level with the same shape.
+  fsTrees: vi.fn(async (_scope: unknown, paths: readonly string[]) => ({
+    levels: paths.map(path => ({
+      path,
+      entries: [
+        { name: 'sub', path: '/tmp/sub', isDir: true },
+        { name: 'a.ts', path: '/tmp/a.ts', isDir: false },
+        { name: 'b.ts', path: '/tmp/b.ts', isDir: false },
+      ],
+      truncated: false,
+    })),
   })),
 }))
 
 vi.mock('../src/client/api.ts', () => ({
   api: {
-    fsTree,
+    fsTrees,
     fsRemove,
     // The tree reads the shared git-status store; a non-repo answer keeps
     // every row plain (this spec is about the selection).
@@ -69,7 +71,6 @@ async function mountTree(expanded: string[] = []): Promise<Harness> {
     root.render(createElement(FileTree, {
       sessionId: 's1',
       cwd: '/tmp',
-      store: createSidebarStore(),
       expanded,
       revealed: [],
       onToggle: (path: string) => { toggled.push(path) },
@@ -135,7 +136,7 @@ afterEach(() => {
   document.body.innerHTML = ''
   fsRemove.mockReset()
   fsRemove.mockImplementation(async (_scope: unknown, path: string) => ({ path }))
-  fsTree.mockClear()
+  fsTrees.mockClear()
 })
 
 describe('FileTree multi-selection', () => {

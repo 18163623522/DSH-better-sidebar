@@ -12,7 +12,6 @@ import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 import type { GitStatusResult } from '../src/client/api.ts'
 import { FileTree } from '../src/client/FileTree.tsx'
-import { createSidebarStore } from '../src/client/state.ts'
 
 import { setupReactAct } from './test-utils.ts'
 setupReactAct()
@@ -26,14 +25,12 @@ const { gitStatus } = vi.hoisted(() => ({ gitStatus: vi.fn() }))
 
 vi.mock('../src/client/api.ts', () => ({
   api: {
-    fsTree: async () => ({
-      path: '/tmp',
-      entries: [
+    fsTrees: async (_scope: unknown, paths: readonly string[]) => ({
+      levels: paths.map(path => ({ path, entries: [
         { name: 'sub', path: '/tmp/sub', isDir: true },
         { name: 'a.ts', path: '/tmp/a.ts', isDir: false },
         { name: 'b.ts', path: '/tmp/b.ts', isDir: false },
-      ],
-      truncated: false,
+      ], truncated: false })),
     }),
     gitStatus,
   },
@@ -65,7 +62,6 @@ async function mountTree(): Promise<Harness> {
     root.render(createElement(FileTree, {
       sessionId: 'git-spec',
       cwd: '/tmp',
-      store: createSidebarStore(),
       expanded: [],
       revealed: [],
       onToggle: () => {},

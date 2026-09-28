@@ -214,7 +214,7 @@ dsh registry enable dsh-external/dsh-better-sidebar
 - 🗂️ **只读文件预览整体让给 DSH 的文档预览**：DSH 0.1.7 的 `ui-sidebar-documentpreview` 自带表格 / PDF / 图片 / Office 渲染（宿主侧 Office→PDF 转换、电子表格 worker 表格、图片 / PDF 缩放、按目录自动刷新），所以插件删掉了自己的 `image` / `pdf` / `binary-download` 三个 viewer，并在 `editor.canOpen` 里**拒绝认领**这些扩展名——`xlsx xls csv tsv fods pdf png jpg jpeg gif webp svg bmp ico doc docx ppt pptx`——把文件地址交回宿主。**rc.1 收回其中 9 个**：`xlsb` / `xlt` / `xltx` / `xltm` / `ots` / `dot` / `dotx` / `avif` / `ods` 宿主其实**没有渲染器**（点开只有「暂不支持预览」），而它们在让出之前是走插件兜底显示下载面板的，属于我们上一版自己引入的回归；现由插件的 `code` catch-all 重新认领。`fods` 继续让出（宿主会用纯文本显示这段扁平 XML，比下载面板有用）。**插件仍保留三件宿主没有的**：Markdown（自带渲染器）、HTML（自带沙箱预览 + `htmlViewerNoSandbox` / `htmlViewerDefaultUnsafe` 两个安全开关）、以及**可编辑**的文本 / 代码编辑器（内置那几个是只读预览）；未知二进制（`.zip` / `.wasm`）仍走代码编辑器判 binary 后的下载面板，功能不回归。
 - 🔗 **外链接管收敛**：删掉按协议分流的三个外链接管设置项（20 份词典的相关词条一并删除）。现在插件**只认领有 tab 类型通过 `urlTarget` 明确声明认领的链接**，其余一律放行、由宿主决定（DSH 0.1.7 新增用户设置 `linkOpening`，决定正文链接进侧栏还是新标签页）；**一个都没认领到时不阻止默认行为**；认领成功但目标类型在打开那一刻已不可用（插件卸载 / 被关）时兜底 `window.open(url, '_blank', 'noopener,noreferrer')`——顺手修掉了上一版留下的真实回归：插件自绘 markdown（侧边对话转录 / 编辑器预览 / diff 面板）里的 http 链接点了没反应。另外宿主的 `browser` kind **在 Web profile 已不再挂载**（0.1.7 只在 desktop profile 挂载它）。
 - ⚙️ **设置接入面重写 + 用户偏好的自动回迁**：DSH 0.1.7 删除了插件可注册的设置命名空间，改为**按插件 Loader 行的 entry id 找表单**（`SettingsForms`：只剩 `describe` / `update` / `replace` / `mutate` / `configure`）。插件偏好因此落在 **profile 的 cordis patch 文档**里（即本插件的挂载行），不再是 `~/.dsh/settings.yaml`；schema 来自插件模块导出的 `Config`（本版把用户偏好并进 `Config`，并给每个偏好字段标 `meta.volatile = true`——**这一个标记就是「改设置实时生效、不重挂插件」的全部机制**）。**用户设置不会丢**：插件首次启动时会把旧 `settings.yaml` / `settings.yaml.imported` 里的 `dsh-better-sidebar` 段一次性回迁（只在该行还没有任何用户值时执行，且只迁移当前 schema 仍声明的字段）。entry id 是**运行时自发现**的（本包默认 `better-sidebar`，聚合包挂载时会是别的 id），不硬编码。
-- 🔄 **文件树实时刷新**：插件接管了内置「文件」页，宿主自己的按目录 watch 覆盖不到它——本版新增 `/sidebar/ws/fs-watch`：客户端上报**已展开**的目录，宿主按目录 `fs.watch`（150ms 去抖、每连接 64 个句柄上限、路径仍走 `fs.tree` 同一道 workspace fence），改动后只重列那一层、折叠即退订。此前文件树会一直陈旧到手动刷新。
+- 🔄 **文件树实时刷新**：插件接管了内置「文件」页，宿主自己的按目录 watch 覆盖不到它——本版新增 `/sidebar/ws/fs-watch`：客户端上报**已展开**的目录，宿主按目录 `fs.watch`（150ms 去抖、每连接 64 个句柄上限、路径仍走 `fs.tree` 同一套词法解析），改动后只重列那一层、折叠即退订。此前文件树会一直陈旧到手动刷新。
 - 🐛 **会话跟随修好了**：插件此前读的是一个**不存在的 `SessionListState.current` 字段**（插件的类型镜像自己造了它，编译期一直放行），导致「按会话持久化」实际没绑上、窄屏 park 门控恒假。现在改用 DSH 0.1.7 的 `ctx.sidebarRight.mounted`（只在该列真正换成另一个会话时才变化）。
 - 🖥️ **模型侧代价不变**：插件原有的 8 个 `terminal_*` 工具（默认关）已在上一版删除，上游等价物 `@deepseek-ai/dsh-tool-terminal` **仍未被任何 shipped bundle 默认挂载**，需要持久终端时请在 profile 的 `cordis.patch.yml` 里自行插入一行 `tool-terminal`（否则模型只有一次性 `bash` / `pwsh`）。
 - 📐 **基线**：`@deepseek-ai/dsh-*` 全部钉 `0.1.7-rc.1`，`@deepseek-ai/cordis` peer 下限 `^4.0.3`；`ui-primitives` 图标具名导出整族改名（`Icon<Name><14|16>` → `Icon<Name>Regular` / `Medium`，26 个具名导入随之适配）；会话格式 v3→v4（sidechat 边界注入改用 `plugin:dsh-better-sidebar`，tool 结果消息改 `role: 'tool'` 顶层形状，解析器同时接受新旧两种形状以兼容历史日志）。
@@ -270,7 +270,8 @@ make clean          # 清理 lib/、*.tgz、playwright-report/、test-results/
 
 ## 🔐 安全
 
-- 路由受 Host 头信任围栏保护（与 `/api` 一致）；`fs.write` 原子写入；媒体/预览路由仅限会话 cwd 内文件（`workspaceFence` 关掉时除外，见设置页）；git 只调 CLI、绝不设置身份
+- 路由受 Host 头信任围栏保护（与 `/api` 一致）；`fs.write` 原子写入；git 只调 CLI、绝不设置身份
+- ⚠️ **v0.23.0 起文件系统路由不再做工作区包含检查**：`fs.tree` / `fs.trees` / `fs.read` / `fs.write` / `fs.rename` / `fs.remove` / `fs.mkdir` / 媒体 / HTML 预览 / `/sidebar/upload` / `archive.build` 能读写**宿主用户可访问的任意路径**（只受 OS 权限约束，`workspaceFence` 开关与 403 分支已删除）——调用方不能再把这些路由当作被围栏保护的接口
 - HTML 预览的内容在**不透明源沙箱 iframe** 中渲染（无 `allow-same-origin`/`allow-top-navigation`、`no-referrer`、权限策略全禁）；`/sidebar/html` 路由带 CSP `sandbox` + 大小/路径边界
 - 设置页可按功能关闭 HTML 预览的沙箱（`htmlViewerNoSandbox` / `htmlViewerDefaultUnsafe`，默认关闭，带警告文案）——关闭后内容与界面同源，仅建议对完全可信内容使用。**网页 tab 的沙箱不再是插件的面**：浏览器视图由宿主提供（desktop profile），其沙箱与导航策略见 DSH 侧文档
 
