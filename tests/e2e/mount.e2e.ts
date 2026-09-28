@@ -617,14 +617,52 @@ test('conservative auto: URL stamps alone never modify the layout; plugin chrome
   expect(hasNoDragRule, 'the bundle must ship the drag-region opt-out rule').toBe(true)
   // The viewport-sized panel host must NOT inherit the shell's blanket
   // `body > :not(#root) { no-drag }` — it would cancel every window-drag
-  // strip beneath it on macOS (issue #772).
-  const hasHostReset = await page.evaluate(() => {
-    for (const tag of document.querySelectorAll('style')) {
-      if (tag.textContent !== null && /\[data-dsh-panel-host\]\{-webkit-app-region:\s*initial\s*!important/.test(tag.textContent)) return true
-    }
-    return false
+  // strip beneath it on macOS (issue #772). A text match only proves the
+  // declaration shipped, so this probe reproduces the SHELL's two darwin
+  // rules verbatim, flips the platform attribute the shell stamps, and reads
+  // the COMPUTED property: app-region is inherited and ignores
+  // pointer-events, so the loss shows on the host/layer — never on the strip
+  // itself (it computes `drag` in every configuration, which is why a fix
+  // validated only against the strip proves nothing).
+  const regions = await page.evaluate(() => {
+    const style = document.createElement('style')
+    style.textContent = [
+      'html[data-platform=darwin] [data-window-drag]{-webkit-app-region:drag}',
+      'html[data-platform=darwin] body>:not(#root){-webkit-app-region:no-drag}',
+    ].join('\n')
+    const strip = document.createElement('div')
+    strip.setAttribute('data-window-drag', '')
+    strip.style.cssText = 'position:fixed;top:0;left:0;right:0;height:8px'
+    const probe = document.createElement('div')
+    document.head.appendChild(style)
+    // INSIDE #root: the shell's real drag strip is a frame child, not a body
+    // child — a body child would be caught by the blanket rule itself (it is
+    // id-bearing, so it outranks the `[data-window-drag]` rule).
+    const root = document.querySelector('#root')
+    ;(root ?? document.body).appendChild(strip)
+    const host = document.querySelector('[data-dsh-better-sidebar]')
+    const layer = document.querySelector('[data-dsh-panel-host]')
+    // This stamp-only page has no session, so the panel host has no child of
+    // its own; `probe` stands in for the workbench panel the same `> *`
+    // selector targets in a real session.
+    layer?.appendChild(probe)
+    const previous = document.documentElement.dataset.platform
+    document.documentElement.dataset.platform = 'darwin'
+    const read = (element: Element | null): string => element === null
+      ? 'missing'
+      : getComputedStyle(element).getPropertyValue('-webkit-app-region').trim()
+    const result = { strip: read(strip), host: read(host), layer: read(layer), layerChild: read(probe) }
+    probe.remove()
+    strip.remove()
+    style.remove()
+    if (previous === undefined) delete document.documentElement.dataset.platform
+    else document.documentElement.dataset.platform = previous
+    return result
   })
-  expect(hasHostReset, 'the panel host must opt out of app-region computation').toBe(true)
+  expect(regions.strip, 'the drag strip itself must keep computing `drag`').toBe('drag')
+  expect(regions.host, 'the plugin host must not inherit the shell no-drag').toBe('none')
+  expect(regions.layer, 'the panel host must not inherit the shell no-drag').toBe('none')
+  expect(regions.layerChild, 'panels stay no-drag so their controls keep receiving clicks').toBe('no-drag')
 })
 
 test('standard WCO geometry drives the strip reactively (issue #257)', async ({ page }) => {
