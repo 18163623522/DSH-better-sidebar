@@ -115,6 +115,15 @@ export const builtinTabPlugins: readonly PluginEntry[] = [
     install: 'cd ~/.dsh && dsh plugin --profile web add dsh-better-sidebar && dsh plugin --profile web add dsh-server-deck@latest',
   },
   {
+    id: 'dsh-side-chat',
+    name: 'Side Chat',
+    url: 'https://github.com/xlennart/dsh-side-chat',
+    description: 'Independent native DSH side conversation with a standalone split view and an optional Better Sidebar page; its own shortcut remains available in both modes.',
+    // Better Sidebar is an optional peer: Side Chat remains fully usable on
+    // its own, and registers this tab automatically when the peer is present.
+    install: 'cd ~/.dsh && dsh plugin --profile web add dsh-better-sidebar && dsh plugin --profile web add "github:xlennart/dsh-side-chat#v1.2.1"',
+  },
+  {
     id: 'dsh-suhuang-scroll',
     name: () => t('pluginSuhuangScrollName'),
     url: 'https://github.com/YZDame/dsh-suhuang-scroll',
