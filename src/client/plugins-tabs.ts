@@ -34,7 +34,6 @@ export const builtinTabPlugins: readonly PluginEntry[] = [
     install: 'cd ~/.dsh && dsh plugin --profile web add dsh-better-sidebar && dsh plugin --profile web add git+https://github.com/Fisfzy/ego-browser.git',
   },
   {
-  {
     id: '@modusensus/dsh-mneme',
     name: () => t('pluginMnemeName'),
     url: 'https://github.com/modusensus/dsh-mneme',
@@ -71,6 +70,13 @@ export const builtinTabPlugins: readonly PluginEntry[] = [
     // dsh-docs-panel hard-depends on dsh-better-sidebar (required peer), so
     // the install line installs the prerequisite first, then the plugin.
     install: 'cd ~/.dsh && dsh plugin --profile web add dsh-better-sidebar && dsh plugin --profile web add dsh-docs-panel',
+  },
+  {
+    id: 'dsh-tylina',
+    name: () => t('pluginTylinaName'),
+    url: 'https://github.com/tylina/dsh-tylina',
+    description: () => t('pluginTylinaDesc'),
+    install: 'cd ~/.dsh && dsh plugin --profile web add dsh-better-sidebar && dsh plugin --profile web add dsh-tylina',
   },
   {
     id: 'dsh-flowglass',
