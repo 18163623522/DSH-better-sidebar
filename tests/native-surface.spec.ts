@@ -11,7 +11,6 @@ import { act } from 'react-dom/test-utils'
 import { createNativeTabRecords, NativeTabBody, NativeTabTitle } from '../src/client/native/tab-adapter.tsx'
 import { createNativeSurface } from '../src/client/native/surface.ts'
 import { registerNativeSurface } from '../src/client/native/index.ts'
-import { createNativeSurface } from '../src/client/native/surface.ts'
 import { createBetterSidebarService, type SidebarSurface } from '../src/client/service.ts'
 import { createSidebarStore, toggleExpanded, type SidebarTab } from '../src/client/state.ts'
 
@@ -345,7 +344,7 @@ describe('createNativeSurface activate/close (the real adapter)', () => {
     // focusing anything — external plugins with multi-instance native tabs
     // (dsh-sidenote's side chats) could never bring a tab to the front.
     const { surface, records, focus } = mountSurface()
-    records.ensure({ id: 'tab-9', kind: 'sidechat', title: 'Side Chat', params: { meta: { threadId: 't-1' } }, scope })
+    records.ensure({ sessionId: 's1', id: 'tab-9', kind: 'sidechat', title: 'Side Chat', params: { meta: { threadId: 't-1' } }, scope })
     expect(surface.activate('tab-9')).toBe(true)
     expect(focus).toHaveBeenCalledTimes(1)
     expect(focus).toHaveBeenCalledWith('tab-9')
@@ -359,17 +358,17 @@ describe('createNativeSurface activate/close (the real adapter)', () => {
 
   it('close returns the record meta and rides the on-screen face for the mounted session', () => {
     const { surface, records, close } = mountSurface()
-    records.ensure({ id: 'tab-10', kind: 'sidechat', title: 'hello thread', params: { meta: { threadId: 't-7' } }, scope })
+    records.ensure({ sessionId: 's1', id: 'tab-10', kind: 'sidechat', title: 'hello thread', params: { meta: { threadId: 't-7' } }, scope })
     const closed = surface.close('s1', 'tab-10')
     expect(closed).toEqual({ type: 'sidechat', title: 'hello thread', meta: { threadId: 't-7' } })
     // The mounted seat is s1's, so the host close rode the on-screen face.
     expect(close).toHaveBeenCalledWith('tab-10')
-    expect(records.has('tab-10')).toBe(false)
+    expect(records.has('s1', 'tab-10')).toBe(false)
   })
 
   it('close of a non-mounted session rides the per-session face', () => {
     const { surface, records } = mountSurface()
-    records.ensure({ id: 'tab-11', kind: 'sidechat', title: 'bg', params: undefined, scope })
+    records.ensure({ sessionId: 's2', id: 'tab-11', kind: 'sidechat', title: 'bg', params: undefined, scope })
     const closed = surface.close('s2', 'tab-11')
     expect(closed).toEqual({ type: 'sidechat', title: 'bg' })
   })
