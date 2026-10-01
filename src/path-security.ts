@@ -17,6 +17,7 @@
  * way they did with the fence: the change is the SEMANTICS — "resolve" rather
  * than "guard".
  */
+import { isAbsolute, join } from 'node:path'
 import { requireAbsolute } from './fs-tree.ts'
 import { resolveSessionPath } from './session-path.ts'
 
@@ -61,5 +62,10 @@ export async function ensureWorkspaceWritePath(cwd: string, target: string, _fen
  * (lexical `..` collapse). Throws fs-error for a non-absolute result.
  */
 export function resolveTarget(cwd: string, target: string): string {
-  return requireAbsolute(resolveSessionPath(cwd, target))
+  // #646: the ecosystem passes session-relative targets (e.g. `openFile(scope,
+  // 'pastes/x.txt')` keeps `pastes/x.txt` in the tab). Join them onto the
+  // session cwd before the absolute check so every entry point (fs.read /
+  // write / rename / remove / upload, media, html) shares ONE contract.
+  const joined = isAbsolute(target) ? target : join(cwd, target)
+  return requireAbsolute(resolveSessionPath(cwd, joined))
 }
