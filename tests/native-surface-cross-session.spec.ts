@@ -28,12 +28,23 @@ describe('createNativeSurface cross-session opens', () => {
       openResource: vi.fn(),
       openResourceIn: vi.fn(),
       close: vi.fn(),
+      // #776: the mounted-seat observation (`ISidebarRight.mounted`) is the
+      // only sanctioned on-screen-session source (the session list has NO
+      // `current` field in any DSH release — AGENTS §3.4.9).
+      mounted: {
+        getSnapshot: () => list.current,
+        subscribe: (fn: () => void) => {
+          notify = fn
+          return () => { notify = undefined }
+        },
+      },
     }
     const ctx = {
       get: () => controller,
       sessions: {
         list: {
-          getSnapshot: () => ({ current: list.current }),
+          // No `current` field: the real SessionListState never had one.
+          getSnapshot: () => ({}),
           subscribe: (fn: () => void) => {
             notify = fn
             return () => { notify = undefined }
