@@ -512,6 +512,7 @@ export const zh = {
   pluginTylinaDesc: 'Typst 文档编辑工具：与当前会话共用工作区，WYSIWYG 编辑排版 Typst 文档，可用于编写和排版论文、报告、试卷、简历、图表、海报、乐谱和 PPTX 格式导出的 Slides',
   pluginEgoBrowserDesc: '把 CitroLabs/ego-lite 接进 DeepSeek Harness 的 agent 浏览器：32 个 ego_* 工具驱动真实 Chromium，侧边栏原生「ego 浏览器」Tab 实时观察 agent 逛的每个页面，可直接点击/拖拽/输入接管；装 better-sidebar 时自动注册 Tab，没装则退回浮动浮窗',
   pluginBilingualReaderDesc: '在 DSH 侧边栏读论文 PDF：原生 PDF 显示，选中一段文字即用大模型划词翻译，结合上下文、完全隔离主对话，只作阅读辅助',
+  pluginDshMemoryDeltaDesc: '跨会话记忆：只注入变化的部分（无变化时零注入），带到期复核提醒、相关度排序检索和侧边栏页签。',
   pluginSentinelName: 'dsh-sentinel 唤醒系统',
   pluginMnemeName: 'dsh-mneme 记忆库',
   pluginMnemeDesc: '跨会话记忆引擎：autoDream 后台巩固、会话总结与用户画像，SQLite + 可人工编辑的 Markdown 镜像，完全离线私有；安装 better-sidebar 后注册「记忆库」Tab（记忆/实体/状态/设置四视图），未安装时保留侧边栏独立面板',
@@ -537,6 +538,7 @@ export const zh = {
   pluginVideoPreviewName: '视频预览插件',
   pluginTurnOutlineName: 'dsh-turn-outline 轮次轨迹',
   pluginTurnOutlineDesc: '把会话按用户轮次折叠成「输入 + 工具步骤 + 输出」摘要，点击任意步骤一键跳回对话原位；零 LLM 调用、只读',
+  pluginDshMemoryDeltaName: 'dsh-memory-delta 记忆',
   presetDshDesktopDesc: 'Electron 高级模式（无边框）：macOS 顶栏 20px、Windows 无 WCO 时 32px 标题栏让位',
 }
 
@@ -1031,6 +1033,7 @@ export const en: Record<keyof typeof zh, string> = {
   pluginEgoBrowserDesc: 'The agent browser for DeepSeek Harness: 32 ego_* tools drive a real Chromium, with a native sidebar "ego browser" tab giving a live view of every page the agent visits — you can click, drag, and type to take over. Registers the tab automatically when better-sidebar is present, otherwise falls back to a floating bubble',
   pluginBetterOverleafDesc: 'Overleaf tab for better-sidebar: direct-CDP browser login (third-party Chromium supported), project list/switch, local git mirrors under <workspace>/overleaf/, two-way git sync with read-only API fallback, and file preview through the sidebar workbench',
   pluginBilingualReaderDesc: 'Read paper PDFs in the DSH sidebar: native PDF rendering, select text to translate it with the LLM, using context while staying fully isolated from the main conversation — a reading aid only',
+  pluginDshMemoryDeltaDesc: 'Cross-session memory that injects only what changed — nothing at all when nothing changed — with review-date reminders, relevance-ranked search and a sidebar tab.',
   pluginSentinelName: 'dsh-sentinel Wake-up System',
   pluginMnemeName: 'dsh-mneme Memory Library',
   pluginMnemeDesc: 'Cross-session memory engine: autoDream background consolidation, session summarization and user profile; SQLite + human-editable Markdown mirrors, fully offline and private. Registers a "Memory Library" tab (memories/entities/status/settings views) when better-sidebar is present and keeps its standalone sidebar panel as a fallback',
@@ -1056,6 +1059,7 @@ export const en: Record<keyof typeof zh, string> = {
   pluginVideoPreviewName: 'Video Preview',
   pluginTurnOutlineName: 'dsh-turn-outline Turn Outline',
   pluginTurnOutlineDesc: 'Fold the session into user turns (input + tool steps + output) and click any step to jump back to its exact spot in the conversation — no LLM calls, read-only',
+  pluginDshMemoryDeltaName: 'dsh-memory-delta Memory',
   presetDshDesktopDesc: 'Electron advanced (frameless) mode: macOS reserves a 20px top strip; Windows reserves a 32px title bar when WCO is unavailable',
 }
 

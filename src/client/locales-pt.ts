@@ -509,5 +509,7 @@ export const pt: Record<string, string> = {
   pluginVideoPreviewName: 'Pré-visualização de vídeo',
   pluginTurnOutlineName: "dsh-turn-outline Esboço do turno",
   pluginTurnOutlineDesc: "Dobra a sessão em turnos do usuário (entrada + etapas de ferramenta + saída); clique em qualquer etapa para voltar ao ponto exato da conversa — sem chamadas de LLM, somente leitura",
+  pluginDshMemoryDeltaName: 'dsh-memory-delta Memória',
+  pluginDshMemoryDeltaDesc: 'Memória entre sessões: injeta apenas o que mudou (nada quando nada mudou), com lembrete de revisão, busca por relevância e aba lateral.',
   presetDshDesktopDesc: 'Modo avançado Electron (sem moldura): o macOS reserva 20px no topo; o Windows reserva 32px para a barra de título sem WCO',
 }

@@ -517,5 +517,7 @@ export const it: Record<string, string> = {
   pluginVideoPreviewName: 'Anteprima video',
   pluginTurnOutlineName: "dsh-turn-outline Schema dei turni",
   pluginTurnOutlineDesc: "Ripiega la sessione in turni utente (input + passaggi strumento + output); clic su un passaggio per tornare al punto esatto della conversazione — nessuna chiamata LLM, sola lettura",
+  pluginDshMemoryDeltaName: 'dsh-memory-delta Memoria',
+  pluginDshMemoryDeltaDesc: 'Memoria tra sessioni: inietta solo ciò che è cambiato (nulla se nulla è cambiato), con promemoria di revisione, ricerca per rilevanza e scheda laterale.',
   presetDshDesktopDesc: 'Modalità avanzata Electron (senza bordi): macOS riserva 20px in alto; Windows riserva 32px per la barra del titolo quando WCO non è disponibile',
 }

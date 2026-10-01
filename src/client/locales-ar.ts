@@ -527,5 +527,7 @@ export const ar: Record<string, string> = {
   pluginVideoPreviewName: 'معاينة الفيديو',
   pluginTurnOutlineName: "dsh-turn-outline مخطط الجولات",
   pluginTurnOutlineDesc: "يطوي الجلسة إلى جولات المستخدم (الإدخال + خطوات الأدوات + المخرجات)؛ انقر على أي خطوة للانتقال إلى موضعها الدقيق في المحادثة — بدون استدعاء LLM، للقراءة فقط",
+  pluginDshMemoryDeltaName: 'dsh-memory-delta الذاكرة',
+  pluginDshMemoryDeltaDesc: 'ذاكرة عبر الجلسات: يُحقن ما تغيّر فقط (ولا شيء عند عدم وجود تغيير)، مع تذكير بموعد المراجعة وبحث مرتّب حسب الصلة وتبويب في الشريط الجانبي.',
   presetDshDesktopDesc: 'وضع Electron المتقدم (بلا إطار): يحجز macOS شريطًا علويًا بمقدار 20px، ويحجز Windows بمقدار 32px لشريط العنوان عند غياب WCO',
 }

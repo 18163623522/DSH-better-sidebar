@@ -526,5 +526,7 @@ export const tr: Record<string, string> = {
   pluginVideoPreviewName: 'Video önizlemesi',
   pluginTurnOutlineName: "dsh-turn-outline Tur özeti",
   pluginTurnOutlineDesc: "Oturumu kullanıcı turlarına (girdi + araç adımları + çıktı) katlar; herhangi bir adıma tıklayarak sohbette tam konumuna atlayın — LLM çağrısı yok, yalnızca okunur",
+  pluginDshMemoryDeltaName: 'dsh-memory-delta Bellek',
+  pluginDshMemoryDeltaDesc: 'Oturumlar arası bellek: yalnızca değişenler enjekte edilir (değişiklik yoksa hiçbir şey), gözden geçirme tarihi hatırlatması, alaka sıralı arama ve kenar çubuğu sekmesi ile.',
   presetDshDesktopDesc: 'Electron gelişmiş (çerçevesiz) mod: macOS üstte 20px ayırır; Windows, WCO yokken başlık çubuğu için 32px ayırır',
 }

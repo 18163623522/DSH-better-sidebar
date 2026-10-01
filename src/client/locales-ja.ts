@@ -528,5 +528,7 @@ export const ja: Record<string, string> = {
   pluginVideoPreviewName: '動画プレビュー',
   pluginTurnOutlineName: "dsh-turn-outline ターンアウトライン",
   pluginTurnOutlineDesc: "セッションをユーザーターン（入力＋ツール手順＋出力）ごとに折りたたみ、任意のステップをクリックすると会話の該当箇所へワンクリックでジャンプ。LLM 呼び出しなし・読み取り専用",
+  pluginDshMemoryDeltaName: 'dsh-memory-delta メモリ',
+  pluginDshMemoryDeltaDesc: 'セッションをまたぐ記憶：変化した部分だけを注入し（変化がなければ何も注入しません）、レビュー期日のリマインド、関連度順の検索、サイドバーのタブを備えます。',
   presetDshDesktopDesc: 'Electron 高度モード（枠なし）：macOS は上部 20px、Windows は WCO 未提供時に 32px のタイトルバー分を確保',
 }

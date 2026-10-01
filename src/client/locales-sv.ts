@@ -509,5 +509,7 @@ export const sv: Record<string, string> = {
   pluginVideoPreviewName: 'Videoförhandsvisning',
   pluginTurnOutlineName: "dsh-turn-outline Varvöversikt",
   pluginTurnOutlineDesc: "Viker sessionen i användarvarv (indata + verktygssteg + utdata); klicka på ett steg för att hoppa till exakt plats i samtalet — utan LLM-anrop, skrivskyddad",
+  pluginDshMemoryDeltaName: 'dsh-memory-delta Minne',
+  pluginDshMemoryDeltaDesc: 'Minne mellan sessioner: endast det som ändrats injiceras (inget när inget ändrats), med påminnelse om granskningsdatum, relevanssorterad sökning och en sidopanelflik.',
   presetDshDesktopDesc: 'Electrons avancerade läge (ramlöst): macOS reserverar 20px högst upp; Windows reserverar 32px för namnlisten när WCO inte är tillgängligt',
 }

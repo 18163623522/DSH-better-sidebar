@@ -512,5 +512,7 @@ export const de: Record<string, string> = {
   pluginVideoPreviewName: 'Video-Vorschau',
   pluginTurnOutlineName: "dsh-turn-outline Runden-Gliederung",
   pluginTurnOutlineDesc: "Faltet die Sitzung in Benutzerrunden (Eingabe + Tool-Schritte + Ausgabe); Klick auf einen Schritt springt an die genaue Stelle im Gespräch — ohne LLM, nur lesend",
+  pluginDshMemoryDeltaName: 'dsh-memory-delta Gedächtnis',
+  pluginDshMemoryDeltaDesc: 'Sitzungsübergreifendes Gedächtnis: nur Änderungen werden injiziert (nichts, wenn sich nichts geändert hat), mit Erinnerung an den Prüftermin, Relevanz-Suche und Sidebar-Tab.',
   presetDshDesktopDesc: 'Elektronischer Erweiterte-Modus (rahmenlos): macOS reserviert oben 20px; Windows reserviert ohne WCO 32px für die Titelleiste',
 }

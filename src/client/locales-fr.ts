@@ -519,5 +519,7 @@ export const fr: Record<string, string> = {
   pluginVideoPreviewName: 'Aperçu vidéo',
   pluginTurnOutlineName: "dsh-turn-outline Plan des tours",
   pluginTurnOutlineDesc: "Plie la session en tours utilisateur (entrée + étapes d'outil + sortie) ; un clic sur une étape ramène à l'endroit exact de la conversation — sans LLM, en lecture seule",
+  pluginDshMemoryDeltaName: 'dsh-memory-delta Mémoire',
+  pluginDshMemoryDeltaDesc: 'Mémoire inter-sessions : seuls les changements sont injectés (rien du tout si rien ne change), avec rappel de révision, recherche classée par pertinence et onglet latéral.',
   presetDshDesktopDesc: 'Mode avancé Electron (sans bordure) : macOS réserve 20px en haut ; Windows réserve 32px pour la barre de titre sans WCO',
 }

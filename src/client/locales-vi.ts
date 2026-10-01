@@ -526,5 +526,7 @@ export const vi: Record<string, string> = {
   pluginVideoPreviewName: 'Xem trước video',
   pluginTurnOutlineName: "dsh-turn-outline Dàn ý theo vòng",
   pluginTurnOutlineDesc: "Gấp phiên thành các vòng của người dùng (đầu vào + bước công cụ + đầu ra); nhấp vào bất kỳ bước nào để nhảy về đúng vị trí trong hội thoại — không gọi LLM, chỉ đọc",
+  pluginDshMemoryDeltaName: 'dsh-memory-delta Bộ nhớ',
+  pluginDshMemoryDeltaDesc: 'Bộ nhớ xuyên phiên: chỉ chèn phần đã thay đổi (không chèn gì nếu không có thay đổi), kèm nhắc ngày rà soát, tìm kiếm theo độ liên quan và tab thanh bên.',
   presetDshDesktopDesc: 'Chế độ Electron nâng cao (không viền): macOS dành 20px ở trên cùng; Windows dành 32px cho thanh tiêu đề khi không có WCO',
 }
