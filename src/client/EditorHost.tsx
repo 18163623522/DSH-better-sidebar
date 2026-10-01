@@ -32,7 +32,7 @@ import { BinaryDownload } from './binary-download.tsx'
 import { planFirstMatch, planFsReadOutcome, type EditorLoadAction } from './editor-load.ts'
 import { baseName } from './FileTree.tsx'
 import { createFrameBatcher } from './frame-batcher.ts'
-import { openSidebarFile } from './sidebar-file.ts'
+import { openClaimedNativeFile, openSidebarFile } from './sidebar-file.ts'
 import { openWithSshActive, openWithUrl, parseOpenWithConfig, resolveOpenWithTargets } from './open-with.ts'
 import { updatePluginSettings } from './plugin-settings.ts'
 import { createOpenInApp } from './open-in-app.ts'
@@ -174,10 +174,18 @@ export function EditorHost(props: {
    * Open a file from THIS window (tree click / search row / path input):
    * merged mode switches this tab in place (stable id, meta survives);
    * split mode opens a per-path dedupe tab through openSidebarFile.
+   *
+   * A file another native tab type claims (a `.drawio` canvas, say) diverts
+   * to THAT type's tab in BOTH modes (#695) — an in-place switch would
+   * swallow it into this plugin's editor, and the claiming type could never
+   * render from the tree. Both helpers fall back verbatim for every other
+   * file, so the editor keeps exactly its previous behavior.
    */
   const openFile = (absolute: string): void => {
     if (inPlace) {
-      ctx.get('betterSidebar')?.updateTab(tab.id, { path: absolute, title: baseName(absolute) })
+      if (!openClaimedNativeFile(ctx, scope.sessionId, scope.cwd, absolute)) {
+        ctx.get('betterSidebar')?.updateTab(tab.id, { path: absolute, title: baseName(absolute) })
+      }
     } else {
       openSidebarFile(ctx, scope.sessionId, absolute)
     }
@@ -205,6 +213,10 @@ export function EditorHost(props: {
     // workbench's splits. A natively-hosted tab (right Sidebar) is absent
     // from them even while it is on screen.
     if (service !== undefined && !store.tabOpen(scope.sessionId, tab.id)) {
+      // The seed names the editor type, but the native branch of openTab
+      // turns an editor PATH seed into a resource address and lets the HOST's
+      // tab registry decide the claiming type (#695) — a third-party type
+      // with a more specific pattern receives this side gesture too.
       service.openTab({ type: 'editor', path: absolute, target: 'side' }, scope)
       return
     }

@@ -935,6 +935,13 @@ export function createBetterSidebarService(store: SidebarStore): BetterSidebarSe
       }
       if (seed.type === 'editor') {
         if (seed.path !== undefined) {
+          // No `kind` is named on the resource open: the HOST's tab registry
+          // decides the claiming type (#695), so a third-party type with a
+          // more specific pattern (a `.drawio` canvas at `extension` priority)
+          // receives the file and the plugin's editor only takes what nobody
+          // else claims. `claim()` throws when nothing recognizes the address;
+          // the editor's `dsh-resource://file/**` plus the built-in previews
+          // cover every file address in practice.
           surface.openResource({
             sessionId: targetSessionId,
             address: surface.fileAddress(targetSessionId, scope?.cwd, seed.path),
@@ -1138,7 +1145,15 @@ export function createBetterSidebarService(store: SidebarStore): BetterSidebarSe
 
   /** Open a file in the sidebar editor of `scope`'s session (title defaults
    *  to the file name; the tab id is path-derived, like the internal
-   *  open-path interception, so distinct files open side by side). */
+   *  open-path interception, so distinct files open side by side).
+   *
+   *  The `editor` seed does NOT hard-code the winner (#695): with the native
+   *  surface installed, `openTab`'s native branch turns the path seed into a
+   *  resource address and the HOST's tab registry decides the claiming type —
+   *  a third-party type registered with a more specific pattern (a `.drawio`
+   *  canvas, say) renders its own tab, and the plugin's editor only takes
+   *  files nobody else claims. (This module holds no ctx, so the probe used
+   *  by the tree's own carriers lives in sidebar-file.ts instead.) */
   const openFile = (scope: SessionScope, path: string, title?: string): void => {
     openTab({ type: 'editor', title: title ?? baseNameOf(path), path, id: `editor:${path}` }, scope)
   }
