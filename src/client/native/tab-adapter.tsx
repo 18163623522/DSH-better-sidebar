@@ -196,12 +196,16 @@ export function createNativeTabRecords(): NativeTabRecords {
       if (existing === undefined) {
         const seeded = params?.title === undefined && params?.meta === undefined ? mint?.() : undefined
         const meta = params?.meta ?? seeded?.meta
+        // A url seed lands on `path`: the browser tab reads its address from
+        // there and persists navigations back to the same field, so a record
+        // that dropped it opened with an empty address bar.
+        const path = params?.path ?? params?.url
         const minted: View = {
           tab: {
             id,
             type: kind as TabType,
             title: params?.title ?? seeded?.title ?? title,
-            ...(params?.path === undefined ? {} : { path: params.path }),
+            ...(path === undefined ? {} : { path }),
             ...(params?.diff === undefined ? {} : { diff: params.diff }),
             ...(meta === undefined ? {} : { meta }),
           },
@@ -217,14 +221,9 @@ export function createNativeTabRecords(): NativeTabRecords {
       // a browser tab pointed at another URL); the record's identity and any
       // plugin-side mutation (title/meta from updateTab) stay.
       const patch: Partial<SidebarTab> = {}
-      if (params?.path !== undefined && params.path !== existing.tab.path) patch.path = params.path
+      const nextPath = params?.path ?? params?.url
+      if (nextPath !== undefined && nextPath !== existing.tab.path) patch.path = nextPath
       if (params?.diff !== undefined) patch.diff = params.diff
-      if (params?.url !== undefined) {
-        const meta = typeof existing.tab.meta === 'object' && existing.tab.meta !== null
-          ? existing.tab.meta as Record<string, unknown>
-          : {}
-        patch.meta = { ...meta, url: params.url }
-      }
       // The expansion set always mirrors the CURRENT session state (a record
       // reused for another session must not keep the previous one's set).
       const expanded = expandedOf(scope.sessionId)
