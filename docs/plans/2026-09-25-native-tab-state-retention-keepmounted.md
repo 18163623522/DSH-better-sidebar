@@ -47,6 +47,16 @@
 > （`tests/native-surface.spec.ts` 的「keeps the files takeover registered across a
 > Session switch pulse」：撤掉该守卫即红）。
 
+> **合并最新 main 之后的分工（v0.24.1 / DSH 0.2.0-rc.1，2026-10-01）**：展开集这条线
+> `main` 已经用**另一条路**实现了——`5c95002` 把展开集搬进插件 store 的会话状态
+> （`attachStore` / `syncExpanded` / `getSessionStates().expanded`，由 `native/index.ts`
+> 绑定），于是本 PR 与它重叠的那半（「记录自己持有展开集」）**整体让给 store**；本 PR 只留
+> **身份**：`views` 键为 `sessionId::tabId`，`get/has/update/drop/versionOf/retain` 收 seat
+> 会话，`toggleExpanded(sessionId, id, path)` 用 seat 定位记录、写入 **scope 会话**的状态
+> （沿用 main 的 active-`reduce` / background-`reduceFor` 分流）。body 卸载不再
+> `records.drop`、两个 `tabs.register` 带 `keepMounted: true`，仍由本 PR 负责。两套持久化
+> 并存会互相打架，所以只留一条权威。
+
 **两条推论**（都经真机验证）：
 1. `keepMounted` 一旦打开，插件原先的前提「宿主同一时刻只挂载在屏会话的 body」
    不成立——A 与 B 的同号 tab 同时活着，所以键必须是 `sessionId::tabId`。
