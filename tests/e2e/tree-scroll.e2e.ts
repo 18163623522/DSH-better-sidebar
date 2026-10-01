@@ -190,13 +190,20 @@ async function expandDir(page: Page, dir: string): Promise<void> {
  * retained session container). Reading the IDENTITY rather than counting rows
  * keeps this lane honest: the rail re-sorts as sessions take turns, so
  * "the second row" is not a stable name for a conversation.
+ *
+ * 0.2.x marks BOTH every RETAINED seat and each seat's panel with
+ * `data-sidebar-right-session` — one seat per retained Conversation stays in the
+ * DOM — so the attribute alone names several conversations at once. The panel
+ * that is actually laid out is the seat on screen, which is the same `:visible`
+ * convention the rest of this lane already uses.
  */
 async function onScreenSession(page: Page): Promise<string | undefined> {
-  const seats = page.locator('[data-sidebar-right-session]')
-  const count = await seats.count()
-  for (let index = 0; index < count; index++) {
-    const seat = seats.nth(index)
-    if ((await seat.getAttribute('hidden')) !== null) continue
+  const panel = page.locator('[data-sidebar-right-panel]:visible').first()
+  if ((await panel.count()) > 0) {
+    return (await panel.getAttribute('data-sidebar-right-session')) ?? undefined
+  }
+  const seat = page.locator('[data-sidebar-right-session]:visible').first()
+  if ((await seat.count()) > 0) {
     return (await seat.getAttribute('data-sidebar-right-session')) ?? undefined
   }
   return undefined
