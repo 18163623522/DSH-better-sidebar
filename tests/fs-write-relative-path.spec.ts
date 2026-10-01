@@ -37,4 +37,14 @@ describe('fs.write resolves session-relative paths (#646)', () => {
     // The fence argument is ignored by design now; the path resolves lexically.
     await expect(ensureWorkspaceWritePath(dir, target, true)).resolves.toBe(target)
   })
+
+  it('expands a ~ home path instead of joining it under the cwd (#713)', async () => {
+    const dir = join(tmpdir(), 'dshm-713')
+    dirs.push(dir)
+    mkdirSync(dir, { recursive: true })
+    const { homedir } = await import('node:os')
+    const result = await ensureWorkspaceWritePath(dir, '~/notes/x.txt', false)
+    expect(result.startsWith(homedir())).toBe(true)
+    expect(result).toContain(join('notes', 'x.txt'))
+  })
 })

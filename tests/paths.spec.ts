@@ -57,6 +57,14 @@ describe('path helpers', () => {
     expect(isAbsolutePath('rel/x.ts')).toBe(false)
   })
 
+  it('treats ~ as home-absolute, never a session-relative path (#713)', () => {
+    expect(isAbsolutePath('~')).toBe(true)
+    expect(isAbsolutePath('~/notes/x.md')).toBe(true)
+    expect(isAbsolutePath('~\\notes\\x.md')).toBe(true)
+    // `~other-user` is NOT the home shorthand; it stays relative-shaped.
+    expect(isAbsolutePath('~other/x.ts')).toBe(false)
+  })
+
   it('htmlUrl always marks UNC paths (platform-neutral marker)', () => {
     // The marker is platform-neutral now: the host resolves the decoded
     // '//server/share/...' form per-platform, so no cwd/OS signal is needed.
