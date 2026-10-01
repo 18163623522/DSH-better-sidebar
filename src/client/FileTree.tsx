@@ -1541,7 +1541,15 @@ export function FileTree(props: {
   const renderLevel = (dir: string, depth: number): ReactNode => {
     const level = data[dir]
     const head = newFolder?.dir === dir ? renderNewFolderRow(dir, depth) : null
-    if (level === undefined) {
+    // Both the not-yet-requested level (`undefined`) and the in-flight marker
+    // `loadLevels` stores (`{}` — no entries, no error yet) draw the loading
+    // row. Without the second half the marker fell into `entries ?? []` and
+    // rendered an EMPTY level (zero rows), so expanding a fresh folder flashed
+    // "loading row → nothing under the folder (looks collapsed again) →
+    // entries" for the whole request — and a fresh mount showed a blank body
+    // under the root row. A settled level always carries `entries` (an
+    // unreadable one carries `error` too), so this never misfires.
+    if (level === undefined || (level.entries === undefined && level.error === undefined)) {
       return (
         <>
           {head}
