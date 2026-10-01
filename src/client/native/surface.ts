@@ -13,10 +13,11 @@
  *   "Which session that is" comes from the controller's `mounted` observation
  *   ({@link mountedSessions}) — never from the session list, which has no
  *   current-session field. The controller also carries `openTabIn` /
- *   `openResourceIn` / `closeIn`, which act on any session whose store the
- *   runtime has minted; both are probed at call time, and an open for a
- *   session that has no store yet is QUEUED and replayed when that session
- *   comes on screen;
+ *   `openResourceIn` / `closeIn`, but the two open faces are silent no-ops for
+ *   a session whose store the runtime never minted or adopted — they report
+ *   nothing back — so an open aimed at a session that is not on screen is NOT
+ *   handed to them: it stays QUEUED and is replayed once that session comes
+ *   on screen;
  * - layout state is memory-only, so a queued open is not durable either.
  */
 import type { Context } from '../../context-types.ts'
@@ -49,7 +50,12 @@ interface NativeController {
   mounted?: MountedSessions
   /** `ISidebarRight.focus` — focuses the tab and the pane holding it (dsh >= 0.1.5). */
   focus?(tabId: string): void
-  /** Not part of `ISidebarRight`: the concrete controller's per-session writes. */
+  /**
+   * Not part of `ISidebarRight`: the concrete controller's per-session writes.
+   * The two open faces are kept as the seam a boolean-reporting host API would
+   * plug into, but `place()` deliberately does not use them: they cannot tell
+   * "written" from "no store adopted yet" (see the module header).
+   */
   openTabIn?(sessionId: string, kind: string, options?: { params?: unknown; revealIfOpened?: boolean; preferNewPane?: boolean }): void
   openResourceIn?(sessionId: string, address: string, options?: { params?: unknown; revealIfOpened?: boolean; preferNewPane?: boolean }): void
   closeIn?(sessionId: string, tabId: string): void
@@ -145,10 +151,12 @@ export function createNativeSurface(ctx: Context, records: NativeTabRecords): Na
         api.openTab(entry.tabKind, options)
         return true
       }
-      if (api.openTabIn !== undefined) {
-        api.openTabIn(entry.sessionId, entry.tabKind, options)
-        return true
-      }
+      // Do not hand a non-current session's open to openTabIn(): for a session
+      // whose rightbar store the runtime never adopted (it was not opened since
+      // this page load) that call is a silent no-op that reports nothing back, so
+      // trusting it drops the open instead of queueing it as this module
+      // documents. Leave the entry queued — flushPending() replays it once that
+      // session comes on screen.
       return false
     }
     const options = {
@@ -160,10 +168,8 @@ export function createNativeSurface(ctx: Context, records: NativeTabRecords): Na
       api.openResource(entry.address, options)
       return true
     }
-    if (api.openResourceIn !== undefined) {
-      api.openResourceIn(entry.sessionId, entry.address, options)
-      return true
-    }
+    // Same as the tab branch: a session with no adopted rightbar store makes
+    // openResourceIn() a silent no-op, so queue instead.
     return false
   }
 
