@@ -34,6 +34,17 @@ export const builtinTabPlugins: readonly PluginEntry[] = [
     install: 'cd ~/.dsh && dsh plugin --profile web add dsh-better-sidebar && dsh plugin --profile web add git+https://github.com/Fisfzy/ego-browser.git',
   },
   {
+    id: '@modusensus/dsh-mneme',
+    name: () => t('pluginMnemeName'),
+    url: 'https://github.com/modusensus/dsh-mneme',
+    description: () => t('pluginMnemeDesc'),
+    // Dual-mount like flowglass — registers a native "Memory Library" tab
+    // (memories/entities/status/settings views) when better-sidebar is
+    // present and keeps its standalone sidebar sheet as a fallback.
+    // Published on npm (scoped); install the prerequisite first.
+    install: 'cd ~/.dsh && dsh plugin --profile web add dsh-better-sidebar && dsh plugin --profile web add @modusensus/dsh-mneme',
+  },
+  {
     id: 'dsh-better-overleaf',
     name: () => t('pluginBetterOverleafName'),
     url: 'https://github.com/Hoemr/dsh-better-overleaf',
@@ -41,6 +52,15 @@ export const builtinTabPlugins: readonly PluginEntry[] = [
     // Published on npm; peer-depends on dsh-better-sidebar (Overleaf tab),
     // so the install line installs the prerequisite first.
     install: 'cd ~/.dsh && dsh plugin --profile web add dsh-better-sidebar && dsh plugin --profile web add dsh-better-overleaf',
+  },
+  {
+    id: 'dsh-dev-git-graph',
+    name: 'dsh-dev-git-graph 提交图',
+    url: 'https://github.com/kp-z/dsh-dev-git-graph',
+    description: () => t('pluginDevGitGraphDesc'),
+    // Optional peer of dsh-better-sidebar (native tab + DiffTab reuse when
+    // present, overlay fallback when not); published on npm.
+    install: 'cd ~/.dsh && dsh plugin --profile web add dsh-better-sidebar && dsh plugin --profile web add dsh-dev-git-graph',
   },
   {
     id: 'dsh-docs-panel',
@@ -70,11 +90,11 @@ export const builtinTabPlugins: readonly PluginEntry[] = [
   {
     id: 'dsh-git-forge',
     name: () => t('pluginGitForgeName'),
-    url: 'https://github.com/thirsty5034/dsh-git-forge',
+    url: 'https://github.com/OMSociety/dsh-git-forge',
     description: () => t('pluginGitForgeDesc'),
     // Peer-depends on dsh-better-sidebar (Git Forge tab). Install the
-    // prerequisite first; package is GitHub-sourced until npm publish.
-    install: 'cd ~/.dsh && dsh plugin --profile web add dsh-better-sidebar && dsh plugin --profile web add "dsh-git-forge@github:thirsty5034/dsh-git-forge"',
+    // prerequisite first; the package is published on npm as dsh-git-forge.
+    install: 'cd ~/.dsh && dsh plugin --profile web add dsh-better-sidebar && dsh plugin --profile web add dsh-git-forge@1.0.0',
   },
   {
     id: 'dsh-git-remotes',
@@ -92,6 +112,19 @@ export const builtinTabPlugins: readonly PluginEntry[] = [
     // with write support (create/comment/merge/re-run). lib/ is committed,
     // so the pinned github:-form install works without a local build.
     install: 'cd ~/.dsh && dsh plugin --profile web add "github:meyaomiao/dsh-github-workbench#v0.1.0"',
+  },
+  {
+    id: 'dsh-ide-git',
+    name: () => t('pluginIdeGitName'),
+    url: 'https://github.com/KannaKuron/dsh-ide-git',
+    description: () => t('pluginIdeGitDesc'),
+    // Published on npm. better-sidebar is an OPTIONAL peer: without it the
+    // plugin registers into DSH's own right sidebar (ctx.sidebarRightTabs +
+    // the keyed sidebar.right.pane.tab seat, with a guide capsule as the
+    // entry), so the install line carries no prerequisite. A better-sidebar
+    // that loads late takes the native registration down and hosts the tab
+    // itself, so the two channels never draw the panel twice.
+    install: 'cd ~/.dsh && dsh plugin --profile web add dsh-ide-git',
   },
   {
     id: 'dsh-sidebar-qa',
@@ -122,6 +155,15 @@ export const builtinTabPlugins: readonly PluginEntry[] = [
     install: 'cd ~/.dsh && dsh plugin --profile web add dsh-better-sidebar && dsh plugin --profile web add dsh-server-deck@latest',
   },
   {
+    id: 'dsh-side-chat',
+    name: 'Side Chat',
+    url: 'https://github.com/xlennart/dsh-side-chat',
+    description: 'Independent native DSH side conversation with a standalone split view and an optional Better Sidebar page; its own shortcut remains available in both modes.',
+    // Better Sidebar is an optional peer: Side Chat remains fully usable on
+    // its own, and registers this tab automatically when the peer is present.
+    install: 'cd ~/.dsh && dsh plugin --profile web add dsh-better-sidebar && dsh plugin --profile web add "github:xlennart/dsh-side-chat#v1.2.1"',
+  },
+  {
     id: 'dsh-suhuang-scroll',
     name: () => t('pluginSuhuangScrollName'),
     url: 'https://github.com/YZDame/dsh-suhuang-scroll',
@@ -133,11 +175,11 @@ export const builtinTabPlugins: readonly PluginEntry[] = [
   {
     id: 'dsh-ssh-tunnel',
     name: () => t('pluginSshTunnelName'),
-    url: 'https://github.com/thirsty5034/dsh-ssh-tunnel',
+    url: 'https://github.com/OMSociety/dsh-ssh-tunnel',
     description: () => t('pluginSshTunnelDesc'),
     // Peer-depends on dsh-better-sidebar (SSH Tunnel tab + center terminal/SFTP).
-    // Install the prerequisite first; package is GitHub-sourced until npm publish.
-    install: 'cd ~/.dsh && dsh plugin --profile web add dsh-better-sidebar && dsh plugin --profile web add "dsh-ssh-tunnel@github:thirsty5034/dsh-ssh-tunnel"',
+    // Install the prerequisite first; the package is published on npm as dsh-ssh-tunnel.
+    install: 'cd ~/.dsh && dsh plugin --profile web add dsh-better-sidebar && dsh plugin --profile web add dsh-ssh-tunnel@1.0.0',
   },
   {
     id: 'dsh-turn-review',
@@ -156,5 +198,18 @@ export const builtinTabPlugins: readonly PluginEntry[] = [
     // isolated from the main conversation context. Hard-depends on the
     // better-sidebar tab service, so install the prerequisite first.
     install: 'cd ~/.dsh && dsh plugin --profile web add dsh-better-sidebar && dsh plugin --profile web add github:Johnblur/dsh-bilingual-reader',
+  },
+  {
+    id: 'dsh-turn-outline',
+    name: () => t('pluginTurnOutlineName'),
+    url: 'https://github.com/Andor-Z/dsh-turn-outline',
+    description: () => t('pluginTurnOutlineDesc'),
+    // Turn-outline tab: folds the session by user turns (input + tool steps
+    // + output) with one-click jump-back into the conversation. Optional
+    // peer of better-sidebar, published on npm. The plugin declares
+    // `dsh-better-sidebar@^0.17.0 || ^0.18.0` and is co-tested on both
+    // lines: better-sidebar 0.18.0 + DSH 0.1.2-rc.1 (since plugin 0.2.7)
+    // and better-sidebar 0.17.1 + DSH 0.1.1-rc.x (stable).
+    install: 'cd ~/.dsh && dsh plugin --profile web add dsh-better-sidebar && dsh plugin --profile web add dsh-turn-outline',
   },
 ]
