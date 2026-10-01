@@ -12,7 +12,7 @@ import { createNativeTabRecords, NativeTabBody, NativeTabTitle } from '../src/cl
 import { registerNativeSurface } from '../src/client/native/index.ts'
 import { createNativeSurface } from '../src/client/native/surface.ts'
 import { createBetterSidebarService, type SidebarSurface } from '../src/client/service.ts'
-import { createSidebarStore, type SidebarTab } from '../src/client/state.ts'
+import { createSidebarStore, toggleExpanded, type SidebarTab } from '../src/client/state.ts'
 
 const scope = { sessionId: 's1', cwd: '/work' }
 
@@ -47,15 +47,87 @@ describe('createNativeTabRecords', () => {
     expect(view.tab).toMatchObject({ id: 'tab-3', path: '/work/b.ts', title: 'renamed.ts' })
   })
 
-  it('tracks expansion per record and bumps its version', () => {
+  it('tracks expansion in the SESSION state and bumps the record version', () => {
+    const store = createSidebarStore()
+    store.setSession('s1')
     const records = createNativeTabRecords()
+    records.attachStore(store)
     records.ensure({ sessionId: 's1', id: 'tab-4', kind: 'editor', title: 'Files', params: undefined, scope })
     const before = records.versionOf('s1', 'tab-4')
     records.toggleExpanded('s1', 'tab-4', '/work/src')
     expect(records.get('s1', 'tab-4')?.expanded).toEqual(['/work/src'])
+    expect(store.getSessionStates().get('s1')?.expanded).toEqual(['/work/src'])
     expect(records.versionOf('s1', 'tab-4')).toBeGreaterThan(before)
     records.toggleExpanded('s1', 'tab-4', '/work/src')
     expect(records.get('s1', 'tab-4')?.expanded).toEqual([])
+  })
+
+  it('keeps the expansion after a tab record is DROPPED and rebuilt (the reported bug)', () => {
+    // The user's flow: open a file preview (the files tab unmounts and its
+    // native record is dropped), close it, return to the files page — a NEW
+    // record for the SAME session must show the set the user had.
+    const store = createSidebarStore()
+    store.setSession('s1')
+    const records = createNativeTabRecords()
+    records.attachStore(store)
+    records.ensure({ sessionId: 's1', id: 'files-1', kind: 'files', title: 'Files', params: undefined, scope })
+    records.toggleExpanded('s1', 'files-1', '/work/src')
+    records.toggleExpanded('s1', 'files-1', '/work/src/components')
+    expect(records.get('s1', 'files-1')?.expanded).toEqual(['/work/src', '/work/src/components'])
+
+    records.drop('s1', 'files-1')
+    const rebuilt = records.ensure({ sessionId: 's1', id: 'files-2', kind: 'files', title: 'Files', params: undefined, scope })
+    expect(rebuilt.expanded).toEqual(['/work/src', '/work/src/components'])
+  })
+
+  it('shares one expansion set between two native tabs of the same session', () => {
+    const store = createSidebarStore()
+    store.setSession('s1')
+    const records = createNativeTabRecords()
+    records.attachStore(store)
+    records.ensure({ sessionId: 's1', id: 'files-a', kind: 'files', title: 'Files', params: undefined, scope })
+    records.ensure({ sessionId: 's1', id: 'files-b', kind: 'files', title: 'Files', params: undefined, scope })
+
+    records.toggleExpanded('s1', 'files-a', '/work/src')
+    expect(records.get('s1', 'files-b')?.expanded).toEqual(['/work/src'])
+
+    // The WORKBENCH's own toggle (the per-session reducer) is the same state.
+    store.reduce(state => toggleExpanded(state, '/work/lib'))
+    expect(records.get('s1', 'files-a')?.expanded).toEqual(['/work/src', '/work/lib'])
+    expect(records.get('s1', 'files-b')?.expanded).toEqual(['/work/src', '/work/lib'])
+
+    // …and a toggle from the native side is visible to the workbench reducer's
+    // state (one authority, two surfaces).
+    records.toggleExpanded('s1', 'files-b', '/work/src')
+    expect(store.getSessionStates().get('s1')?.expanded).toEqual(['/work/lib'])
+  })
+
+  it('keeps two sessions apart (a native tab in each)', () => {
+    const store = createSidebarStore()
+    store.setSession('s1')
+    const records = createNativeTabRecords()
+    records.attachStore(store)
+    records.ensure({ sessionId: 's1', id: 's1-files', kind: 'files', title: 'Files', params: undefined, scope })
+    records.ensure({ sessionId: 's2', id: 's2-files', kind: 'files', title: 'Files', params: undefined, scope: { sessionId: 's2', cwd: '/other' } })
+
+    // The ACTIVE session goes through `reduce`; the background one through
+    // `reduceFor` — both must land in their own session only.
+    records.toggleExpanded('s1', 's1-files', '/work/src')
+    records.toggleExpanded('s2', 's2-files', '/other/lib')
+    expect(records.get('s1', 's1-files')?.expanded).toEqual(['/work/src'])
+    expect(records.get('s2', 's2-files')?.expanded).toEqual(['/other/lib'])
+    expect(store.getSessionStates().get('s1')?.expanded).toEqual(['/work/src'])
+    expect(store.getSessionStates().get('s2')?.expanded).toEqual(['/other/lib'])
+  })
+
+  it('reflects a store change made while no view is subscribed yet', () => {
+    const store = createSidebarStore()
+    store.setSession('s1')
+    store.reduce(state => toggleExpanded(state, '/work/src'))
+    const records = createNativeTabRecords()
+    records.attachStore(store)
+    const view = records.ensure({ sessionId: 's1', id: 'late', kind: 'files', title: 'Files', params: undefined, scope })
+    expect(view.expanded).toEqual(['/work/src'])
   })
 
   it('notifies subscribers and forgets a dropped record', () => {
@@ -380,6 +452,73 @@ describe('registerNativeSurface lifecycle (service-driven registration)', () => 
     dispose()
   })
 
+  it('re-registers NOTHING on a store change (a folder toggle must not replace the explorer body)', () => {
+    // Regression (reported as "expanding a folder makes the whole tree
+    // refresh"): the surface kept its registrations in step by diffing them on
+    // every service AND store notification, and the built-in `files` takeover
+    // is keyed by its KIND — never by a descriptor id — so the "drop what is
+    // no longer wanted" loop read it as a stray registration and disposed it on
+    // EVERY state write. Disposing and re-creating a slot registration replaces
+    // the host's slot entry, which unmounts the tab body it draws: toggling a
+    // folder tore down the explorer (level cache, scroll position and the
+    // directory watcher all live in that component) and remounted it, so the
+    // tree blanked, re-requested [root, ...expanded] and rebuilt every row.
+    // The store notifies on each toggle, so this churned on every click.
+    const store = createSidebarStore()
+    store.setSession('s1')
+    const service = createBetterSidebarService(store)
+    service.registerTab({ id: 'editor', title: () => 'Files', component: () => null })
+    service.registerTab({ id: 'git', title: () => 'Changes', component: () => null })
+    const records = createNativeTabRecords()
+
+    /** Every slot registration, in order (the unregister keys land in `disposed`). */
+    const registered: string[] = []
+    const disposed: string[] = []
+    const registry = {
+      register: (definition: { id: string; kind: string; title: (address: string) => string }) =>
+        () => { disposed.push(definition.id) },
+    }
+    const ctx = {
+      inject: (_deps: readonly string[], callback: (injected: { get: (name: string) => unknown }) => void) => {
+        callback({ get: () => registry })
+        return { dispose: () => { /* the surface owns the rest */ } }
+      },
+      get: () => registry,
+      slots: {
+        inject: (_key: string, callback: () => () => void) => callback(),
+        register: (options: { name: string; key?: string }) => {
+          const key = options.key ?? options.name
+          registered.push(key)
+          return () => { disposed.push(key) }
+        },
+      },
+    }
+    const dispose = registerNativeSurface({ ctx: ctx as never, store, service, records })
+    const mounted = [...registered]
+    /** The takeover's slot registrations: its body + its chip title, one pair. */
+    const filesSlots = (): number => registered.filter(key => key === 'dsh-better-sidebar:files').length
+    expect(filesSlots(), 'the takeover registers its body + chip slots').toBe(2)
+    expect(disposed).toEqual([])
+
+    // A folder toggle: only state, no registry and no settings change. The
+    // native surface must not touch a single registration.
+    store.reduce(state => toggleExpanded(state, '/work/big'))
+    store.reduce(state => toggleExpanded(state, '/work/big/child'))
+    // Any other state write behaves the same (the workbench height, a tab
+    // switch, the selection — all of them notify the same subscribers).
+    store.update(state => { state.bottomOpen = !state.bottomOpen })
+    expect({ registered, disposed }).toEqual({ registered: mounted, disposed: [] })
+
+    // The takeover still follows the editor type's own switch: disabling the
+    // editor releases it, re-enabling brings it back exactly once.
+    store.setPrefs({ ...store.getPrefs(), tabsEnabled: { editor: false } })
+    expect(disposed).toContain('dsh-better-sidebar:files')
+    expect(registered).toEqual(mounted)
+    store.setPrefs({ ...store.getPrefs(), tabsEnabled: { editor: true } })
+    expect(filesSlots(), 'the re-enabled takeover registers again — exactly one pair').toBe(4)
+    dispose()
+  })
+
   it('claims exactly the extensions DSH has no preview for (the nine restored formats included)', () => {
     // DSH 0.1.7 handed every read-only preview to `ui-sidebar-documentpreview`,
     // and `canOpen` returning false is what gives the address away. The host's
@@ -624,7 +763,12 @@ describe('NativeTabTitle (the chip glyph)', () => {
  */
 describe('createNativeTabRecords — per-seat-session identity', () => {
   it('keeps two sessions\' same-named tab apart', () => {
+    const store = createSidebarStore()
+    store.setSession('s1')
     const records = createNativeTabRecords()
+    // Expansion lives in the SESSION state (the one authority), so the registry
+    // has to be bound to a store for a toggle to land anywhere.
+    records.attachStore(store)
     const first = records.ensure({ sessionId: 's1', id: 'tab1', kind: 'editor', title: 'Files', params: undefined, scope })
     records.toggleExpanded('s1', 'tab1', '/work/src')
     const second = records.ensure({
@@ -769,10 +913,10 @@ describe('NativeTabBody — co-resident seats', () => {
   const mountSeat = (
     records: ReturnType<typeof createNativeTabRecords>,
     service: ReturnType<typeof createBetterSidebarService>,
+    store: ReturnType<typeof createSidebarStore>,
     sessionId: string,
     id: string,
   ) => {
-    const store = createSidebarStore()
     store.setSession(sessionId)
     const sessions = {
       list: {
@@ -814,8 +958,12 @@ describe('NativeTabBody — co-resident seats', () => {
   }
 
   it('keeps each seat\'s exploration, and an unmount only drops its own', async () => {
+    // ONE store for the whole page (as in the app): the exploration sets are
+    // per SESSION inside it, which is what lets both seats stay mounted.
+    const store = createSidebarStore()
+    const service = createBetterSidebarService(store)
     const records = createNativeTabRecords()
-    const service = createBetterSidebarService(createSidebarStore())
+    records.attachStore(store)
     service.registerTab({
       id: 'explorer',
       title: 'Files',
@@ -824,8 +972,8 @@ describe('NativeTabBody — co-resident seats', () => {
         createElement('button', { 'data-toggle': props.scope.sessionId, onClick: () => props.onToggleDir?.('/work/src') })),
     })
     // BOTH seats name `tab1` — the host's counter restarts per session.
-    const first = mountSeat(records, service, 's1', 'tab1')
-    const second = mountSeat(records, service, 's2', 'tab1')
+    const first = mountSeat(records, service, store, 's1', 'tab1')
+    const second = mountSeat(records, service, store, 's2', 'tab1')
 
     act(() => { first.host.querySelector<HTMLButtonElement>('[data-toggle="s1"]')!.click() })
     expect(first.host.querySelector('[data-expanded]')?.getAttribute('data-expanded')).toBe('/work/src')
@@ -843,7 +991,7 @@ describe('NativeTabBody — co-resident seats', () => {
     expect(records.get('s1', 'tab1')?.expanded).toEqual(['/work/src'])
     expect(records.has('s2', 'tab1'), 'an unmount must not forget the state').toBe(true)
 
-    const again = mountSeat(records, service, 's2', 'tab1')
+    const again = mountSeat(records, service, store, 's2', 'tab1')
     expect(
       again.host.querySelector('[data-expanded]')?.getAttribute('data-expanded'),
       'the remounted seat finds its own exploration again',
