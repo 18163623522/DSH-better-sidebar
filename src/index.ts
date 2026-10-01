@@ -312,8 +312,12 @@ function buildApi(
       }
       const levels = await Promise.all(paths.map(async (raw): Promise<SidebarFsLevel> => {
         // A session-relative path is accepted here (the tree already carries
-        // cwd-relative paths); `fs.tree` itself keeps requiring absolute input.
-        const requested = isAbsolute(raw) ? raw : `${cwd}${sep}${raw}`
+        // cwd-relative paths); `fs.tree` itself keeps requiring absolute
+        // input. A `~` target is home-relative (#713) and must reach the
+        // shared resolver UNJOINED — pasting it after the cwd would hide the
+        // marker from the home expansion.
+        const homeRelative = raw === '~' || raw.startsWith('~/') || raw.startsWith('~\\')
+        const requested = isAbsolute(raw) || homeRelative ? raw : `${cwd}${sep}${raw}`
         try {
           return await listDirectory(await ensureWorkspacePath(cwd, requested), resolved.listLimit)
         } catch (error) {
@@ -1033,10 +1037,15 @@ export function apply(ctx: Context, config?: SidebarConfig): void {
         const raw = url.searchParams.get('path')
         if (sessionId === null || raw === null) throw new SidebarError('bad-request', 'sessionId and path are required')
         const cwd = await sessionCwdOf(ctx, sessionId, url.searchParams.get('cwd') ?? undefined)
-        // Only relative requests need a workspace base. Absolute paths may
-        // intentionally point outside the workspace and must stay unchanged.
-        const target = isAbsolute(raw) ? raw : join(cwd, raw)
-        const path = await ensureWorkspacePath(cwd, target)
+        // Resolution is the shared contract's alone: relative joins the
+        // session cwd, absolute stays, `~` expands against the home (#713),
+        // remote-mirror namespaces project. Pre-joining here would paste a
+        // `~` target after the cwd and hide it from the resolver.
+        // Resolution is the shared contract's alone: relative joins the
+        // session cwd, absolute stays, `~` expands against the home (#713),
+        // remote-mirror namespaces project. Pre-joining here would paste a
+        // `~` target after the cwd and hide it from the resolver.
+        const path = await ensureWorkspacePath(cwd, raw)
         const info = await stat(path)
         if (!info.isFile() || info.size > resolved.mediaLimit) {
           throw new SidebarError('fs-error', 'not a file or too large', 400)

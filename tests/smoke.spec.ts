@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { tmpdir, homedir } from 'node:os'
 import { dirname, join, resolve as resolvePath } from 'node:path'
 import { SettingsConflictError, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { apply, FS_TREES_MAX_PATHS, mediaTypeForPath } from '../src/index.ts'
@@ -681,6 +681,24 @@ describe('session cwd resolution over the API route', () => {
       expect([draftA, draftB]).toContain(written)
     } finally {
       rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('serves a home-relative media path (the ~ marker reaches the shared resolver, #713)', async () => {
+    // A real file under the user's home: the ~ expansion must happen on the
+    // ROUTE side (resolveTarget), not be pre-joined onto the session cwd.
+    const dirName = `.dsh-sidebar-selftest-${process.pid.toString(36)}`
+    const dir = join(homedir(), dirName)
+    mkdirSync(dir, { recursive: true })
+    const target = join(dir, 'note.txt')
+    writeFileSync(target, 'home sweet home')
+    try {
+      const routes = mountAll({ sessions: { get: () => ({ header: { cwd: dir } }) } })
+      const file = routes.find(route => route.path === '/sidebar/file')!
+      expect(await invokeGet(file, downloadUrl({ sessionId: 'home' }, `~/${dirName}/note.txt`)))
+        .toMatchObject({ status: 200, body: 'home sweet home' })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
     }
   })
 
