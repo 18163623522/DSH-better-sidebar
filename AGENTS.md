@@ -5,6 +5,16 @@
 
 ---
 
+## 0. 分支模型：`dev` 集成 / `main` 只收发版
+
+- **`dev` 是 alpha 开发的集成分支**：所有功能与修复先进 `dev`；**`main` 只在发新版本时从 `dev` 合入**。主题分支从 `dev` 切出（`feat/*` / `fix/*` / `chore/*` / `docs/*` / `dev/<item>`），合回 `dev`。
+- **发版路径**：`dev` → `main` 合并后，tag `vX.Y.Z` 从 `main` 打，`.github/workflows/release.yml` 自动发 npm（版本号含 `-` → `alpha` dist-tag，否则 `latest`）。
+- **纯文档改动**（README / AGENTS.md / docs/）仍允许直推 `main`（见 §1）——规则文件本身不受「只发版才合 main」约束，否则规范无法在 `main` 上生效。
+- **CI**：`.github/workflows/ci.yml` 的 push 触发同时覆盖 `main` 与 `dev`；`pull_request` 触发与 base 无关，所以合进 `dev` 的每一批都有门禁。
+- **本地并行开发**：git worktree 放 `.worktrees/`（已在 `.git/info/exclude` 与 `vitest.config.ts` 的 `exclude` 里），每槽独立 `node_modules`；**集成只在单一 worktree 串行做**，避免并发写同一分支。
+
+---
+
 ## 1. 仓库硬约束（必须遵守）
 
 - **禁止修改 DSH 源码**：对官方 checkout（`~/.dsh/source/current`）零写入。
